@@ -1,0 +1,153 @@
+<! DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <title>圖示生成器 - Copilot Side Panel</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background:  #0d1117;
+      color: #f0f6fc;
+      padding: 40px;
+      text-align: center;
+    }
+    h1 { margin-bottom: 30px; }
+    .icon-group {
+      display: inline-block;
+      margin: 20px;
+      padding: 20px;
+      background: #161b22;
+      border-radius: 12px;
+    }
+    canvas {
+      display: block;
+      margin: 10px auto;
+      border-radius: 8px;
+    }
+    a {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 8px 16px;
+      background: #238636;
+      color: white;
+      text-decoration: none;
+      border-radius: 6px;
+    }
+    a:hover { background: #2ea043; }
+    .instructions {
+      max-width: 600px;
+      margin: 40px auto;
+      text-align: left;
+      background: #161b22;
+      padding: 20px;
+      border-radius: 12px;
+    }
+    .instructions h2 { margin-bottom: 15px; }
+    .instructions ol { padding-left: 20px; }
+    .instructions li { margin: 10px 0; }
+    code {
+      background: #30363d;
+      padding: 2px 6px;
+      border-radius:  4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎨 Copilot Side Panel 圖示生成器</h1>
+
+  <div class="icon-group">
+    <h3>icon128. png</h3>
+    <canvas id="icon128" width="128" height="128"></canvas>
+    <a id="download128" download="icon128.png">下載 128x128</a>
+  </div>
+
+  <div class="icon-group">
+    <h3>icon48.png</h3>
+    <canvas id="icon48" width="48" height="48"></canvas>
+    <a id="download48" download="icon48.png">下載 48x48</a>
+  </div>
+
+  <div class="icon-group">
+    <h3>icon16.png</h3>
+    <canvas id="icon16" width="16" height="16"></canvas>
+    <a id="download16" download="icon16.png">下載 16x16</a>
+  </div>
+
+  <div class="instructions">
+    <h2>📁 安裝說明</h2>
+    <ol>
+      <li>點擊上方按鈕下載三個圖示檔案</li>
+      <li>在 <code>copilot-sidepanel</code> 資料夾中建立 <code>icons</code> 子資料夾</li>
+      <li>將下載的圖示放入 <code>icons</code> 資料夾</li>
+      <li>開啟 Chrome，前往 <code>chrome://extensions/</code></li>
+      <li>開啟右上角「開發人員模式」</li>
+      <li>點擊「載入未封裝項目」</li>
+      <li>選擇 <code>copilot-sidepanel</code> 資料夾</li>
+      <li>完成！點擊工具列圖示即可開啟 Side Panel</li>
+    </ol>
+  </div>
+
+  <script>
+    function drawIcon(canvasId, size) {
+      const canvas = document. getElementById(canvasId);
+      const ctx = canvas.getContext('2d');
+
+      // 背景 - 圓角矩形
+      ctx.fillStyle = '#0d1117';
+      ctx.beginPath();
+      const radius = size * 0.2;
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.fill();
+
+      // 外框
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = Math.max(1, size * 0.02);
+      ctx.beginPath();
+      ctx.roundRect(0, 0, size, size, radius);
+      ctx.stroke();
+
+      const centerX = size / 2;
+      const centerY = size / 2;
+
+      // Copilot 風格圖示 - 外圈
+      ctx.strokeStyle = '#58a6ff';
+      ctx.lineWidth = size * 0.06;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, size * 0.32, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // 眼睛
+      ctx.fillStyle = '#58a6ff';
+      const eyeRadius = size * 0.055;
+      const eyeOffsetX = size * 0.11;
+      const eyeOffsetY = size * 0.04;
+
+      ctx.beginPath();
+      ctx.arc(centerX - eyeOffsetX, centerY - eyeOffsetY, eyeRadius, 0, Math. PI * 2);
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(centerX + eyeOffsetX, centerY - eyeOffsetY, eyeRadius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 微笑
+      ctx.strokeStyle = '#58a6ff';
+      ctx. lineWidth = size * 0.04;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(centerX, centerY + size * 0.02, size * 0.1, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+
+      return canvas;
+    }
+
+    // 生成圖示
+    const sizes = [128, 48, 16];
+    sizes.forEach(size => {
+      const canvas = drawIcon(`icon${size}`, size);
+      const link = document.getElementById(`download${size}`);
+      link.href = canvas.toDataURL('image/png');
+    });
+  </script>
+</body>
+</html>

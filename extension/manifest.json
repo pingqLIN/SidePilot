@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "SidePilot",
+  "version": "1.0.0",
+  "description": "SidePilot：您的 Chrome 側邊欄 AI 僚機。保持 Copilot 隨時待命、感知頁面內容，成為您最得力的助手。",
+  "permissions": [
+    "sidePanel",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "declarativeNetRequest",
+    "declarativeNetRequestWithHostAccess",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://github.com/*",
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "開啟 SidePilot",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "ruleset_github",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}
