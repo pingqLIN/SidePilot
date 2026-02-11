@@ -32,9 +32,7 @@ function init() {
   dom.loadingOverlay = document.getElementById('loadingOverlay');
   dom.errorOverlay = document.getElementById('errorOverlay');
   dom.errorMessage = document.getElementById('errorMessage');
-  dom.captureBtn = document.getElementById('captureBtn');
-  dom.refreshBtn = document.getElementById('refreshBtn');
-  dom.popoutBtn = document.getElementById('popoutBtn');
+  dom.floatingCaptureBtn = document.getElementById('floatingCaptureBtn');
   dom.pageInfo = document.getElementById('pageInfo');
   dom.pageTitle = document.getElementById('pageTitle');
   dom.pageUrl = document.getElementById('pageUrl');
@@ -78,6 +76,7 @@ function init() {
   dom.entryContent = document.getElementById('entryContent');
   dom.entryStatus = document.getElementById('entryStatus');
   dom.memoryModalTitle = document.getElementById('memoryModalTitle');
+  dom.sendToVSCodeBtn = document.getElementById('sendToVSCodeBtn');
 
   // 驗證必要元素
   const required = ['copilotFrame', 'loadingOverlay', 'capturePanel', 'toast'];
@@ -297,52 +296,7 @@ function searchMemory(query) {
   });
 }
 
-function renderMemoryList(entries) {
-  if (!dom.memoryList) return;
-  
-  if (!entries || entries.length === 0) {
-    dom.memoryList.innerHTML = '<div class="memory-empty">No entries found.</div>';
-    return;
-  }
-
-  dom.memoryList.innerHTML = entries.map(entry => `
-    <div class="memory-entry" onclick="editMemoryEntry('${entry.id}')">
-      <div class="memory-entry-header">
-        <span class="memory-entry-title">${escapeHtml(entry.title)}</span>
-        <span class="memory-entry-type">${entry.type}</span>
-      </div>
-      <div class="memory-entry-content">${escapeHtml(entry.content)}</div>
-      <div class="memory-entry-footer">
-        <span>${new Date(entry.updatedAt).toLocaleDateString()}</span>
-        ${entry.type === 'task' ? `<span class="memory-entry-status ${entry.status}">${entry.status.replace('_', ' ')}</span>` : ''}
-      </div>
-    </div>
-  `).join('');
-  
-  // Add click handlers manually since inline onclick is restricted in some contexts
-  // But here we are in sidepanel, it might be fine. 
-  // Better to use delegation or add listeners.
-  // Let's use delegation on the list container.
-}
-
-// Add delegation listener to memoryList
-// (This needs to be added in setupEventListeners, but I can't easily edit that function again without replacing it all)
-// I'll add a global click handler for the list here.
-// Actually, I can just add it to the list container in setupEventListeners if I hadn't already finished that edit.
-// Since I can't easily go back, I'll add it here and call it from init or just run it.
-// Wait, I can just add the listener here.
-
-if (dom.memoryList) {
-  dom.memoryList.addEventListener('click', (e) => {
-    const entryDiv = e.target.closest('.memory-entry');
-    if (entryDiv) {
-      // Find the index or ID. I didn't store ID in DOM.
-      // Let's re-render with data-id.
-    }
-  });
-}
-
-// Redefine renderMemoryList to include data-id and use delegation properly
+// Render memory entries list with proper event delegation
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
   
@@ -472,15 +426,28 @@ function deleteMemoryEntry(id) {
   });
 }
 
+// 傳送目前編輯中的條目到 VS Code
+function sendEntryToVSCode() {
+  if (!currentEditingId) {
+    showToast('請先選取一個條目', 'error');
+    return;
+  }
+  chrome.runtime.sendMessage({ action: 'vscode.send', id: currentEditingId }, (response) => {
+    if (response?.success) {
+      showToast('已傳送到 VS Code');
+    } else {
+      showToast('傳送失敗: ' + (response?.error || '未知錯誤'), 'error');
+    }
+  });
+}
+
 // ============================================
 // 事件監聽器設置
 // ============================================
 
 function setupEventListeners() {
-  // 工具列按鈕
-  dom.captureBtn?.addEventListener('click', toggleCapturePanel);
-  dom.refreshBtn?.addEventListener('click', refreshFrame);
-  dom.popoutBtn?.addEventListener('click', openCopilotWindow);
+  // 底部浮動擷取按鈕
+  dom.floatingCaptureBtn?.addEventListener('click', toggleCapturePanel);
 
   // 擷取面板
   dom.closeCaptureBtn?.addEventListener('click', closeCapturePanel);
@@ -524,6 +491,7 @@ function setupEventListeners() {
       dom.entryStatus.style.display = e.target.value === 'task' ? 'block' : 'none';
     }
   });
+  dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
   
   setupMemoryListeners();
 }
@@ -695,7 +663,7 @@ function toggleCapturePanel() {
 async function openCapturePanel() {
   state.isCapturePanelOpen = true;
   dom.capturePanel?.classList.add('visible');
-  dom.captureBtn?.classList.add('active');
+  dom.floatingCaptureBtn?.classList.add('active');
 
   await loadPageContent();
 }
@@ -703,7 +671,7 @@ async function openCapturePanel() {
 function closeCapturePanel() {
   state.isCapturePanelOpen = false;
   dom.capturePanel?.classList.remove('visible');
-  dom.captureBtn?.classList.remove('active');
+  dom.floatingCaptureBtn?.classList.remove('active');
 }
 
 async function loadPageContent() {

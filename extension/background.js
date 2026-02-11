@@ -4,6 +4,7 @@ import * as ModeManager from './js/mode-manager.js';
 import * as SDKClient from './js/sdk-client.js';
 import * as RulesManager from './js/rules-manager.js';
 import * as MemoryBank from './js/memory-bank.js';
+import * as VSCodeConnector from './js/vscode-connector.js';
 
 // ============================================
 // 常數
@@ -29,6 +30,10 @@ RulesManager.init().catch(err =>
 
 MemoryBank.init().catch(err => 
   console.error('[SidePilot] Failed to initialize MemoryBank:', err)
+);
+
+VSCodeConnector.init().catch(err => 
+  console.error('[SidePilot] Failed to initialize VSCodeConnector:', err)
 );
 
 // ============================================
@@ -168,6 +173,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'memory.search':
       sendResponse({ success: true, entries: MemoryBank.searchEntries(message.query) });
       return false;
+
+    // VS Code Connector
+    case 'vscode.send': {
+      const entry = MemoryBank.getEntry(message.id);
+      if (!entry) {
+        sendResponse({ success: false, error: '找不到此條目' });
+        return false;
+      }
+      VSCodeConnector.sendToVSCode(entry).then(result => {
+        sendResponse({ success: result });
+      }).catch(err => {
+        sendResponse({ success: false, error: err.message });
+      });
+      return true;
+    }
 
     default:
       return false;

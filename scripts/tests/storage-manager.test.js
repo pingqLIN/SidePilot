@@ -6,7 +6,7 @@
  * Tests requiring Chrome APIs will gracefully skip if unavailable.
  */
 
-import * as StorageManager from '../js/storage-manager.js';
+import * as StorageManager from '../../extension/js/storage-manager.js';
 
 /**
  * Register all StorageManager tests with the harness
