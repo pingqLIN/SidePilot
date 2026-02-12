@@ -53,6 +53,12 @@ function init() {
   dom.tabContents = document.querySelectorAll('.tab-content');
   dom.modeBadge = document.getElementById('modeBadge');
 
+  // SDK Chat elements
+  dom.sdkChat = document.getElementById('sdkChat');
+  dom.sdkMessages = document.getElementById('sdkMessages');
+  dom.sdkInput = document.getElementById('sdkInput');
+  dom.sdkSendBtn = document.getElementById('sdkSendBtn');
+
   // Rules tab
   dom.rulesEditor = document.getElementById('rulesEditor');
   dom.saveRulesBtn = document.getElementById('saveRulesBtn');
@@ -124,6 +130,15 @@ function updateModeBadge() {
   const mode = state.detectedMode || 'iframe';
   dom.modeBadge.textContent = mode;
   dom.modeBadge.className = `mode-badge ${mode}`;
+  
+  // Switch UI mode
+  if (mode === 'sdk') {
+    dom.copilotFrame?.classList.add('hidden');
+    dom.sdkChat?.classList.remove('hidden');
+  } else {
+    dom.copilotFrame?.classList.remove('hidden');
+    dom.sdkChat?.classList.add('hidden');
+  }
 }
 
 // ============================================
@@ -494,6 +509,48 @@ function setupEventListeners() {
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
   
   setupMemoryListeners();
+  
+  // SDK Chat
+  dom.sdkSendBtn?.addEventListener('click', async () => {
+    const content = dom.sdkInput?.value?.trim();
+    if (!content) return;
+    
+    dom.sdkInput.value = '';
+    dom.sdkSendBtn.disabled = true;
+    
+    // Add user message
+    addSDKMessage('user', content);
+    
+    // Add typing indicator
+    const typingId = addSDKTypingIndicator();
+    
+    try {
+      const SDKClient = await import('./js/sdk-client.js');
+      const response = await SDKClient.sendMessage({ type: 'chat', content });
+      
+      removeSDKTypingIndicator(typingId);
+      
+      if (response.success && response.content) {
+        addSDKMessage('assistant', response.content);
+      } else {
+        addSDKMessage('assistant', '❌ Failed to get response');
+      }
+    } catch (err) {
+      removeSDKTypingIndicator(typingId);
+      console.error('[SDK Chat]', err);
+      addSDKMessage('assistant', `❌ Error: ${err.message}`);
+    } finally {
+      dom.sdkSendBtn.disabled = false;
+      dom.sdkInput?.focus();
+    }
+  });
+  
+  dom.sdkInput?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      dom.sdkSendBtn?.click();
+    }
+  });
 }
 
 // ============================================
@@ -912,6 +969,61 @@ function escapeAttr(text) {
     .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+// ============================================
+// SDK Chat Helpers
+// ============================================
+
+function addSDKMessage(role, content) {
+  if (!dom.sdkMessages) return;
+  
+  const msgEl = document.createElement('div');
+  msgEl.className = `sdk-message ${role}`;
+  
+  const contentEl = document.createElement('div');
+  contentEl.className = 'sdk-message-content';
+  contentEl.textContent = content;
+  
+  const timeEl = document.createElement('div');
+  timeEl.className = 'sdk-message-time';
+  const time = new Date();
+  timeEl.textContent = time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+  
+  msgEl.appendChild(contentEl);
+  msgEl.appendChild(timeEl);
+  dom.sdkMessages.appendChild(msgEl);
+  
+  dom.sdkMessages.scrollTop = dom.sdkMessages.scrollHeight;
+}
+
+function addSDKTypingIndicator() {
+  if (!dom.sdkMessages) return null;
+  
+  const id = `typing-${Date.now()}`;
+  const msgEl = document.createElement('div');
+  msgEl.className = 'sdk-message assistant loading';
+  msgEl.id = id;
+  
+  const indicator = document.createElement('div');
+  indicator.className = 'sdk-typing-indicator';
+  indicator.innerHTML = '<span></span><span></span><span></span>';
+  
+  const contentEl = document.createElement('div');
+  contentEl.className = 'sdk-message-content';
+  contentEl.appendChild(indicator);
+  
+  msgEl.appendChild(contentEl);
+  dom.sdkMessages.appendChild(msgEl);
+  
+  dom.sdkMessages.scrollTop = dom.sdkMessages.scrollHeight;
+  return id;
+}
+
+function removeSDKTypingIndicator(id) {
+  if (!id) return;
+  const el = document.getElementById(id);
+  if (el) el.remove();
 }
 
 // ============================================

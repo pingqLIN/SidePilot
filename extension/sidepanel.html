@@ -67,11 +67,32 @@
 
         <iframe
           id="copilotFrame"
-          class="copilot-frame"
+          class="copilot-frame mode-iframe"
           src="https://github.com/copilot"
           title="GitHub Copilot"
           sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
         ></iframe>
+
+        <!-- SDK Chat UI -->
+        <div class="sdk-chat mode-sdk hidden" id="sdkChat">
+          <div class="sdk-chat-messages" id="sdkMessages">
+            <!-- Messages will be appended here -->
+          </div>
+          <div class="sdk-chat-input-container">
+            <textarea 
+              id="sdkInput" 
+              class="sdk-chat-input" 
+              placeholder="Ask Copilot anything..."
+              rows="3"
+            ></textarea>
+            <button id="sdkSendBtn" class="btn btn-primary sdk-send-btn">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+              </svg>
+              Send
+            </button>
+          </div>
+        </div>
 
         <!-- 內容擷取面板 -->
         <div class="capture-panel" id="capturePanel">
