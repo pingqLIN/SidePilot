@@ -10,7 +10,7 @@ const STORAGE_KEYS = {
   LAST_CHECK: 'sidepilot.mode.lastCheck'
 };
 
-const SDK_HEALTH_URL = 'http://localhost:4321/health';
+const SDK_HEALTH_URL = 'http://localhost:3000/health';
 const DETECTION_TIMEOUT_MS = 5000;
 
 // ============================================
@@ -142,7 +142,7 @@ function getStatus() {
 
 /**
  * Detect whether SDK mode is available.
- * Checks localhost:4321/health endpoint with 5s timeout.
+ * Checks localhost:3000/health endpoint with 5s timeout.
  * @returns {Promise<'sdk'|'iframe'>}
  */
 async function detectMode() {

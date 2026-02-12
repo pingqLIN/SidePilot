@@ -5,7 +5,7 @@
 // Handles communication with Copilot CLI SDK server
 // ============================================
 
-const DEFAULT_PORT = 4321;
+const DEFAULT_PORT = 3000;
 const CONNECT_TIMEOUT_MS = 5000;
 const REQUEST_TIMEOUT_MS = 30000;
 const HEALTH_CHECK_INTERVAL_MS = 30000;

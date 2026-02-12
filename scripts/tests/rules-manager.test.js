@@ -6,7 +6,7 @@
  * Tests requiring Chrome APIs will gracefully skip if unavailable.
  */
 
-import * as RulesManager from '../js/rules-manager.js';
+import * as RulesManager from '../../extension/js/rules-manager.js';
 
 /**
  * Register all RulesManager tests with the harness

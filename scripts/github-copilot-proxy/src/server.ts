@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import openaiRoutes from "./routes/openai";
+import apiRoutes from "./routes/api";
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use((req, res, next) => {
 
 // Routes
 app.use("/v1", openaiRoutes);
+app.use("/api", apiRoutes);
 
 // Health check
 app.get("/health", (req, res) => {

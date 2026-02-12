@@ -6,7 +6,7 @@
  * Tests requiring Chrome APIs will gracefully skip if unavailable.
  */
 
-import * as MemoryBank from '../js/memory-bank.js';
+import * as MemoryBank from '../../extension/js/memory-bank.js';
 
 /**
  * Register all MemoryBank tests with the harness
