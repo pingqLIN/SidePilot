@@ -2,6 +2,8 @@ import express from "express";
 import { CopilotService } from "../services/copilot";
 
 const router = express.Router();
+const getErrorMessage = (err: unknown) =>
+  err instanceof Error ? err.message : String(err);
 
 /**
  * Simple chat endpoint for SDK Client
@@ -46,20 +48,22 @@ router.post("/chat", async (req, res) => {
         success: true,
       });
     } catch (copilotError) {
-      console.error("Copilot API error:", copilotError.message);
+      const copilotMessage = getErrorMessage(copilotError);
+      console.error("Copilot API error:", copilotMessage);
       res.status(500).json({
         id,
         type: "error",
-        content: `Copilot API error: ${copilotError.message}`,
+        content: `Copilot API error: ${copilotMessage}`,
         success: false,
       });
     }
   } catch (error) {
-    console.error("Error in /api/chat:", error);
+    const errorMessage = getErrorMessage(error);
+    console.error("Error in /api/chat:", errorMessage);
     res.status(500).json({
       id: req.body?.id,
       type: "error",
-      content: error.message || "Internal Server Error",
+      content: errorMessage || "Internal Server Error",
       success: false,
     });
   }
