@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "SidePilot",
   "version": "1.0.0",
-  "description": "SidePilot：您的 Chrome 側邊欄 AI 僚機。保持 Copilot 隨時待命、感知頁面內容，成為您最得力的助手。",
+  "description": "AI-powered Chrome side panel that keeps GitHub Copilot always accessible",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -27,14 +27,14 @@
         "default": "Alt+Shift+P",
         "mac": "Alt+Shift+P"
       },
-      "description": "開啟 SidePilot 側邊欄"
+      "description": "Open SidePilot side panel"
     }
   },
   "side_panel": {
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "開啟 SidePilot",
+    "default_title": "Open SidePilot",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

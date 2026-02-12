@@ -1,8 +1,10 @@
 # SidePilot
 
-> 🚧 **開發中** - 目前處於 v2.0 架構重構階段
+[中文版](README.zh-TW.md)
 
-**SidePilot** 是一個 Chrome 擴充功能，讓 GitHub Copilot 常駐於瀏覽器側邊欄，提供持續的 AI 協助，不會因為切換分頁而中斷。
+> 🚧 **Work in Progress** - Currently in v2.0 architecture refactoring phase
+
+**SidePilot** is a Chrome extension that keeps GitHub Copilot accessible in your browser's side panel, providing continuous AI assistance without interruption when switching tabs.
 
 ![Chrome](https://img.shields.io/badge/Chrome-114+-4285F4?style=flat&logo=google-chrome&logoColor=white)
 ![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
@@ -10,225 +12,240 @@
 
 ---
 
-## ✨ 功能特色
+## ✨ Features
 
-- **🎯 雙模式架構**
-  - **iframe 模式**: 直接嵌入 GitHub Copilot 網頁（需登入 GitHub）
-  - **SDK 模式**: 透過本地 Proxy Server 連接 Copilot API（開發中）
-- **📝 Rules 管理**: 自訂 AI 行為規則，支援匯入/匯出與模板
-- **🧠 Memory Bank**: 儲存任務、筆記、參考資料，支援一鍵傳送至 VS Code
-- **📋 頁面擷取**: 底部浮動按鈕一鍵擷取當前頁面的標題、內容、程式碼區塊
-- **⌨️ 快捷鍵**: `Alt+Shift+P` 快速開啟側邊欄
-- **✈️ 飛行員風格**: 專屬飛行員 Logo，GitHub Dark Theme 介面
+- **🎯 Dual-Mode Architecture**
+  - **iframe Mode**: Directly embeds GitHub Copilot web interface (requires GitHub login)
+  - **SDK Mode**: Connects to Copilot API via local proxy server (under development)
+- **📝 Rules Management**: Customize AI behavior rules with import/export and template support
+- **🧠 Memory Bank**: Store tasks, notes, and references with one-click send to VS Code
+- **📋 Page Capture**: Floating bottom button to capture current page's title, content, and code blocks
+- **⌨️ Keyboard Shortcuts**: `Alt+Shift+P` to quickly open side panel
+- **✈️ Pilot Style**: Exclusive pilot logo with GitHub Dark Theme interface
 
 ---
 
-## 🚀 快速開始
+## 🚀 Quick Start
 
-### 安裝擴充功能
+### Installing the Extension
 
-1. **下載或克隆專案**
+1. **Download or clone the project**
 
    ```powershell
-   git clone https://github.com/yourusername/SidePilot.git
+   git clone https://github.com/pingqLIN/SidePilot.git
    cd SidePilot
    ```
 
-2. **在 Chrome 中載入**
-   - 開啟 `chrome://extensions/`
-   - 啟用「開發人員模式」
-   - 點擊「載入未封裝項目」
-   - 選擇 `SidePilot/extension` 目錄
+2. **Load in Chrome**
+   - Open `chrome://extensions/`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select the `SidePilot/extension` directory
 
-3. **開啟側邊欄**
-   - 點擊擴充功能圖示，或
-   - 按下 `Alt+Shift+P`（Windows/Linux）或 `Opt+Shift+P`（Mac）
+3. **Open the side panel**
+   - Click the extension icon, or
+   - Press `Alt+Shift+P` (Windows/Linux) or `Opt+Shift+P` (Mac)
 
 ---
 
-## 🔧 SDK 模式設定（選用）
+## 🔧 SDK Mode Setup (Optional)
 
-SDK 模式需要本地 Proxy Server 將 Copilot API 轉換為 OpenAI 相容格式。
+SDK mode requires a local proxy server to convert Copilot API to OpenAI-compatible format.
 
-### 啟動 Proxy Server
+### Starting the Proxy Server
 
 ```powershell
-# 1. 進入 proxy server 目錄
+# 1. Navigate to proxy server directory
 cd scripts/github-copilot-proxy
 
-# 2. 安裝依賴
+# 2. Install dependencies
 npm install
 
-# 3. 設定 GitHub Copilot Token（詳見 SETUP.md）
-# 推薦使用 OAuth Device Flow:
+# 3. Configure GitHub Copilot Token (see SETUP.md for details)
+# Recommended: Use OAuth Device Flow
 gh auth login
 gh api /copilot_internal/v2/token --jq '.token' > .env-token
 echo "COPILOT_TOKEN=$(cat .env-token)" > .env
 echo "PORT=3000" >> .env
 
-# 4. 啟動 server
+# 4. Start server
 npm run dev
 ```
 
-完整設定教學請參考 [scripts/github-copilot-proxy/SETUP.md](scripts/github-copilot-proxy/SETUP.md)
+For complete setup instructions, see [scripts/github-copilot-proxy/SETUP.md](scripts/github-copilot-proxy/SETUP.md)
 
 ---
 
-## 📚 專案結構
+## 📚 Project Structure
 
 ```text
 SidePilot/
-├── extension/              # Chrome Extension 主體
-│   ├── manifest.json      # 擴充功能配置
-│   ├── sidepanel.html     # 側邊欄 UI（3 tabs: Copilot, Rules, Memory）
-│   ├── sidepanel.js       # 主要邏輯
-│   ├── styles.css         # 樣式（GitHub dark theme）
+├── extension/              # Chrome Extension core
+│   ├── manifest.json      # Extension configuration
+│   ├── sidepanel.html     # Side panel UI (3 tabs: Copilot, Rules, Memory)
+│   ├── sidepanel.js       # Main logic
+│   ├── styles.css         # Styles (GitHub dark theme)
 │   ├── background.js      # Service Worker
-│   ├── rules.json         # Header 剝除規則（iframe 模式）
-│   └── js/                # 功能模組
-│       ├── mode-manager.js       # 模式偵測與切換
-│       ├── sdk-client.js         # SDK API 客戶端
-│       ├── rules-manager.js      # 規則管理
-│       ├── memory-bank.js        # 記憶庫
-│       ├── storage-manager.js    # Chrome Storage 封裝
-│       ├── automation.js         # 自動化腳本注入
-│       └── vscode-connector.js   # VS Code 整合
+│   ├── rules.json         # Header removal rules (iframe mode)
+│   └── js/                # Feature modules
+│       ├── mode-manager.js       # Mode detection and switching
+│       ├── sdk-client.js         # SDK API client
+│       ├── rules-manager.js      # Rules management
+│       ├── memory-bank.js        # Memory bank
+│       ├── storage-manager.js    # Chrome Storage wrapper
+│       ├── automation.js         # Automation script injection
+│       └── vscode-connector.js   # VS Code integration
 │
 ├── scripts/
 │   ├── github-copilot-proxy/  # OpenAI-compatible Proxy Server
-│   │   ├── SETUP.md           # 詳細設定教學
+│   │   ├── SETUP.md           # Detailed setup guide
 │   │   ├── src/
-│   │   │   ├── server.ts      # Express 主程式
-│   │   │   ├── routes/        # API 路由
-│   │   │   ├── services/      # Copilot API 服務
-│   │   │   └── utils/         # 訊息格式轉換
+│   │   │   ├── server.ts      # Express main program
+│   │   │   ├── routes/        # API routes
+│   │   │   ├── services/      # Copilot API service
+│   │   │   └── utils/         # Message format conversion
 │   │   └── package.json
 │   │
-│   └── tests/                 # 單元測試（Vanilla JS）
-│       ├── run-tests.html     # 測試執行器
+│   └── tests/                 # Unit tests (Vanilla JS)
+│       ├── run-tests.html     # Test runner
 │       ├── storage-manager.test.js
 │       ├── rules-manager.test.js
 │       └── memory-bank.test.js
 │
 ├── docs/
-│   └── DEVELOPMENT_PLAN.md    # v2.0 開發計畫（4 階段里程碑）
+│   └── DEVELOPMENT_PLAN.md    # v2.0 development plan (4-phase milestones)
 │
 └── README.md
 ```
 
 ---
 
-## 🧪 測試
+## 🧪 Testing
 
-### 單元測試（瀏覽器）
+### Unit Tests (Browser)
 
 ```powershell
-# 在瀏覽器中開啟測試執行器
+# Open test runner in browser
 start chrome "file:///C:/Dev/Projects/SidePilot/scripts/tests/run-tests.html"
 ```
 
-點擊「Run Tests」按鈕執行 18 個測試（storage, rules, memory bank）。
+Click "Run Tests" button to execute 18 tests (storage, rules, memory bank).
 
-### 手動測試
+### Manual Testing
 
-參考 [scripts/tests/MANUAL_TESTS.md](scripts/tests/MANUAL_TESTS.md) 進行完整的手動驗證流程。
+Refer to [scripts/tests/MANUAL_TESTS.md](scripts/tests/MANUAL_TESTS.md) for complete manual verification workflow.
 
 ---
 
-## 📖 功能說明
+## 📖 Feature Overview
 
 ### 1️⃣ Copilot Tab
 
-- **iframe 模式**（預設）：直接嵌入 `github.com/copilot`
-- **SDK 模式**（需啟動 proxy）：自動偵測 `localhost:3000` 並切換
-- **Mode Badge**：tab-bar 右側顯示當前模式（SDK=綠色 / iframe=藍色）
-- **浮動擷取按鈕**：底部中央的擷取按鈕，一鍵擷取當前頁面內容
+- **iframe Mode** (default): Directly embeds `github.com/copilot`
+- **SDK Mode** (requires proxy): Auto-detects `localhost:3000` and switches
+- **Mode Badge**: Displayed on the right side of tab-bar (SDK=green / iframe=blue)
+- **Floating Capture Button**: Bottom center capture button for one-click page content extraction
 
 ### 2️⃣ Rules Tab
 
-- 編輯 AI 行為規則（Markdown 格式）
-- 套用內建模板（Web 開發、程式碼審查等）
-- 匯入/匯出 `.txt` 規則檔案
+- Edit AI behavior rules (Markdown format)
+- Apply built-in templates (Web development, code review, etc.)
+- Import/export `.txt` rule files
 
 ### 3️⃣ Memory Tab
 
-- 建立四種類型條目：Task / Note / Context / Reference
-- 搜尋與篩選功能
-- 一鍵傳送至 VS Code（透過 `vscode://` 協議）
+- Create four types of entries: Task / Note / Context / Reference
+- Search and filter functionality
+- One-click send to VS Code (via `vscode://` protocol)
 
 ---
 
-## ⚠️ 法律聲明
+## ⚠️ Legal Disclaimer
 
-> **重要**: SidePilot 透過移除 HTTP Header 的方式嵌入 GitHub Copilot 網頁介面，此行為可能違反 GitHub 服務條款。使用本擴充功能需**自行承擔風險**，包括但不限於帳號停用、服務中斷等可能後果。
+> **Important**: SidePilot embeds the GitHub Copilot web interface by removing HTTP headers. This behavior may violate GitHub's Terms of Service. Use this extension **at your own risk**, including but not limited to potential account suspension or service interruption.
 >
-> 本專案僅供教育與研究用途，不建議用於生產環境。
+> This project is for educational and research purposes only and is not recommended for production use.
 
 ---
 
-## 🛠️ 開發狀態
+## 🛠️ Development Status
 
-當前版本：**v2.0 Alpha**
+Current Version: **v2.0 Alpha**
 
-### ✅ 已完成（Phase 1: 穩定化 + UI 重設計）
+### ✅ Completed (Phase 1: Stabilization + UI Redesign)
 
-- [x] 修復 `renderMemoryList` 重複定義
-- [x] 補齊 CSS 變數定義（GitHub dark theme）
-- [x] 統一 SDK port 為 3000
-- [x] 建立 `.gitignore`
-- [x] UI 重設計：簡化工具列、飛行員 Logo、浮動擷取按鈕
-- [x] 修復 manifest `type: module`（關鍵 Bug）
-- [x] 註冊鍵盤快捷鍵 `Alt+Shift+P`
-- [x] Memory Tab 加入「Send to VS Code」按鈕
-- [x] Mode Badge 移至 tab-bar 右側
+- [x] Fixed `renderMemoryList` duplicate definition
+- [x] Added missing CSS variables (GitHub dark theme)
+- [x] Unified SDK port to 3000
+- [x] Created `.gitignore`
+- [x] UI redesign: simplified toolbar, pilot logo, floating capture button
+- [x] Fixed manifest `type: module` (critical bug)
+- [x] Registered keyboard shortcut `Alt+Shift+P`
+- [x] Added "Send to VS Code" button in Memory Tab
+- [x] Moved Mode Badge to right side of tab-bar
 
-### 🚧 進行中（Phase 2: SDK 模式）
+### 🚧 In Progress (Phase 2: SDK Mode)
 
-- [ ] Proxy Server 實測（需 GitHub Copilot Token）
-- [ ] 實作 SDK Chat UI（取代 iframe）
-- [ ] 對話歷史管理
-- [ ] 手動模式切換 UI
+- [ ] Proxy server testing (requires GitHub Copilot Token)
+- [ ] Implement SDK Chat UI (replace iframe)
+- [ ] Conversation history management
+- [ ] Manual mode switching UI
 
-### 📅 規劃中
+### 📅 Planned
 
-- **Phase 3**: Context Injection、Memory ↔ Copilot 整合、VS Code Extension
-- **Phase 4**: 自動化測試、Chrome Web Store 發布
+- **Phase 3**: Context Injection, Memory ↔ Copilot integration, VS Code Extension
+- **Phase 4**: Automated testing, Chrome Web Store publishing
 
-詳見 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)
-
----
-
-## 🤝 貢獻
-
-歡迎提交 Issue 與 Pull Request！
-
-開發規範：
-
-- 使用 TypeScript（Proxy Server）與 Vanilla JavaScript（Extension）
-- 遵循 ES6+ 模組化設計
-- 所有 Chrome API 調用需錯誤處理
-- 新增功能需補充單元測試
+See [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for details
 
 ---
 
-## 📄 授權
+## 🤝 Contributing
 
-MIT License - 詳見 [LICENSE](LICENSE) 檔案
+Issues and Pull Requests are welcome!
 
----
+Development guidelines:
 
-## 🙏 致謝
-
-- **GitHub Copilot** - AI 核心引擎
-- **[BjornMelin/github-copilot-proxy](https://github.com/BjornMelin/github-copilot-proxy)** - Proxy Server 基礎架構
-- **Chrome Extensions API** - MV3 平台支援
-
----
-
-## 📮 聯絡
-
-如有問題或建議，歡迎開 Issue 或 Email 至 `your-email@example.com`
+- Use TypeScript (Proxy Server) and Vanilla JavaScript (Extension)
+- Follow ES6+ modular design
+- All Chrome API calls require error handling
+- New features require unit tests
 
 ---
 
-_最後更新: 2026-02-11_ <!-- last updated -->
+## 📄 License
+
+MIT License - See [LICENSE](LICENSE) file
+
+**Official License**: [MIT License](https://opensource.org/licenses/MIT)
+
+---
+
+## 🤖 AI-Assisted Development
+
+This project was developed with AI assistance.
+
+**AI Models/Services Used:**
+
+- Google Gemini 2.5 Pro
+- Claude 4.5 Sonnet
+
+> ⚠️ **Disclaimer:** While the author has made every effort to review and validate the AI-generated code, no guarantee can be made regarding its correctness, security, or fitness for any particular purpose. Use at your own risk.
+
+---
+
+## 🙏 Acknowledgments
+
+- **GitHub Copilot** - AI core engine
+- **[BjornMelin/github-copilot-proxy](https://github.com/BjornMelin/github-copilot-proxy)** - Proxy server foundation
+- **Chrome Extensions API** - MV3 platform support
+
+---
+
+## 📮 Contact
+
+For questions or suggestions, please open an Issue.
+
+---
+
+_Last updated: 2026-02-12_ <!-- last updated -->
