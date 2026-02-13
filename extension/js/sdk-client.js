@@ -2,24 +2,13 @@
 
 // ============================================
 // SDK Client Module
-// Handles communication with Copilot CLI SDK server
+// Handles communication with SidePilot Copilot Bridge server
+// via HTTP REST + SSE (Server-Sent Events) for streaming
 // ============================================
 
 const DEFAULT_PORT = 3000;
 const CONNECT_TIMEOUT_MS = 5000;
-const REQUEST_TIMEOUT_MS = 30000;
-const HEALTH_CHECK_INTERVAL_MS = 30000;
-
-// ============================================
-// Error Codes
-// ============================================
-
-const ErrorCodes = {
-  SDK_NOT_RUNNING: 'SDK_NOT_RUNNING',
-  CONNECTION_TIMEOUT: 'CONNECTION_TIMEOUT',
-  REQUEST_TIMEOUT: 'REQUEST_TIMEOUT',
-  CONNECTION_LOST: 'CONNECTION_LOST'
-};
+const BRIDGE_BASE = `http://localhost:${DEFAULT_PORT}`;
 
 // ============================================
 // Module State
@@ -28,41 +17,17 @@ const ErrorCodes = {
 let initialized = false;
 let connected = false;
 let currentPort = DEFAULT_PORT;
+let currentSessionId = null;
 let healthCheckIntervalId = null;
 
 const connectionListeners = new Set();
-const pendingRequests = new Map();
 
 // ============================================
 // Private Functions
 // ============================================
 
 /**
- * Generate a UUID v4 for correlation IDs
- * @returns {string}
- */
-function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-}
-
-/**
- * Create SDK Error with code
- * @param {string} message 
- * @param {string} code 
- * @returns {Error}
- */
-function createSDKError(message, code) {
-  const error = new Error(message);
-  error.code = code;
-  return error;
-}
-
-/**
- * Get base URL for SDK server
+ * Get base URL for bridge server
  * @returns {string}
  */
 function getBaseUrl() {
@@ -71,31 +36,31 @@ function getBaseUrl() {
 
 /**
  * Notify all connection listeners
- * @param {boolean} isConnected 
+ * @param {boolean} isConnected
  */
 function notifyConnectionListeners(isConnected) {
   connectionListeners.forEach(callback => {
     try {
       callback(isConnected);
     } catch (err) {
-      console.error('[SDKClient] Connection listener error:', err);
+      console.error('[SDKClient] Listener callback error:', err);
     }
   });
 }
 
 /**
  * Update connection state and notify listeners
- * @param {boolean} newState 
+ * @param {boolean} newState
  */
 function setConnectionState(newState) {
   if (connected !== newState) {
     connected = newState;
-    notifyConnectionListeners(connected);
+    notifyConnectionListeners(newState);
   }
 }
 
 /**
- * Perform health check
+ * Perform health check against bridge server
  * @returns {Promise<boolean>}
  */
 async function checkHealth() {
@@ -105,59 +70,41 @@ async function checkHealth() {
 
     const response = await fetch(`${getBaseUrl()}/health`, {
       method: 'GET',
-      signal: controller.signal
+      signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
 
     if (response.ok) {
+      const data = await response.json();
       setConnectionState(true);
       return true;
     }
-    
+
     setConnectionState(false);
     return false;
-  } catch (err) {
+  } catch {
     setConnectionState(false);
     return false;
   }
 }
 
 /**
- * Start health check interval
+ * Start health check interval (every 30s)
  */
 function startHealthCheck() {
   stopHealthCheck();
-  healthCheckIntervalId = setInterval(async () => {
-    const healthy = await checkHealth();
-    if (!healthy) {
-      console.warn('[SDKClient] Health check failed, connection lost');
-      rejectPendingRequests(ErrorCodes.CONNECTION_LOST);
-    }
-  }, HEALTH_CHECK_INTERVAL_MS);
+  healthCheckIntervalId = setInterval(checkHealth, 30000);
 }
 
 /**
  * Stop health check interval
  */
 function stopHealthCheck() {
-  if (healthCheckIntervalId !== null) {
+  if (healthCheckIntervalId) {
     clearInterval(healthCheckIntervalId);
     healthCheckIntervalId = null;
   }
-}
-
-/**
- * Reject all pending requests with error
- * @param {string} errorCode 
- */
-function rejectPendingRequests(errorCode) {
-  const error = createSDKError('Connection lost', errorCode);
-  pendingRequests.forEach((pending, id) => {
-    clearTimeout(pending.timeoutId);
-    pending.reject(error);
-  });
-  pendingRequests.clear();
 }
 
 // ============================================
@@ -166,52 +113,54 @@ function rejectPendingRequests(errorCode) {
 
 /**
  * Initialize the SDK client module.
- * Attempts initial connection to SDK server.
+ * Attempts initial connection to bridge server.
  * @returns {Promise<void>}
  */
 async function init() {
-  if (initialized) {
-    return;
+  if (initialized) return;
+
+  try {
+    const healthy = await checkHealth();
+    if (healthy) {
+      startHealthCheck();
+      console.log('[SDKClient] Connected to Copilot Bridge');
+    } else {
+      console.log('[SDKClient] Bridge not available, will retry on demand');
+    }
+  } catch (err) {
+    console.warn('[SDKClient] Init warning:', err.message);
   }
 
   initialized = true;
-  
-  // Attempt initial connection (non-blocking)
-  try {
-    await connect(currentPort);
-  } catch (err) {
-    // Graceful degradation - SDK not available is OK
-    console.warn('[SDKClient] Initial connection failed:', err.message);
-  }
 }
 
 /**
  * Cleanup module resources.
- * Closes connection and clears all state.
  * @returns {void}
  */
 function cleanup() {
   stopHealthCheck();
-  rejectPendingRequests(ErrorCodes.CONNECTION_LOST);
-  connectionListeners.clear();
-  setConnectionState(false);
   initialized = false;
+  connected = false;
+  currentSessionId = null;
+  connectionListeners.clear();
 }
 
 /**
  * Get the current status of the SDK client.
- * @returns {{initialized: boolean, connected: boolean, port: number}}
+ * @returns {{initialized: boolean, connected: boolean, port: number, sessionId: string|null}}
  */
 function getStatus() {
   return {
     initialized,
     connected,
-    port: currentPort
+    port: currentPort,
+    sessionId: currentSessionId,
   };
 }
 
 /**
- * Check if currently connected to SDK server.
+ * Check if currently connected to bridge server.
  * @returns {boolean}
  */
 function isConnected() {
@@ -219,145 +168,165 @@ function isConnected() {
 }
 
 /**
- * Connect to SDK server on specified port.
- * @param {number} port - Port number (default: 4321)
+ * Connect to bridge server on specified port.
+ * @param {number} port - Port number (default: 3000)
  * @returns {Promise<void>}
  */
 async function connect(port = DEFAULT_PORT) {
   currentPort = port;
+  const healthy = await checkHealth();
 
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
-
-    const response = await fetch(`${getBaseUrl()}/health`, {
-      method: 'GET',
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      throw createSDKError('SDK server returned non-OK status', ErrorCodes.SDK_NOT_RUNNING);
-    }
-
-    setConnectionState(true);
-    startHealthCheck();
-    
-  } catch (err) {
-    setConnectionState(false);
-    stopHealthCheck();
-
-    if (err.code) {
-      throw err;
-    }
-
-    if (err.name === 'AbortError') {
-      throw createSDKError('Connection timed out', ErrorCodes.CONNECTION_TIMEOUT);
-    }
-
-    // Network error - SDK not running
-    throw createSDKError('SDK server is not running', ErrorCodes.SDK_NOT_RUNNING);
+  if (!healthy) {
+    throw new Error(`Bridge server not available at localhost:${port}`);
   }
+
+  startHealthCheck();
+  console.log(`[SDKClient] Connected to bridge on port ${port}`);
 }
 
 /**
- * Disconnect from SDK server.
+ * Disconnect from bridge server.
  * @returns {void}
  */
 function disconnect() {
   stopHealthCheck();
-  rejectPendingRequests(ErrorCodes.CONNECTION_LOST);
   setConnectionState(false);
+  currentSessionId = null;
 }
 
 /**
- * Send message to SDK server.
- * @param {{type: 'chat'|'ping'|'status', content?: string}} msg - Message to send
- * @returns {Promise<{id: string, type: string, content: string, success: boolean}>}
+ * Send a chat message to the bridge server.
+ * Returns the full response (non-streaming).
+ * @param {{type?: string, content: string, model?: string}} msg
+ * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
 async function sendMessage(msg) {
   if (!connected) {
-    throw createSDKError('Not connected to SDK server', ErrorCodes.CONNECTION_LOST);
+    const healthy = await checkHealth();
+    if (!healthy) {
+      throw new Error('Bridge server not available');
+    }
   }
 
-  const requestId = generateUUID();
-  const request = {
-    id: requestId,
-    type: msg.type || 'chat',
-    content: msg.content || '',
-    timestamp: Date.now()
+  const response = await fetch(`${getBaseUrl()}/api/chat/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: currentSessionId,
+      prompt: msg.content,
+      model: msg.model,
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (data.sessionId) {
+    currentSessionId = data.sessionId;
+  }
+
+  return {
+    success: data.success,
+    content: data.content,
+    sessionId: data.sessionId,
   };
+}
+
+/**
+ * Send a chat message with SSE streaming.
+ * Calls onDelta for each chunk, returns final content.
+ * @param {{content: string, model?: string}} msg
+ * @param {function(string): void} onDelta - Called with each text chunk
+ * @param {function(object): void} [onTool] - Called with tool execution events
+ * @returns {Promise<string>} - Final complete response
+ */
+async function sendMessageStreaming(msg, onDelta, onTool) {
+  if (!connected) {
+    const healthy = await checkHealth();
+    if (!healthy) {
+      throw new Error('Bridge server not available');
+    }
+  }
 
   return new Promise((resolve, reject) => {
-    // Set up timeout
-    const timeoutId = setTimeout(() => {
-      pendingRequests.delete(requestId);
-      reject(createSDKError('Request timed out', ErrorCodes.REQUEST_TIMEOUT));
-    }, REQUEST_TIMEOUT_MS);
+    const body = JSON.stringify({
+      sessionId: currentSessionId,
+      prompt: msg.content,
+      model: msg.model,
+    });
 
-    // Store pending request
-    pendingRequests.set(requestId, { resolve, reject, timeoutId });
-
-    // Send HTTP request
-    (async () => {
-      try {
-        const controller = new AbortController();
-        const abortTimeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
-        const response = await fetch(`${getBaseUrl()}/api/chat`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(request),
-          signal: controller.signal
-        });
-
-        clearTimeout(abortTimeoutId);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        
-        // Clear timeout and resolve
-        const pending = pendingRequests.get(requestId);
-        if (pending) {
-          clearTimeout(pending.timeoutId);
-          pendingRequests.delete(requestId);
-          
-          // Format response
-          const result = {
-            id: data.id || requestId,
-            type: 'response',
-            content: data.content || data.message || '',
-            success: data.success !== false
-          };
-          
-          pending.resolve(result);
-        }
-
-      } catch (err) {
-        const pending = pendingRequests.get(requestId);
-        if (pending) {
-          clearTimeout(pending.timeoutId);
-          pendingRequests.delete(requestId);
-
-          if (err.name === 'AbortError') {
-            pending.reject(createSDKError('Request timed out', ErrorCodes.REQUEST_TIMEOUT));
-          } else if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
-            // Connection lost during request
-            setConnectionState(false);
-            stopHealthCheck();
-            pending.reject(createSDKError('Connection lost during request', ErrorCodes.CONNECTION_LOST));
-          } else {
-            pending.reject(err);
-          }
-        }
+    // 使用 fetch + ReadableStream 處理 SSE
+    fetch(`${getBaseUrl()}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+    }).then(response => {
+      if (!response.ok) {
+        reject(new Error(`HTTP ${response.status}`));
+        return;
       }
-    })();
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalContent = '';
+
+      function processChunk() {
+        reader.read().then(({ done, value }) => {
+          if (done) {
+            resolve(finalContent);
+            return;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+
+          // Parse SSE events from buffer
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+          let currentEvent = '';
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6);
+              try {
+                const data = JSON.parse(dataStr);
+
+                switch (currentEvent) {
+                  case 'delta':
+                    if (data.content && onDelta) {
+                      onDelta(data.content);
+                    }
+                    break;
+                  case 'message':
+                    finalContent = data.content || '';
+                    break;
+                  case 'tool':
+                    if (onTool) onTool(data);
+                    break;
+                  case 'error':
+                    reject(new Error(data.message));
+                    return;
+                  case 'done':
+                    resolve(finalContent);
+                    return;
+                }
+              } catch {
+                // Ignore malformed JSON
+              }
+            }
+          }
+
+          processChunk();
+        }).catch(reject);
+      }
+
+      processChunk();
+    }).catch(reject);
   });
 }
 
@@ -373,11 +342,7 @@ function onConnectionChange(callback) {
   }
 
   connectionListeners.add(callback);
-
-  // Return unsubscribe function
-  return () => {
-    connectionListeners.delete(callback);
-  };
+  return () => connectionListeners.delete(callback);
 }
 
 // ============================================
@@ -392,5 +357,6 @@ export {
   connect,
   disconnect,
   sendMessage,
+  sendMessageStreaming,
   onConnectionChange
 };

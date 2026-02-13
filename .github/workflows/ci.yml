@@ -22,16 +22,16 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: "npm"
-          cache-dependency-path: "scripts/github-copilot-proxy/package-lock.json"
+          cache-dependency-path: "scripts/copilot-bridge/package-lock.json"
 
       - name: Install dependencies
-        working-directory: ./scripts/github-copilot-proxy
+        working-directory: ./scripts/copilot-bridge
         run: npm ci
 
       - name: Build
-        working-directory: ./scripts/github-copilot-proxy
+        working-directory: ./scripts/copilot-bridge
         run: npm run build --if-present
 
       - name: Test
-        working-directory: ./scripts/github-copilot-proxy
+        working-directory: ./scripts/copilot-bridge
         run: npm test --if-present

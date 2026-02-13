@@ -16,7 +16,7 @@
 
 - **🎯 Dual-Mode Architecture**
   - **iframe Mode**: Directly embeds GitHub Copilot web interface (requires GitHub login)
-  - **SDK Mode**: Connects to Copilot API via local proxy server (under development)
+  - **SDK Mode**: Connects to Copilot CLI via official `@github/copilot-sdk` bridge server
 - **📝 Rules Management**: Customize AI behavior rules with import/export and template support
 - **🧠 Memory Bank**: Store tasks, notes, and references with one-click send to VS Code
 - **📋 Page Capture**: Floating bottom button to capture current page's title, content, and code blocks
@@ -97,7 +97,7 @@ SidePilot/
 │       └── vscode-connector.js   # VS Code integration
 │
 ├── scripts/
-│   ├── github-copilot-proxy/  # OpenAI-compatible Proxy Server
+│   ├── copilot-bridge/        # Copilot CLI SDK Bridge Server
 │   │   ├── SETUP.md           # Detailed setup guide
 │   │   ├── src/
 │   │   │   ├── server.ts      # Express main program

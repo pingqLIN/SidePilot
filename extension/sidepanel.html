@@ -8,14 +8,6 @@
   </head>
   <body>
     <div class="container">
-      <!-- 工具列：僅保留飛行員 ICON + APP 名稱 -->
-      <header class="toolbar">
-        <div class="toolbar-brand">
-          <img src="icons/icon48.png" class="pilot-icon" alt="SidePilot Logo">
-          <span>SidePilot</span>
-        </div>
-      </header>
-
       <!-- Tab Navigation -->
       <nav class="tab-bar">
         <button class="tab active" data-tab="copilot">
@@ -110,21 +102,6 @@
           <div class="capture-panel-content" id="captureContent">
             <div class="capture-loading">載入中...</div>
           </div>
-
-          <div class="capture-panel-footer">
-            <button class="btn btn-primary btn-full" id="copyAllBtn">
-              <svg viewBox="0 0 16 16" fill="currentColor">
-                <path
-                  d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"
-                />
-                <path
-                  d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"
-                />
-              </svg>
-              複製全部內容
-            </button>
-            <div class="capture-hint">複製後可直接貼到 Copilot 對話中</div>
-          </div>
         </div>
       </div>
 
@@ -216,74 +193,51 @@
       <!-- Toast 通知 -->
       <div class="toast" id="toast"></div>
 
+      <!-- Intro Video Container -->
+      <div id="introContainer" class="intro-container hidden">
+        <video id="introVideo" class="intro-video" playsinline muted>
+          <source src="assets/intro.mp4" type="video/mp4">
+        </video>
+        <button id="skipIntroBtn" class="skip-intro-btn">跳過</button>
+      </div>
+
       <!-- 首次使用提示 -->
       <div class="welcome-overlay hidden" id="welcomeOverlay">
-        <div class="welcome-card welcome-card-extended">
-          <div class="welcome-icon">
-            <img src="icons/icon128.png" class="welcome-logo" alt="SidePilot Logo">
+        <div class="welcome-card">
+          <div class="welcome-header">
+            <img src="icons/icon128.png" class="welcome-logo" alt="SidePilot">
+            <h2>SidePilot</h2>
+            <p class="welcome-tagline">在側邊欄使用 GitHub Copilot</p>
           </div>
-          <h2>歡迎使用 SidePilot</h2>
-          <ul class="welcome-features">
-            <li>✅ 側邊面板固定顯示，瀏覽網頁不中斷</li>
-            <li>✅ 一鍵擷取頁面內容，提供給 Copilot 參考</li>
-            <li>✅ 支援程式碼區塊、標題結構擷取</li>
-          </ul>
-          <div class="welcome-notice">
-            <strong>⚡ 使用方式：</strong>
-            <p>本擴充功能透過內嵌框架顯示 GitHub Copilot 官方網頁，您需要使用自己的 GitHub 帳號登入。所有對話直接與 GitHub 進行，本擴充功能不涉及 API 代理或中間伺服器。</p>
+
+          <div class="welcome-info">
+            <p>透過內嵌框架直接連接 GitHub Copilot，需要使用自己的帳號登入。</p>
+            <p class="welcome-privacy-note">🔒 所有資料僅在本地處理，不會上傳至第三方。</p>
           </div>
-          <div class="welcome-privacy">
-            <strong>🔒 隱私說明：</strong>
-            <p>頁面擷取功能僅在本地處理資料，不會上傳任何內容到第三方伺服器。</p>
-          </div>
-          
-          <!-- 法律與合規警示 -->
-          <div class="welcome-legal-warning">
-            <strong>⚠️ 重要法律聲明：</strong>
-            <div class="legal-content">
-              <p><strong>本擴充功能處於法律灰色地帶，使用前請詳閱：</strong></p>
-              
-              <div class="legal-section">
-                <span class="legal-label">1. 安全標頭繞過</span>
-                <p>本擴充功能透過移除 <code>X-Frame-Options</code> 和 <code>Content-Security-Policy</code> 標頭來將 GitHub Copilot 嵌入 iframe。此技術繞過了 GitHub 設定的安全機制，<strong>可能違反 GitHub 服務條款第 H 條（API 條款）</strong>中關於濫用或過度請求的規定。</p>
-              </div>
-              
-              <div class="legal-section">
-                <span class="legal-label">2. 非官方整合</span>
-                <p>SidePilot <strong>並非</strong> GitHub 官方授權或認可的擴充功能。GitHub Copilot 服務條款明確規定使用者應透過官方 IDE 擴充功能或 GitHub.com 存取服務。以非預期方式嵌入可能被視為違反使用條款。</p>
-              </div>
-              
-              <div class="legal-section">
-                <span class="legal-label">3. 帳號風險</span>
-                <p>使用本擴充功能可能導致您的 <strong>GitHub 帳號被暫停或終止</strong>。根據 GitHub 服務條款第 L 條，GitHub 保留在任何時候以任何理由終止帳號的權利，包括違反服務條款的行為。</p>
-              </div>
-              
-              <div class="legal-section">
-                <span class="legal-label">4. 訂閱條款</span>
-                <p>您必須擁有<strong>有效的 GitHub Copilot 訂閱</strong>才能使用此功能。本擴充功能不繞過付費機制，但以非官方方式存取付費服務仍可能違反訂閱條款。</p>
-              </div>
-              
-              <div class="legal-section">
-                <span class="legal-label">5. 免責聲明</span>
-                <p>本擴充功能的開發者<strong>不承擔</strong>因使用本軟體而導致的任何直接、間接、附帶或後果性損害，包括但不限於帳號終止、訂閱取消或法律訴訟。</p>
-              </div>
-              
-              <p class="legal-summary"><strong>繼續使用即表示您：</strong></p>
-              <ul class="legal-acknowledgment">
-                <li>理解並接受上述風險</li>
-                <li>確認擁有有效的 GitHub Copilot 訂閱</li>
-                <li>同意自行承擔所有法律與帳號安全責任</li>
-                <li>放棄對開發者提出任何索賠的權利</li>
+
+          <details class="welcome-legal-compact">
+            <summary>⚠️ 使用風險與免責聲明</summary>
+            <div class="legal-compact-content">
+              <ul>
+                <li>本擴充功能繞過安全標頭嵌入 Copilot，<strong>可能違反 GitHub 服務條款</strong></li>
+                <li>非 GitHub 官方授權，使用可能導致<strong>帳號被暫停或終止</strong></li>
+                <li>需擁有有效的 GitHub Copilot 訂閱</li>
+                <li>開發者<strong>不承擔</strong>任何因使用而導致的損害</li>
               </ul>
             </div>
+          </details>
+
+          <div class="welcome-checkbox-container">
+            <input type="checkbox" id="welcomeSuppressCheckbox">
+            <label for="welcomeSuppressCheckbox">下次不再顯示</label>
           </div>
-          
+
           <div class="welcome-actions">
-            <button class="btn btn-secondary btn-full" id="welcomeDeclineBtn">
-              我不同意，關閉擴充功能
-            </button>
             <button class="btn btn-primary btn-full" id="welcomeCloseBtn">
-              我已閱讀並接受風險，開始使用
+              我了解風險，開始使用
+            </button>
+            <button class="btn btn-text" id="welcomeDeclineBtn">
+              不同意，關閉
             </button>
           </div>
         </div>

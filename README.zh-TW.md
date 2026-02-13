@@ -50,29 +50,22 @@
 
 ## 🔧 SDK 模式設定（選用）
 
-SDK 模式需要本地 Proxy Server 將 Copilot API 轉換為 OpenAI 相容格式。
+SDK 模式透過官方 `@github/copilot-sdk` 連接 GitHub Copilot CLI，需要啟動輕量 bridge server。
 
-### 啟動 Proxy Server
+### 啟動 Bridge Server
 
 ```powershell
-# 1. 進入 proxy server 目錄
-cd scripts/github-copilot-proxy
+# 1. 進入 bridge server 目錄
+cd scripts/copilot-bridge
 
 # 2. 安裝依賴
 npm install
 
-# 3. 設定 GitHub Copilot Token（詳見 SETUP.md）
-# 推薦使用 OAuth Device Flow:
-gh auth login
-gh api /copilot_internal/v2/token --jq '.token' > .env-token
-echo "COPILOT_TOKEN=$(cat .env-token)" > .env
-echo "PORT=3000" >> .env
-
-# 4. 啟動 server
+# 3. 啟動 server
 npm run dev
 ```
 
-完整設定教學請參考 [scripts/github-copilot-proxy/SETUP.md](scripts/github-copilot-proxy/SETUP.md)
+完整設定教學請參考 [scripts/copilot-bridge/README.md](scripts/copilot-bridge/README.md)
 
 ---
 
@@ -97,13 +90,11 @@ SidePilot/
 │       └── vscode-connector.js   # VS Code 整合
 │
 ├── scripts/
-│   ├── github-copilot-proxy/  # OpenAI-compatible Proxy Server
-│   │   ├── SETUP.md           # 詳細設定教學
+│   ├── copilot-bridge/        # Copilot CLI SDK Bridge Server
+│   │   ├── README.md          # 設定教學
 │   │   ├── src/
-│   │   │   ├── server.ts      # Express 主程式
-│   │   │   ├── routes/        # API 路由
-│   │   │   ├── services/      # Copilot API 服務
-│   │   │   └── utils/         # 訊息格式轉換
+│   │   │   ├── server.ts      # Express + SSE streaming
+│   │   │   └── session-manager.ts  # SDK session 生命週期
 │   │   └── package.json
 │   │
 │   └── tests/                 # 單元測試（Vanilla JS）
@@ -142,7 +133,7 @@ start chrome "file:///C:/Dev/Projects/SidePilot/scripts/tests/run-tests.html"
 ### 1️⃣ Copilot Tab
 
 - **iframe 模式**（預設）：直接嵌入 `github.com/copilot`
-- **SDK 模式**（需啟動 proxy）：自動偵測 `localhost:3000` 並切換
+- **SDK 模式**（需啟動 bridge server）：透過官方 SDK 連接 Copilot CLI
 - **Mode Badge**：tab-bar 右側顯示當前模式（SDK=綠色 / iframe=藍色）
 - **浮動擷取按鈕**：底部中央的擷取按鈕，一鍵擷取當前頁面內容
 
@@ -186,8 +177,8 @@ start chrome "file:///C:/Dev/Projects/SidePilot/scripts/tests/run-tests.html"
 
 ### 🚧 進行中（Phase 2: SDK 模式）
 
-- [ ] Proxy Server 實測（需 GitHub Copilot Token）
-- [ ] 實作 SDK Chat UI（取代 iframe）
+- [x] 官方 SDK Bridge Server（`@github/copilot-sdk`）
+- [x] SDK Chat UI + Streaming 支援
 - [ ] 對話歷史管理
 - [ ] 手動模式切換 UI
 
@@ -222,7 +213,7 @@ MIT License - 詳見 [LICENSE](LICENSE) 檔案
 ## 🙏 致謝
 
 - **GitHub Copilot** - AI 核心引擎
-- **[BjornMelin/github-copilot-proxy](https://github.com/BjornMelin/github-copilot-proxy)** - Proxy Server 基礎架構
+- **[@github/copilot-sdk](https://github.com/github/copilot-sdk)** - Official Copilot CLI SDK
 - **Chrome Extensions API** - MV3 平台支援
 
 ---
@@ -233,4 +224,4 @@ MIT License - 詳見 [LICENSE](LICENSE) 檔案
 
 ---
 
-_最後更新: 2026-02-11_ <!-- last updated -->
+_最後更新: 2026-02-13_ <!-- last updated -->

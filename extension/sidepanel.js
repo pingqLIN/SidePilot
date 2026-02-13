@@ -10,6 +10,9 @@ const FRAME_LOAD_TIMEOUT = 15000;
 
 const state = {
   currentPageContent: null,
+  currentPageScreenshot: null,
+  currentPartialScreenshot: null,
+  currentPageError: null,
   isCapturePanelOpen: false,
   frameLoaded: false,
   loadTimeout: null,
@@ -39,13 +42,18 @@ function init() {
   dom.capturePanel = document.getElementById('capturePanel');
   dom.captureContent = document.getElementById('captureContent');
   dom.closeCaptureBtn = document.getElementById('closeCaptureBtn');
-  dom.copyAllBtn = document.getElementById('copyAllBtn');
   dom.retryBtn = document.getElementById('retryBtn');
   dom.openWindowBtn = document.getElementById('openWindowBtn');
   dom.toast = document.getElementById('toast');
   dom.welcomeOverlay = document.getElementById('welcomeOverlay');
   dom.welcomeCloseBtn = document.getElementById('welcomeCloseBtn');
   dom.welcomeDeclineBtn = document.getElementById('welcomeDeclineBtn');
+  dom.welcomeSuppressCheckbox = document.getElementById('welcomeSuppressCheckbox');
+
+  // Intro Video
+  dom.introContainer = document.getElementById('introContainer');
+  dom.introVideo = document.getElementById('introVideo');
+  dom.skipIntroBtn = document.getElementById('skipIntroBtn');
 
   // Tab navigation
   dom.tabBar = document.querySelector('.tab-bar');
@@ -95,8 +103,8 @@ function init() {
 
    setupEventListeners();
    setupFrameLoadDetection();
-   checkFirstTimeUser();
    loadCurrentPageInfo();
+   checkIntroVideo();
  
    // Detect mode on startup (non-blocking)
    detectModeOnStartup();
@@ -466,7 +474,7 @@ function setupEventListeners() {
 
   // 擷取面板
   dom.closeCaptureBtn?.addEventListener('click', closeCapturePanel);
-  dom.copyAllBtn?.addEventListener('click', copyAllContent);
+  dom.captureContent?.addEventListener('click', handleCaptureContentClick);
 
   // 錯誤處理
   dom.retryBtn?.addEventListener('click', refreshFrame);
@@ -626,18 +634,57 @@ function openCopilotWindow() {
 // 首次使用者檢查
 // ============================================
 
-function checkFirstTimeUser() {
+function checkIntroVideo() {
   // 檢查是否已拒絕過
   const declined = localStorage.getItem(STORAGE_KEY_DECLINED);
   if (declined) {
     showDeclinedState();
     return;
   }
+
+  const introPlayed = localStorage.getItem('intro_played');
   
-  // 檢查是否已接受過
-  const welcomed = localStorage.getItem(STORAGE_KEY);
-  if (!welcomed && dom.welcomeOverlay) {
+  if (!introPlayed && dom.introContainer && dom.introVideo) {
+    // Play video
+    dom.introContainer.classList.remove('hidden');
+    dom.introVideo.play().catch(err => {
+        console.error("Video play failed", err);
+        finishIntro();
+    });
+    
+    dom.introVideo.onended = finishIntro;
+    dom.skipIntroBtn.onclick = finishIntro;
+  } else {
+    checkWarningStatus();
+  }
+}
+
+function finishIntro() {
+  if (!dom.introContainer) return;
+  
+  dom.introContainer.classList.add('fade-out');
+  
+  // Stop video to save resources
+  if (dom.introVideo) {
+    dom.introVideo.pause();
+  }
+
+  setTimeout(() => {
+    dom.introContainer.classList.add('hidden');
+    localStorage.setItem('intro_played', 'true');
+    checkWarningStatus();
+  }, 1000);
+}
+
+function checkWarningStatus() {
+  const isSuppressed = localStorage.getItem('copilot_warning_suppressed');
+  
+  if (!isSuppressed && dom.welcomeOverlay) {
     dom.welcomeOverlay.classList.remove('hidden');
+    // 觸發淡入動畫
+    requestAnimationFrame(() => {
+      dom.welcomeOverlay.classList.add('visible');
+    });
   }
 }
 
@@ -648,6 +695,7 @@ function showDeclinedState() {
   }
   
   dom.loadingOverlay?.classList.add('hidden');
+  dom.welcomeOverlay?.classList.remove('visible');
   dom.welcomeOverlay?.classList.add('hidden');
   
   if (dom.errorOverlay) {
@@ -669,7 +717,16 @@ function showDeclinedState() {
 
 function closeWelcome() {
   localStorage.setItem(STORAGE_KEY, 'true');
-  dom.welcomeOverlay?.classList.add('hidden');
+  
+  if (dom.welcomeSuppressCheckbox && dom.welcomeSuppressCheckbox.checked) {
+    localStorage.setItem('copilot_warning_suppressed', 'true');
+  }
+
+  // 先淡出，再隱藏
+  dom.welcomeOverlay?.classList.remove('visible');
+  setTimeout(() => {
+    dom.welcomeOverlay?.classList.add('hidden');
+  }, 300);
 }
 
 function declineAndClose() {
@@ -734,111 +791,288 @@ function closeCapturePanel() {
 async function loadPageContent() {
   if (!dom.captureContent) return;
 
-  dom.captureContent.innerHTML = '<div class="capture-loading">載入中...</div>';
+  renderCaptureLoading();
+  state.currentPageError = null;
+  state.currentPartialScreenshot = null;
 
+  const [pageResult, screenshotResult] = await Promise.all([
+    requestPageContent(),
+    requestVisibleScreenshot()
+  ]);
+
+  if (pageResult?.success && pageResult.content) {
+    state.currentPageContent = pageResult.content;
+    state.currentPageError = null;
+    updatePageInfo(pageResult.title, pageResult.url);
+  } else {
+    state.currentPageContent = null;
+    state.currentPageError = pageResult?.error || '無法取得頁面內容';
+  }
+
+  if (screenshotResult?.success && screenshotResult.dataUrl) {
+    state.currentPageScreenshot = screenshotResult.dataUrl;
+  } else {
+    state.currentPageScreenshot = null;
+  }
+
+  renderCaptureContent();
+}
+
+function renderCaptureLoading() {
+  if (!dom.captureContent) return;
+  dom.captureContent.innerHTML = `
+    <div class="capture-grid">
+      ${['A', 'B', 'C'].map(() => `
+        <div class="capture-card loading">
+          <div class="capture-card-header">
+            <div class="capture-card-title">載入中</div>
+            <div class="capture-card-subtitle">請稍候</div>
+          </div>
+          <div class="capture-card-body">
+            <div class="capture-loading">載入中...</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderCaptureContent() {
+  if (!dom.captureContent) return;
+
+  const content = state.currentPageContent;
+  const previewText = buildTextPreview(content);
+  const statsText = buildTextStats(content);
+  const title = content?.title ? escapeHtml(content.title) : '無標題';
+  const url = content?.url ? escapeHtml(content.url) : '';
+  const descriptionRaw = content?.meta?.description || content?.meta?.['og:description'] || '';
+  const description = descriptionRaw ? escapeHtml(descriptionRaw) : '';
+
+  const textBodyHtml = content
+    ? `
+        <div class="capture-text-meta">
+          <div class="capture-meta-row">
+            <span class="capture-meta-label">標題</span>
+            <span class="capture-meta-value">${title}</span>
+          </div>
+          ${url ? `
+          <div class="capture-meta-row">
+            <span class="capture-meta-label">網址</span>
+            <span class="capture-meta-value">${url}</span>
+          </div>` : ''}
+          ${description ? `
+          <div class="capture-meta-row">
+            <span class="capture-meta-label">描述</span>
+            <span class="capture-meta-value">${description}</span>
+          </div>` : ''}
+        </div>
+        <div class="capture-text-preview">${escapeHtml(previewText)}</div>
+      `
+    : `<div class="capture-error">${escapeHtml(state.currentPageError || '沒有可用的內容')}</div>`;
+
+  const fullShot = state.currentPageScreenshot;
+  const partialShot = state.currentPartialScreenshot;
+
+  const fullThumbAction = fullShot ? 'open-full' : 'refresh-full';
+  const partialThumbAction = partialShot ? 'open-partial' : 'capture-partial';
+
+  const fullThumbHtml = fullShot
+    ? `<img src="${escapeAttr(fullShot)}" alt="頁面截圖">
+       <div class="capture-thumb-label">可見範圍</div>
+       <div class="capture-thumb-action" data-action="refresh-full">重新擷取</div>`
+    : `<div>點擊擷取頁面縮圖</div>`;
+
+  const partialThumbHtml = partialShot
+    ? `<img src="${escapeAttr(partialShot)}" alt="部分截圖">
+       <div class="capture-thumb-label">選取範圍</div>
+       <div class="capture-thumb-action" data-action="capture-partial">重新選取</div>`
+    : `<div>點擊選取範圍</div>`;
+
+  dom.captureContent.innerHTML = `
+    <div class="capture-grid">
+      <div class="capture-card">
+        <div class="capture-card-header">
+          <div class="capture-card-title">A 文字擷取</div>
+          <div class="capture-card-subtitle">${statsText}</div>
+        </div>
+        <div class="capture-card-body">
+          ${textBodyHtml}
+        </div>
+        <div class="capture-card-actions">
+          <button class="btn-soft" data-action="copy-text">複製文字</button>
+          <button class="btn-soft" data-action="copy-structured">複製結構化</button>
+        </div>
+      </div>
+
+      <div class="capture-card">
+        <div class="capture-card-header">
+          <div class="capture-card-title">B 頁面截圖</div>
+          <div class="capture-card-subtitle">自動擷取可見範圍</div>
+        </div>
+        <div class="capture-card-body">
+          <div class="capture-thumb" data-action="${fullThumbAction}">${fullThumbHtml}</div>
+        </div>
+        <div class="capture-card-actions">
+          <button class="btn-soft" data-action="refresh-full">重新擷取</button>
+          <button class="btn-soft" data-action="download-full">下載截圖</button>
+        </div>
+      </div>
+
+      <div class="capture-card">
+        <div class="capture-card-header">
+          <div class="capture-card-title">C 部分截圖</div>
+          <div class="capture-card-subtitle">拖曳選取區域</div>
+        </div>
+        <div class="capture-card-body">
+          <div class="capture-thumb" data-action="${partialThumbAction}">${partialThumbHtml}</div>
+        </div>
+        <div class="capture-card-actions">
+          <button class="btn-soft" data-action="capture-partial">選取範圍</button>
+          <button class="btn-soft" data-action="download-partial">下載截圖</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function buildTextPreview(content) {
+  if (!content) return '';
+  const paragraphs = Array.isArray(content.paragraphs) && content.paragraphs.length
+    ? content.paragraphs
+    : (content.text || '').split(/\n{2,}/g).filter(Boolean);
+  const preview = paragraphs.slice(0, 3).join('\n\n').trim();
+  return preview || content.text || '';
+}
+
+function buildTextStats(content) {
+  if (!content) return '尚無文字';
+  const parts = [];
+  if (content.charCount) {
+    parts.push(`${content.charCount} 字`);
+  } else if (content.wordCount) {
+    parts.push(`${content.wordCount} 字`);
+  }
+  if (content.paragraphs?.length) parts.push(`${content.paragraphs.length} 段`);
+  if (content.headings?.length) parts.push(`${content.headings.length} 標題`);
+  if (content.codeBlocks?.length) parts.push(`${content.codeBlocks.length} 程式碼`);
+  return parts.length > 0 ? parts.join(' · ') : '尚無文字';
+}
+
+function handleCaptureContentClick(event) {
+  const target = event.target.closest('[data-action]');
+  if (!target) return;
+
+  const action = target.dataset.action;
+  switch (action) {
+    case 'copy-text':
+      copyAllContent();
+      break;
+    case 'copy-structured':
+      copyStructuredContent();
+      break;
+    case 'refresh-full':
+      refreshFullScreenshot();
+      break;
+    case 'capture-partial':
+      refreshPartialScreenshot();
+      break;
+    case 'download-full':
+      downloadScreenshot(state.currentPageScreenshot, 'sidepilot-page.png');
+      break;
+    case 'download-partial':
+      downloadScreenshot(state.currentPartialScreenshot, 'sidepilot-partial.png');
+      break;
+    case 'open-full':
+      openScreenshotInTab(state.currentPageScreenshot);
+      break;
+    case 'open-partial':
+      openScreenshotInTab(state.currentPartialScreenshot);
+      break;
+    default:
+      break;
+  }
+}
+
+function requestPageContent() {
   return new Promise(resolve => {
     chrome.runtime.sendMessage({ action: 'getPageContent' }, (response) => {
       if (chrome.runtime.lastError) {
-        dom.captureContent.innerHTML = `<div class="capture-error">錯誤: ${escapeHtml(chrome.runtime.lastError.message)}</div>`;
-        resolve();
+        resolve({ success: false, error: chrome.runtime.lastError.message });
         return;
       }
-
-      if (response?.success && response.content) {
-        state.currentPageContent = response.content;
-        renderCaptureContent(response.content);
-        updatePageInfo(response.title, response.url);
-      } else {
-        const errorMsg = response?.error || '無法取得頁面內容';
-        dom.captureContent.innerHTML = `<div class="capture-error">${escapeHtml(errorMsg)}</div>`;
-        state.currentPageContent = null;
-      }
-      resolve();
+      resolve(response || { success: false, error: '無法取得頁面內容' });
     });
   });
 }
 
-function renderCaptureContent(content) {
-  if (!content || !dom.captureContent) {
-    dom.captureContent.innerHTML = '<div class="capture-empty">沒有可用的內容</div>';
+function requestVisibleScreenshot() {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: 'captureVisibleScreenshot' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { success: false, error: '無法擷取截圖' });
+    });
+  });
+}
+
+function requestPartialScreenshot() {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: 'capturePartialScreenshot' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { success: false, error: '無法擷取部分截圖' });
+    });
+  });
+}
+
+async function refreshFullScreenshot() {
+  showToast('擷取頁面截圖中...');
+  const result = await requestVisibleScreenshot();
+  if (result?.success && result.dataUrl) {
+    state.currentPageScreenshot = result.dataUrl;
+    renderCaptureContent();
+    showToast('頁面截圖已更新');
+  } else {
+    showToast(result?.error || '擷取失敗', 'error');
+  }
+}
+
+async function refreshPartialScreenshot() {
+  showToast('請在頁面上拖曳選取區域...');
+  const result = await requestPartialScreenshot();
+  if (result?.success && result.dataUrl) {
+    state.currentPartialScreenshot = result.dataUrl;
+    renderCaptureContent();
+    showToast('部分截圖已更新');
+  } else if (result?.error) {
+    showToast(result.error, 'error');
+  }
+}
+
+function openScreenshotInTab(dataUrl) {
+  if (!dataUrl) {
+    showToast('尚無截圖可開啟', 'error');
     return;
   }
-
-  const sections = [];
-
-  // 標題
-  if (content.title) {
-    sections.push(createCaptureItem('📌 頁面標題', escapeHtml(content.title)));
-  }
-
-  // URL
-  if (content.url) {
-    sections.push(createCaptureItem('🔗 網址', `<code>${escapeHtml(content.url)}</code>`, 'url'));
-  }
-
-  // 標題結構
-  if (content.headings?.length > 0) {
-    const headingsHtml = content.headings.slice(0, 10).map(h => {
-      const level = parseInt(h.level.charAt(1)) || 1;
-      const indent = '　'.repeat(level - 1);
-      return `${indent}${escapeHtml(h.level)}: ${escapeHtml(h.text)}`;
-    }).join('<br>');
-
-    sections.push(createCaptureItem(`📑 標題結構 (${content.headings.length})`, headingsHtml));
-  }
-
-  // 程式碼區塊
-  if (content.codeBlocks?.length > 0) {
-    content.codeBlocks.slice(0, 3).forEach((block, i) => {
-      const code = typeof block === 'string' ? block : block.code;
-      const lang = typeof block === 'object' ? block.language : 'plaintext';
-      const preview = code.substring(0, 500) + (code.length > 500 ? '...' : '');
-      sections.push(createCaptureItem(
-        `💻 程式碼 ${i + 1} (${lang})`,
-        `<code>${escapeHtml(preview)}</code>`,
-        'code',
-        code
-      ));
-    });
-  }
-
-  // 內容摘要
-  if (content.text) {
-    const summary = content.text.substring(0, 800);
-    const hasMore = content.text.length > 800;
-    sections.push(createCaptureItem(
-      '📝 內容摘要',
-      `<div class="truncated">${escapeHtml(summary)}${hasMore ? '...' : ''}</div>`
-    ));
-  }
-
-  dom.captureContent.innerHTML = sections.length > 0
-    ? sections.join('')
-    : '<div class="capture-empty">此頁面沒有可擷取的內容</div>';
-
-  // 綁定複製按鈕事件
-  dom.captureContent.querySelectorAll('[data-copy]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const text = e.target.dataset.copy;
-      copyToClipboard(text, '已複製到剪貼簿');
-    });
-  });
+  chrome.tabs.create({ url: dataUrl });
 }
 
-function createCaptureItem(label, valueHtml, type = 'text', copyData = null) {
-  const copyBtn = copyData
-    ? `<button class="capture-item-action" data-copy="${escapeAttr(copyData)}">複製</button>`
-    : '';
-
-  return `
-    <div class="capture-item">
-      <div class="capture-item-header">
-        <span class="capture-item-label">${label}</span>
-        ${copyBtn}
-      </div>
-      <div class="capture-item-value">${valueHtml}</div>
-    </div>
-  `;
+function downloadScreenshot(dataUrl, filename) {
+  if (!dataUrl) {
+    showToast('尚無截圖可下載', 'error');
+    return;
+  }
+  chrome.downloads.download({ url: dataUrl, filename, saveAs: true }, () => {
+    if (chrome.runtime.lastError) {
+      showToast('下載失敗: ' + chrome.runtime.lastError.message, 'error');
+    } else {
+      showToast('已開始下載');
+    }
+  });
 }
 
 // ============================================
@@ -852,30 +1086,34 @@ async function copyAllContent() {
   }
 
   const markdown = formatAsMarkdown(state.currentPageContent);
-  const success = await copyToClipboard(markdown, '全部內容已複製，可貼到 Copilot 對話中');
+  await copyToClipboard(markdown, '文字摘要已複製，可貼到 Copilot 對話中');
+}
 
-  if (success && dom.copyAllBtn) {
-    const originalHtml = dom.copyAllBtn.innerHTML;
-    dom.copyAllBtn.innerHTML = '✓ 已複製！';
-    dom.copyAllBtn.disabled = true;
-
-    setTimeout(() => {
-      dom.copyAllBtn.innerHTML = originalHtml;
-      dom.copyAllBtn.disabled = false;
-    }, 2000);
+async function copyStructuredContent() {
+  if (!state.currentPageContent) {
+    showToast('沒有可複製的內容', 'error');
+    return;
   }
+
+  const structured = formatAsStructured(state.currentPageContent);
+  await copyToClipboard(structured, '結構化資料已複製');
 }
 
 function formatAsMarkdown(content) {
   const lines = [];
 
-  lines.push('# 頁面內容摘要\n');
+  lines.push('# 頁面內容摘要');
+  lines.push('');
 
   if (content.title) {
     lines.push(`**標題:** ${content.title}`);
   }
   if (content.url) {
     lines.push(`**網址:** ${content.url}`);
+  }
+  const description = content.meta?.description || content.meta?.['og:description'];
+  if (description) {
+    lines.push(`**描述:** ${description}`);
   }
   lines.push('');
 
@@ -901,12 +1139,29 @@ function formatAsMarkdown(content) {
     lines.push('');
   }
 
-  if (content.text) {
+  if (content.paragraphs?.length > 0) {
+    lines.push('## 主要內容');
+    lines.push(content.paragraphs.join('\n\n').substring(0, 5000));
+  } else if (content.text) {
     lines.push('## 主要內容');
     lines.push(content.text.substring(0, 5000));
   }
 
   return lines.join('\n');
+}
+
+function formatAsStructured(content) {
+  const payload = {
+    title: content.title || '',
+    url: content.url || '',
+    meta: content.meta || {},
+    headings: content.headings || [],
+    paragraphs: content.paragraphs || [],
+    codeBlocks: content.codeBlocks || [],
+    wordCount: content.wordCount || 0,
+    charCount: content.charCount || 0
+  };
+  return JSON.stringify(payload, null, 2);
 }
 
 async function copyToClipboard(text, successMessage) {

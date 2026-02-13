@@ -65,6 +65,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleGetSelectedText(sendResponse);
       return true;
 
+    case 'captureVisibleScreenshot':
+      handleCaptureVisibleScreenshot(sendResponse);
+      return true;
+
+    case 'capturePartialScreenshot':
+      handleCapturePartialScreenshot(sendResponse);
+      return true;
+
     case 'openCopilotWindow':
       handleOpenCopilotWindow(sendResponse);
       return true;
@@ -256,6 +264,224 @@ async function handleGetSelectedText(sendResponse) {
   }
 }
 
+// 擷取可見範圍截圖
+async function handleCaptureVisibleScreenshot(sendResponse) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab || isRestrictedUrl(tab.url)) {
+      sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
+      return;
+    }
+
+    const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+    sendResponse({ success: true, dataUrl });
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// 擷取部分截圖（選取區域）
+async function handleCapturePartialScreenshot(sendResponse) {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+
+    if (!tab || isRestrictedUrl(tab.url)) {
+      sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
+      return;
+    }
+
+    const selectionResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: selectCaptureRegion
+    });
+
+    const region = selectionResults?.[0]?.result;
+    if (!region) {
+      sendResponse({ success: false, error: '已取消擷取' });
+      return;
+    }
+
+    const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+    const croppedUrl = await cropImageDataUrl(dataUrl, region);
+    sendResponse({ success: true, dataUrl: croppedUrl });
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+function captureVisibleTabDataUrl(windowId) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.captureVisibleTab(windowId, { format: 'png' }, (dataUrl) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(dataUrl);
+    });
+  });
+}
+
+async function cropImageDataUrl(dataUrl, region) {
+  if (!dataUrl || !region || typeof OffscreenCanvas === 'undefined') {
+    return dataUrl;
+  }
+
+  const scale = region.devicePixelRatio || 1;
+  const sx = Math.max(0, Math.round(region.x * scale));
+  const sy = Math.max(0, Math.round(region.y * scale));
+  const sw = Math.max(1, Math.round(region.width * scale));
+  const sh = Math.max(1, Math.round(region.height * scale));
+
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const bitmap = await createImageBitmap(blob);
+
+  const maxWidth = Math.max(1, Math.min(sw, bitmap.width - sx));
+  const maxHeight = Math.max(1, Math.min(sh, bitmap.height - sy));
+
+  const canvas = new OffscreenCanvas(maxWidth, maxHeight);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, sx, sy, maxWidth, maxHeight, 0, 0, maxWidth, maxHeight);
+
+  const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
+  const buffer = await croppedBlob.arrayBuffer();
+  const base64 = arrayBufferToBase64(buffer);
+  return `data:image/png;base64,${base64}`;
+}
+
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// 注入頁面：顯示選取框並回傳選取區域
+function selectCaptureRegion() {
+  return new Promise(resolve => {
+    const existing = document.getElementById('sidepilot-capture-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sidepilot-capture-overlay';
+    overlay.style.cssText = [
+      'position:fixed',
+      'inset:0',
+      'z-index:2147483647',
+      'background:rgba(0,0,0,0.35)',
+      'cursor:crosshair'
+    ].join(';');
+
+    const hint = document.createElement('div');
+    hint.textContent = '拖曳選取區域，按 Esc 取消';
+    hint.style.cssText = [
+      'position:absolute',
+      'top:16px',
+      'left:16px',
+      'padding:6px 10px',
+      'background:rgba(13,17,23,0.85)',
+      'color:#fff',
+      'font-size:12px',
+      'border:1px solid rgba(255,255,255,0.2)',
+      'border-radius:6px'
+    ].join(';');
+
+    const box = document.createElement('div');
+    box.style.cssText = [
+      'position:absolute',
+      'border:2px solid #58a6ff',
+      'background:rgba(88,166,255,0.15)',
+      'border-radius:4px',
+      'display:none'
+    ].join(';');
+
+    overlay.appendChild(hint);
+    overlay.appendChild(box);
+    document.documentElement.appendChild(overlay);
+
+    let startX = 0;
+    let startY = 0;
+    let isDragging = false;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.userSelect = 'none';
+
+    function cleanup(result) {
+      window.removeEventListener('keydown', onKeyDown, true);
+      window.removeEventListener('mousemove', onMouseMove, true);
+      window.removeEventListener('mouseup', onMouseUp, true);
+      overlay.removeEventListener('mousedown', onMouseDown, true);
+      overlay.remove();
+      document.body.style.userSelect = previousUserSelect;
+      resolve(result);
+    }
+
+    function onKeyDown(event) {
+      if (event.key === 'Escape') {
+        cleanup(null);
+      }
+    }
+
+    function onMouseDown(event) {
+      event.preventDefault();
+      isDragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+      box.style.display = 'block';
+      box.style.left = `${startX}px`;
+      box.style.top = `${startY}px`;
+      box.style.width = '0px';
+      box.style.height = '0px';
+    }
+
+    function onMouseMove(event) {
+      if (!isDragging) return;
+      const currentX = event.clientX;
+      const currentY = event.clientY;
+      const x = Math.min(startX, currentX);
+      const y = Math.min(startY, currentY);
+      const width = Math.abs(currentX - startX);
+      const height = Math.abs(currentY - startY);
+      box.style.left = `${x}px`;
+      box.style.top = `${y}px`;
+      box.style.width = `${width}px`;
+      box.style.height = `${height}px`;
+    }
+
+    function onMouseUp(event) {
+      if (!isDragging) return;
+      isDragging = false;
+      const endX = event.clientX;
+      const endY = event.clientY;
+      const x = Math.min(startX, endX);
+      const y = Math.min(startY, endY);
+      const width = Math.abs(endX - startX);
+      const height = Math.abs(endY - startY);
+
+      if (width < 10 || height < 10) {
+        cleanup(null);
+        return;
+      }
+
+      cleanup({
+        x,
+        y,
+        width,
+        height,
+        devicePixelRatio: window.devicePixelRatio || 1
+      });
+    }
+
+    overlay.addEventListener('mousedown', onMouseDown, true);
+    window.addEventListener('mousemove', onMouseMove, true);
+    window.addEventListener('mouseup', onMouseUp, true);
+    window.addEventListener('keydown', onKeyDown, true);
+  });
+}
+
 // 開啟 Copilot 獨立視窗
 async function handleOpenCopilotWindow(sendResponse) {
   try {
@@ -291,6 +517,9 @@ function extractPageContent() {
     title: document.title || '',
     url: window.location.href,
     text: '',
+    paragraphs: [],
+    wordCount: 0,
+    charCount: 0,
     headings: [],
     codeBlocks: [],
     meta: {}
@@ -317,19 +546,52 @@ function extractPageContent() {
     const removeSelectors = [
       'script', 'style', 'nav', 'footer', 'header',
       '.sidebar', '.advertisement', '.ads', 'aside',
+      '.promo', '.sponsor', '.banner', '.cookie', '.consent',
+      '.newsletter', '.subscribe', '.share', '.social',
+      '.nav', '.menu', '.comment', '.comments', '.related',
       '[role="banner"]', '[role="navigation"]', '[role="contentinfo"]',
-      '.nav', '.menu', '.comment', '.comments'
+      '[aria-label*="advert"]', '[aria-label*="ad"]', '[id*="ad-"]', '[class*="ad-"]'
     ];
 
     removeSelectors.forEach(sel => {
       clone.querySelectorAll(sel).forEach(el => el.remove());
     });
 
-    content.text = (clone.innerText || '')
+    const noisePattern = /(ad-|ads|advert|promo|sponsor|cookie|consent|subscribe|newsletter|share|social|comment|breadcrumb|related|recommend|popup|modal|banner|toolbar|nav|footer|header)/i;
+
+    clone.querySelectorAll('*').forEach(el => {
+      const idClass = `${el.id || ''} ${el.className || ''}`;
+      if (noisePattern.test(idClass)) {
+        el.remove();
+        return;
+      }
+
+      const text = el.innerText?.trim() || '';
+      const links = el.querySelectorAll?.('a')?.length || 0;
+      if (text.length > 0 && text.length < 80 && links >= 4) {
+        el.remove();
+      }
+    });
+
+    const paragraphs = [];
+    const seenParagraphs = new Set();
+    clone.querySelectorAll('p, li').forEach(el => {
+      const text = el.innerText?.trim();
+      if (!text || text.length < 30 || text.length > 2000) return;
+      if (seenParagraphs.has(text)) return;
+      seenParagraphs.add(text);
+      paragraphs.push(text);
+    });
+
+    const cleanedText = (paragraphs.length > 0 ? paragraphs.join('\n\n') : clone.innerText || '')
       .replace(/[\t ]+/g, ' ')
       .replace(/\n{3,}/g, '\n\n')
-      .trim()
-      .substring(0, 12000);
+      .trim();
+
+    content.text = cleanedText.substring(0, 12000);
+    content.paragraphs = paragraphs.slice(0, 120);
+    content.wordCount = cleanedText ? cleanedText.split(/\s+/).length : 0;
+    content.charCount = cleanedText ? cleanedText.replace(/\s+/g, '').length : 0;
 
     // 標題結構
     document.querySelectorAll('h1, h2, h3, h4').forEach(h => {
