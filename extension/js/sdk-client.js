@@ -18,6 +18,7 @@ let initialized = false;
 let connected = false;
 let currentPort = DEFAULT_PORT;
 let currentSessionId = null;
+let currentSessionProfileKey = null;
 let healthCheckIntervalId = null;
 
 const connectionListeners = new Set();
@@ -107,6 +108,71 @@ function stopHealthCheck() {
   }
 }
 
+/**
+ * Build a deterministic key for session profile.
+ * Session profile = model + systemMessage.
+ * @param {{model?: string, systemMessage?: string}} profile
+ * @returns {string}
+ */
+function getSessionProfileKey(profile = {}) {
+  const model = typeof profile.model === 'string' ? profile.model : '';
+  const systemMessage = typeof profile.systemMessage === 'string' ? profile.systemMessage : '';
+  return `${model}::${systemMessage}`;
+}
+
+/**
+ * Create a new session with optional model/systemMessage.
+ * @param {{model?: string, systemMessage?: string}} profile
+ * @returns {Promise<string>} - sessionId
+ */
+async function createSession(profile = {}) {
+  const body = {};
+  if (profile.model) body.model = profile.model;
+  if (profile.systemMessage) body.systemMessage = profile.systemMessage;
+
+  const response = await fetch(`${getBaseUrl()}/api/sessions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  if (!data?.success || !data?.sessionId) {
+    throw new Error(data?.error || 'Failed to create session');
+  }
+
+  return data.sessionId;
+}
+
+/**
+ * Ensure we are using a session that matches the requested profile.
+ * @param {{model?: string, systemMessage?: string}} profile
+ * @returns {Promise<string|null>}
+ */
+async function ensureSession(profile = {}) {
+  const requestedKey = getSessionProfileKey(profile);
+
+  if (currentSessionId && currentSessionProfileKey === requestedKey) {
+    return currentSessionId;
+  }
+
+  try {
+    const sessionId = await createSession(profile);
+    currentSessionId = sessionId;
+    currentSessionProfileKey = requestedKey;
+    return currentSessionId;
+  } catch (err) {
+    // Fallback to legacy auto-create flow in /api/chat when session creation fails.
+    console.warn('[SDKClient] Failed to create profiled session, fallback to auto session:', err.message);
+    return currentSessionId;
+  }
+}
+
 // ============================================
 // Exported Functions
 // ============================================
@@ -143,6 +209,7 @@ function cleanup() {
   initialized = false;
   connected = false;
   currentSessionId = null;
+  currentSessionProfileKey = null;
   connectionListeners.clear();
 }
 
@@ -192,12 +259,13 @@ function disconnect() {
   stopHealthCheck();
   setConnectionState(false);
   currentSessionId = null;
+  currentSessionProfileKey = null;
 }
 
 /**
  * Send a chat message to the bridge server.
  * Returns the full response (non-streaming).
- * @param {{type?: string, content: string, model?: string}} msg
+ * @param {{type?: string, content: string, model?: string, systemMessage?: string}} msg
  * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
 async function sendMessage(msg) {
@@ -208,11 +276,16 @@ async function sendMessage(msg) {
     }
   }
 
+  const ensuredSessionId = await ensureSession({
+    model: msg.model,
+    systemMessage: msg.systemMessage,
+  });
+
   const response = await fetch(`${getBaseUrl()}/api/chat/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      sessionId: currentSessionId,
+      sessionId: ensuredSessionId || currentSessionId,
       prompt: msg.content,
       model: msg.model,
     }),
@@ -226,6 +299,10 @@ async function sendMessage(msg) {
   const data = await response.json();
   if (data.sessionId) {
     currentSessionId = data.sessionId;
+    currentSessionProfileKey = getSessionProfileKey({
+      model: msg.model,
+      systemMessage: msg.systemMessage,
+    });
   }
 
   return {
@@ -238,7 +315,7 @@ async function sendMessage(msg) {
 /**
  * Send a chat message with SSE streaming.
  * Calls onDelta for each chunk, returns final content.
- * @param {{content: string, model?: string}} msg
+ * @param {{content: string, model?: string, systemMessage?: string}} msg
  * @param {function(string): void} onDelta - Called with each text chunk
  * @param {function(object): void} [onTool] - Called with tool execution events
  * @returns {Promise<string>} - Final complete response
@@ -251,9 +328,14 @@ async function sendMessageStreaming(msg, onDelta, onTool) {
     }
   }
 
+  const ensuredSessionId = await ensureSession({
+    model: msg.model,
+    systemMessage: msg.systemMessage,
+  });
+
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({
-      sessionId: currentSessionId,
+      sessionId: ensuredSessionId || currentSessionId,
       prompt: msg.content,
       model: msg.model,
     });

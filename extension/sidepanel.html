@@ -22,7 +22,10 @@
           <span class="tab-icon">🧠</span>
           <span class="tab-label">Memory</span>
         </button>
-        <span class="mode-badge iframe" id="modeBadge">iframe</span>
+        <div class="mode-switch" id="modeSwitch" role="group" aria-label="Copilot mode">
+          <button type="button" class="mode-switch-btn active" data-mode="iframe">iframe</button>
+          <button type="button" class="mode-switch-btn" data-mode="sdk">sdk</button>
+        </div>
       </nav>
 
       <div class="tab-content active" id="copilot-tab">
@@ -71,18 +74,33 @@
             <!-- Messages will be appended here -->
           </div>
           <div class="sdk-chat-input-container">
-            <textarea 
-              id="sdkInput" 
-              class="sdk-chat-input" 
-              placeholder="Ask Copilot anything..."
-              rows="3"
-            ></textarea>
-            <button id="sdkSendBtn" class="btn btn-primary sdk-send-btn">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-              </svg>
-              Send
-            </button>
+            <div class="sdk-chat-tools">
+              <div class="sdk-chat-toggles">
+                <label class="sdk-memory-toggle" for="sdkIncludeMemory">
+                  <input type="checkbox" id="sdkIncludeMemory" checked>
+                  Include Memory in prompt
+                </label>
+                <label class="sdk-memory-toggle" for="sdkAssistantOnly">
+                  <input type="checkbox" id="sdkAssistantOnly">
+                  Only assistant block
+                </label>
+              </div>
+              <span id="sdkMemorySummary" class="sdk-memory-summary">Memory injection: on</span>
+            </div>
+            <div class="sdk-chat-input-row">
+              <textarea 
+                id="sdkInput" 
+                class="sdk-chat-input" 
+                placeholder="Ask Copilot anything..."
+                rows="3"
+              ></textarea>
+              <button id="sdkSendBtn" class="btn btn-primary sdk-send-btn">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                </svg>
+                Send
+              </button>
+            </div>
           </div>
         </div>
 

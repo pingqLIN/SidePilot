@@ -6,7 +6,34 @@
 
 const STORAGE_KEY = 'copilot_sidepanel_welcomed';
 const STORAGE_KEY_DECLINED = 'copilot_sidepanel_declined';
+const STORAGE_KEY_SDK_ASSISTANT_ONLY = 'sidepilot_sdk_assistant_only';
 const FRAME_LOAD_TIMEOUT = 15000;
+const MEMORY_PROMPT_MAX_ENTRIES = 5;
+const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
+const MEMORY_PROMPT_MAX_ENTRY_CONTENT = 700;
+const RULES_PROMPT_MAX_LENGTH = 2200;
+const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
+const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
+const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
+  `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
+  'For each response, output exactly 2 XML blocks in this order:',
+  '1) <sidepilot_packet>{valid JSON object}</sidepilot_packet>',
+  '2) <assistant_response>...</assistant_response>',
+  'The sidepilot_packet JSON must include:',
+  '- schema',
+  '- used_memory_ids (array of ids)',
+  '- used_rules (boolean)',
+  '- decision_summary (short string)',
+  '- confidence (number from 0 to 1)',
+  'Do not output chain-of-thought or extra sections outside these 2 blocks.',
+].join('\n');
+
+const MEMORY_TYPE_WEIGHT = {
+  context: 4,
+  reference: 3,
+  note: 2,
+  task: 1
+};
 
 const state = {
   currentPageContent: null,
@@ -59,13 +86,21 @@ function init() {
   dom.tabBar = document.querySelector('.tab-bar');
   dom.tabs = document.querySelectorAll('.tab');
   dom.tabContents = document.querySelectorAll('.tab-content');
-  dom.modeBadge = document.getElementById('modeBadge');
+  dom.modeSwitch = document.getElementById('modeSwitch');
+  dom.modeSwitchBtns = document.querySelectorAll('.mode-switch-btn');
 
   // SDK Chat elements
   dom.sdkChat = document.getElementById('sdkChat');
   dom.sdkMessages = document.getElementById('sdkMessages');
   dom.sdkInput = document.getElementById('sdkInput');
   dom.sdkSendBtn = document.getElementById('sdkSendBtn');
+  dom.sdkIncludeMemory = document.getElementById('sdkIncludeMemory');
+  dom.sdkAssistantOnly = document.getElementById('sdkAssistantOnly');
+  dom.sdkMemorySummary = document.getElementById('sdkMemorySummary');
+
+  if (dom.sdkAssistantOnly) {
+    dom.sdkAssistantOnly.checked = localStorage.getItem(STORAGE_KEY_SDK_ASSISTANT_ONLY) === 'true';
+  }
 
   // Rules tab
   dom.rulesEditor = document.getElementById('rulesEditor');
@@ -116,13 +151,19 @@ function init() {
 
 async function detectModeOnStartup() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: 'detectMode' });
-    if (response?.success) {
-      state.detectedMode = response.mode;
-      console.log('[SidePilot] Detected mode:', response.mode);
+    const stored = await chrome.runtime.sendMessage({ action: 'getMode' });
+    if (stored?.success && (stored.mode === 'sdk' || stored.mode === 'iframe')) {
+      state.detectedMode = stored.mode;
+      console.log('[SidePilot] Loaded mode:', stored.mode);
     } else {
-      state.detectedMode = 'iframe';
-      console.warn('[SidePilot] Mode detection failed, defaulting to iframe');
+      const detected = await chrome.runtime.sendMessage({ action: 'detectMode' });
+      if (detected?.success) {
+        state.detectedMode = detected.mode;
+        console.log('[SidePilot] Detected mode:', detected.mode);
+      } else {
+        state.detectedMode = 'iframe';
+        console.warn('[SidePilot] Mode detection failed, defaulting to iframe');
+      }
     }
     updateModeBadge();
   } catch (err) {
@@ -133,11 +174,15 @@ async function detectModeOnStartup() {
 }
 
 function updateModeBadge() {
-  if (!dom.modeBadge) return;
-  
   const mode = state.detectedMode || 'iframe';
-  dom.modeBadge.textContent = mode;
-  dom.modeBadge.className = `mode-badge ${mode}`;
+  document.body.classList.toggle('is-sdk-mode', mode === 'sdk');
+  document.body.classList.toggle('is-iframe-mode', mode !== 'sdk');
+
+  dom.modeSwitchBtns?.forEach(btn => {
+    const isActive = btn.dataset.mode === mode;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
   
   // Switch UI mode
   if (mode === 'sdk') {
@@ -491,6 +536,9 @@ function setupEventListeners() {
   dom.tabs.forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
+  dom.modeSwitchBtns?.forEach(btn => {
+    btn.addEventListener('click', () => setModeFromUI(btn.dataset.mode));
+  });
 
   // Rules Tab
   dom.saveRulesBtn?.addEventListener('click', saveRules);
@@ -515,8 +563,12 @@ function setupEventListeners() {
     }
   });
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
+  dom.sdkIncludeMemory?.addEventListener('change', refreshSDKMemorySummary);
+  dom.sdkAssistantOnly?.addEventListener('change', applySDKAssistantOnlyMode);
   
   setupMemoryListeners();
+  refreshSDKMemorySummary();
+  applySDKAssistantOnlyMode();
   
   // SDK Chat
   dom.sdkSendBtn?.addEventListener('click', async () => {
@@ -534,12 +586,47 @@ function setupEventListeners() {
     
     try {
       const SDKClient = await import('./js/sdk-client.js');
-      const response = await SDKClient.sendMessage({ type: 'chat', content });
+      let promptToSend = content;
+      let sandboxSystemMessage;
+
+      if (dom.sdkIncludeMemory?.checked) {
+        try {
+          const [allMemoryEntries, rulesContent] = await Promise.all([
+            listAllMemoryEntries(),
+            loadRulesContent().catch(() => '')
+          ]);
+          const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent);
+          promptToSend = composed.prompt;
+          sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
+          updateSDKMemorySummary(
+            `Packet v1: ${composed.injectedCount} mem, rules ${composed.rulesInjected ? 'on' : 'off'}`
+          );
+        } catch (memoryErr) {
+          console.warn('[SidePilot] Memory injection failed:', memoryErr);
+          updateSDKMemorySummary('Memory injection unavailable');
+          showToast('Memory 載入失敗，本次僅送出原始訊息', 'warning');
+        }
+      }
+
+      const response = await SDKClient.sendMessage({
+        type: 'chat',
+        content: promptToSend,
+        systemMessage: sandboxSystemMessage
+      });
       
       removeSDKTypingIndicator(typingId);
       
       if (response.success && response.content) {
-        addSDKMessage('assistant', response.content);
+        const parsed = parseSDKSandboxResponse(response.content);
+        addSDKStructuredAssistantMessage(parsed);
+
+        if (!parsed.hasAssistantBlock) {
+          showToast('未偵測到 assistant_response 區塊，已顯示原始輸出', 'warning');
+        }
+
+        if (parsed.packetObjects.length > 0) {
+          console.debug('[SidePilot] sidepilot_packet:', parsed.packetObjects);
+        }
       } else {
         addSDKMessage('assistant', '❌ Failed to get response');
       }
@@ -993,6 +1080,33 @@ function handleCaptureContentClick(event) {
   }
 }
 
+async function setModeFromUI(mode) {
+  if (!['iframe', 'sdk'].includes(mode)) return;
+  if (state.detectedMode === mode) return;
+
+  dom.modeSwitchBtns?.forEach(btn => {
+    btn.disabled = true;
+  });
+
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'setMode', mode });
+    if (!response?.success) {
+      throw new Error(response?.error || 'Unknown error');
+    }
+
+    state.detectedMode = response.mode || mode;
+    updateModeBadge();
+    showToast(`已切換為 ${state.detectedMode.toUpperCase()} 模式`);
+  } catch (err) {
+    console.error('[SidePilot] Failed to switch mode:', err);
+    showToast(`模式切換失敗：${err.message}`, 'error');
+  } finally {
+    dom.modeSwitchBtns?.forEach(btn => {
+      btn.disabled = false;
+    });
+  }
+}
+
 function requestPageContent() {
   return new Promise(resolve => {
     chrome.runtime.sendMessage({ action: 'getPageContent' }, (response) => {
@@ -1073,6 +1187,245 @@ function downloadScreenshot(dataUrl, filename) {
       showToast('已開始下載');
     }
   });
+}
+
+// ============================================
+// Memory -> Copilot Prompt Injection
+// ============================================
+
+function listAllMemoryEntries() {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'memory.list', filter: {} }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!response?.success) {
+        reject(new Error(response?.error || 'Failed to load memory entries'));
+        return;
+      }
+
+      resolve(Array.isArray(response.entries) ? response.entries : []);
+    });
+  });
+}
+
+function loadRulesContent() {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'rules.load' }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+
+      if (!response?.success) {
+        reject(new Error(response?.error || 'Failed to load rules'));
+        return;
+      }
+
+      resolve(typeof response.content === 'string' ? response.content : '');
+    });
+  });
+}
+
+function extractPromptTerms(input) {
+  if (!input || typeof input !== 'string') {
+    return [];
+  }
+
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'that', 'this', 'from', 'your', 'have', 'what',
+    'please', 'help', 'about', 'into', 'just', 'make', 'show', 'need', 'want',
+    'how', 'can', 'could', 'should', 'would', 'where', 'when', 'why', 'who',
+    'is', 'are', 'to', 'of', 'in', 'on', 'at', 'it', 'we', 'you', 'a', 'an'
+  ]);
+
+  const matches = input.toLowerCase().match(/[\p{Script=Han}]{2,}|[a-z0-9_]{2,}/gu) || [];
+  const uniqueTerms = [];
+  const seen = new Set();
+
+  for (const token of matches) {
+    if (stopWords.has(token)) continue;
+    if (seen.has(token)) continue;
+    seen.add(token);
+    uniqueTerms.push(token);
+  }
+
+  return uniqueTerms.slice(0, 20);
+}
+
+function normalizeMemoryEntries(entries) {
+  if (!Array.isArray(entries)) {
+    return [];
+  }
+
+  return entries
+    .filter(entry => entry && typeof entry === 'object')
+    .map(entry => ({
+      id: entry.id,
+      type: entry.type || 'note',
+      title: typeof entry.title === 'string' ? entry.title.trim() : '',
+      content: typeof entry.content === 'string' ? entry.content.trim() : '',
+      status: entry.status,
+      updatedAt: Number(entry.updatedAt) || Number(entry.createdAt) || 0
+    }))
+    .filter(entry => entry.title || entry.content);
+}
+
+function scoreMemoryEntry(entry, lowerInput, terms) {
+  const haystack = `${entry.title}\n${entry.content}`.toLowerCase();
+  let score = MEMORY_TYPE_WEIGHT[entry.type] || 0;
+
+  if (entry.type === 'task') {
+    if (entry.status === 'in_progress') score += 2;
+    if (entry.status === 'pending') score += 1;
+  }
+
+  if (lowerInput && haystack.includes(lowerInput)) {
+    score += 4;
+  }
+
+  for (const term of terms) {
+    if (!haystack.includes(term)) continue;
+    const containsHan = /[\p{Script=Han}]/u.test(term);
+    score += containsHan ? 3 : (term.length >= 4 ? 3 : 2);
+  }
+
+  if (entry.updatedAt > 0) {
+    const ageHours = (Date.now() - entry.updatedAt) / 3600000;
+    if (ageHours <= 24) score += 2;
+    else if (ageHours <= 24 * 7) score += 1;
+  }
+
+  return score;
+}
+
+function pickMemoryEntriesForPrompt(entries, userInput) {
+  const normalized = normalizeMemoryEntries(entries);
+  if (!normalized.length) {
+    return [];
+  }
+
+  const terms = extractPromptTerms(userInput);
+  const lowerInput = (userInput || '').trim().toLowerCase();
+
+  const scored = normalized.map(entry => ({
+    ...entry,
+    _score: scoreMemoryEntry(entry, lowerInput, terms)
+  }));
+
+  scored.sort((a, b) => {
+    if (b._score !== a._score) return b._score - a._score;
+    return b.updatedAt - a.updatedAt;
+  });
+
+  let selected = scored.filter(entry => entry._score >= 3);
+  if (!selected.length) {
+    selected = scored.filter(entry => entry.type === 'context' || entry.type === 'reference');
+  }
+  if (!selected.length) {
+    selected = scored;
+  }
+
+  return selected
+    .slice(0, MEMORY_PROMPT_MAX_ENTRIES)
+    .map(({ _score, ...entry }) => entry);
+}
+
+function truncateForPrompt(text, maxLength) {
+  if (typeof text !== 'string') return '';
+  if (text.length <= maxLength) return text;
+  return text.substring(0, Math.max(0, maxLength - 3)) + '...';
+}
+
+function formatMemoryEntryForPrompt(entry) {
+  const title = truncateForPrompt(entry.title || '(Untitled)', 120);
+  const compactContent = entry.content.replace(/\s+/g, ' ').trim();
+  return {
+    id: entry.id,
+    type: entry.type,
+    status: entry.status || null,
+    title,
+    content: truncateForPrompt(compactContent, MEMORY_PROMPT_MAX_ENTRY_CONTENT)
+  };
+}
+
+function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') {
+  const selectedEntries = pickMemoryEntriesForPrompt(memoryEntries, userInput);
+
+  let usedMemoryLength = 0;
+  const memoryPacket = [];
+
+  for (const entry of selectedEntries) {
+    const memoryObject = formatMemoryEntryForPrompt(entry);
+    const objectLength = JSON.stringify(memoryObject).length;
+    if (usedMemoryLength + objectLength > MEMORY_PROMPT_MAX_TOTAL_LENGTH) {
+      break;
+    }
+
+    memoryPacket.push(memoryObject);
+    usedMemoryLength += objectLength;
+  }
+
+  const normalizedRules = truncateForPrompt((rulesContent || '').trim(), RULES_PROMPT_MAX_LENGTH);
+  const rulesInjected = normalizedRules.length > 0;
+
+  const packet = {
+    schema: SIDEPILOT_PACKET_SCHEMA,
+    context: {
+      rules: rulesInjected ? normalizedRules : null,
+      memory: memoryPacket
+    },
+    user_message: userInput,
+    output_contract: {
+      schema: SIDEPILOT_SANDBOX_SCHEMA,
+      packet_tag: 'sidepilot_packet',
+      response_tag: 'assistant_response'
+    },
+    instructions: [
+      'Use memory and rules only when relevant.',
+      'If context conflicts with the latest user message, prioritize the latest user message.',
+      'In sidepilot_packet.used_memory_ids, include only ids you actually used.',
+      'Do not reveal chain-of-thought.'
+    ]
+  };
+
+  const lines = [
+    '[[SIDEPILOT_TURN_PACKET]]',
+    JSON.stringify(packet, null, 2),
+    '[[END_SIDEPILOT_TURN_PACKET]]'
+  ];
+
+  return {
+    prompt: lines.join('\n'),
+    injectedCount: memoryPacket.length,
+    rulesInjected
+  };
+}
+
+function updateSDKMemorySummary(text) {
+  if (!dom.sdkMemorySummary) return;
+  dom.sdkMemorySummary.textContent = text;
+}
+
+function refreshSDKMemorySummary() {
+  const enabled = !!dom.sdkIncludeMemory?.checked;
+  updateSDKMemorySummary(enabled ? 'Memory injection: on' : 'Memory injection: off');
+}
+
+function applySDKAssistantOnlyMode() {
+  const enabled = !!dom.sdkAssistantOnly?.checked;
+
+  if (dom.sdkMessages) {
+    dom.sdkMessages.classList.toggle('assistant-only', enabled);
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY_SDK_ASSISTANT_ONLY, enabled ? 'true' : 'false');
+  } catch (err) {
+    console.warn('[SidePilot] Failed to persist assistant-only mode:', err?.message || err);
+  }
 }
 
 // ============================================
@@ -1224,6 +1577,130 @@ function escapeAttr(text) {
     .replace(/'/g, '&#39;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+function parseSDKSandboxResponse(rawContent) {
+  const content = typeof rawContent === 'string' ? rawContent : '';
+  const blocks = [];
+  const packetObjects = [];
+  const tagPattern = /<(sidepilot_packet|assistant_response)>([\s\S]*?)<\/\1>/gi;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = tagPattern.exec(content)) !== null) {
+    const prefix = content.slice(lastIndex, match.index).trim();
+    if (prefix) {
+      blocks.push({
+        type: 'raw',
+        label: 'raw_output',
+        content: prefix,
+        parsed: null
+      });
+    }
+
+    const tag = match[1].toLowerCase();
+    const inner = (match[2] || '').trim();
+
+    if (tag === 'sidepilot_packet') {
+      let parsedPacket = null;
+      try {
+        parsedPacket = JSON.parse(inner);
+        packetObjects.push(parsedPacket);
+      } catch {
+        parsedPacket = null;
+      }
+
+      blocks.push({
+        type: 'packet',
+        label: 'sidepilot_packet',
+        content: inner,
+        parsed: parsedPacket
+      });
+    } else {
+      blocks.push({
+        type: 'assistant',
+        label: 'assistant_response',
+        content: inner,
+        parsed: null
+      });
+    }
+
+    lastIndex = tagPattern.lastIndex;
+  }
+
+  const suffix = content.slice(lastIndex).trim();
+  if (suffix) {
+    blocks.push({
+      type: 'raw',
+      label: 'raw_output',
+      content: suffix,
+      parsed: null
+    });
+  }
+
+  if (blocks.length === 0) {
+    blocks.push({
+      type: 'raw',
+      label: 'raw_output',
+      content,
+      parsed: null
+    });
+  }
+
+  return {
+    rawContent: content,
+    blocks,
+    packetObjects,
+    hasAssistantBlock: blocks.some(block => block.type === 'assistant'),
+    hasPacketBlock: blocks.some(block => block.type === 'packet')
+  };
+}
+
+function addSDKStructuredAssistantMessage(parsedResponse) {
+  if (!dom.sdkMessages) return;
+
+  const parsed = parsedResponse?.blocks
+    ? parsedResponse
+    : parseSDKSandboxResponse(parsedResponse);
+
+  const msgEl = document.createElement('div');
+  msgEl.className = 'sdk-message assistant';
+
+  const contentEl = document.createElement('div');
+  contentEl.className = 'sdk-message-content sdk-structured-content';
+
+  parsed.blocks.forEach((block) => {
+    const blockEl = document.createElement('section');
+    blockEl.className = `sdk-structured-block ${block.type}`;
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'sdk-structured-block-header';
+    headerEl.textContent = block.label;
+
+    const bodyEl = document.createElement('pre');
+    bodyEl.className = 'sdk-structured-block-body';
+
+    let contentText = block.content || '';
+    if (block.type === 'packet' && block.parsed && typeof block.parsed === 'object') {
+      contentText = JSON.stringify(block.parsed, null, 2);
+    }
+    bodyEl.textContent = contentText || '(empty)';
+
+    blockEl.appendChild(headerEl);
+    blockEl.appendChild(bodyEl);
+    contentEl.appendChild(blockEl);
+  });
+
+  const timeEl = document.createElement('div');
+  timeEl.className = 'sdk-message-time';
+  const time = new Date();
+  timeEl.textContent = time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+
+  msgEl.appendChild(contentEl);
+  msgEl.appendChild(timeEl);
+  dom.sdkMessages.appendChild(msgEl);
+  dom.sdkMessages.scrollTop = dom.sdkMessages.scrollHeight;
 }
 
 // ============================================
