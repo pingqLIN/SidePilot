@@ -364,7 +364,10 @@ function searchMemory(query) {
   });
 }
 
+<<<<<<< Updated upstream
 // Render memory entries list with proper event delegation
+=======
+>>>>>>> Stashed changes
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
   
@@ -384,12 +387,25 @@ function renderMemoryList(entries) {
         <span>${new Date(entry.updatedAt).toLocaleDateString()}</span>
         ${entry.type === 'task' ? `<span class="memory-entry-status ${entry.status}">${entry.status.replace('_', ' ')}</span>` : ''}
       </div>
+      <div class="memory-entry-actions">
+        <button class="btn-entry-action btn-send-vscode" data-id="${entry.id}" title="Send to VS Code">
+          <svg viewBox="0 0 16 16" fill="currentColor">
+            <path d="M2.5 1.5A1.5 1.5 0 0 0 1 3v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V3a1.5 1.5 0 0 0-1.5-1.5h-11ZM2 3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V3Z"/>
+            <path d="M7 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM4.5 8.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Zm7 0a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Z"/>
+          </svg>
+        </button>
+      </div>
     </div>
   `).join('');
-}
 
-// Add this to init or setupEventListeners
-// I'll add a separate setupMemoryListeners function and call it.
+  dom.memoryList.querySelectorAll('.btn-send-vscode').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      sendMemoryToVSCode(id);
+    });
+  });
+}
 
 function setupMemoryListeners() {
   if (dom.memoryList) {
@@ -494,6 +510,7 @@ function deleteMemoryEntry(id) {
   });
 }
 
+<<<<<<< Updated upstream
 // 傳送目前編輯中的條目到 VS Code
 function sendEntryToVSCode() {
   if (!currentEditingId) {
@@ -505,6 +522,20 @@ function sendEntryToVSCode() {
       showToast('已傳送到 VS Code');
     } else {
       showToast('傳送失敗: ' + (response?.error || '未知錯誤'), 'error');
+=======
+function sendMemoryToVSCode(id) {
+  chrome.runtime.sendMessage({ action: 'memory.get', id }, (response) => {
+    if (response?.success && response.entry) {
+      chrome.runtime.sendMessage({ action: 'vscode.send', entry: response.entry }, (result) => {
+        if (result?.success) {
+          showToast('Sent to VS Code');
+        } else {
+          showToast('Failed to send to VS Code: ' + (result?.error || 'Unknown error'), 'error');
+        }
+      });
+    } else {
+      showToast('Failed to load entry', 'error');
+>>>>>>> Stashed changes
     }
   });
 }
@@ -514,7 +545,11 @@ function sendEntryToVSCode() {
 // ============================================
 
 function setupEventListeners() {
+<<<<<<< Updated upstream
   // 底部浮動擷取按鈕
+=======
+  // 浮動擷取按鈕
+>>>>>>> Stashed changes
   dom.floatingCaptureBtn?.addEventListener('click', toggleCapturePanel);
 
   // 擷取面板
@@ -693,7 +728,6 @@ function showFrameError(message) {
 }
 
 function refreshFrame() {
-  // 清除之前的 timeout
   if (state.loadTimeout) {
     clearTimeout(state.loadTimeout);
     state.loadTimeout = null;
@@ -702,9 +736,13 @@ function refreshFrame() {
   state.frameLoaded = false;
   dom.loadingOverlay.classList.remove('hidden');
   dom.errorOverlay.classList.add('hidden');
-  dom.copilotFrame.src = dom.copilotFrame.src;
   
-  // 重新設置載入超時（事件監聽器已在 init 時設置，不需重複綁定）
+  const currentSrc = dom.copilotFrame.src;
+  dom.copilotFrame.src = '';
+  setTimeout(() => {
+    dom.copilotFrame.src = currentSrc;
+  }, 0);
+   
   state.loadTimeout = setTimeout(() => {
     if (!state.frameLoaded) {
       showFrameError('載入超時，請檢查網路連線');
@@ -1439,6 +1477,7 @@ async function copyAllContent() {
   }
 
   const markdown = formatAsMarkdown(state.currentPageContent);
+<<<<<<< Updated upstream
   await copyToClipboard(markdown, '文字摘要已複製，可貼到 Copilot 對話中');
 }
 
@@ -1450,6 +1489,9 @@ async function copyStructuredContent() {
 
   const structured = formatAsStructured(state.currentPageContent);
   await copyToClipboard(structured, '結構化資料已複製');
+=======
+  await copyToClipboard(markdown, '✓ 全部內容已複製，可貼到 Copilot 對話中');
+>>>>>>> Stashed changes
 }
 
 function formatAsMarkdown(content) {

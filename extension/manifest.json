@@ -20,6 +20,7 @@
   "background": {
     "service_worker": "background.js",
     "type": "module"
+<<<<<<< Updated upstream
   },
   "commands": {
     "_execute_action": {
@@ -29,6 +30,8 @@
       },
       "description": "Open SidePilot side panel"
     }
+=======
+>>>>>>> Stashed changes
   },
   "side_panel": {
     "default_path": "sidepanel.html"

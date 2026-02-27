@@ -178,10 +178,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true, entries: MemoryBank.listEntries(message.filter) });
       return false;
 
-    case 'memory.search':
-      sendResponse({ success: true, entries: MemoryBank.searchEntries(message.query) });
-      return false;
+     case 'memory.search':
+       sendResponse({ success: true, entries: MemoryBank.searchEntries(message.query) });
+       return false;
 
+<<<<<<< Updated upstream
     // VS Code Connector
     case 'vscode.send': {
       const entry = MemoryBank.getEntry(message.id);
@@ -198,6 +199,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     default:
+=======
+     // VS Code Integration
+     case 'vscode.send':
+       if (!message.entry) {
+         sendResponse({ success: false, error: 'No entry provided' });
+         return false;
+       }
+       VSCodeConnector.sendToVSCode(message.entry)
+         .then(success => sendResponse({ success }))
+         .catch(err => sendResponse({ success: false, error: err.message }));
+       return true;
+
+     default:
+>>>>>>> Stashed changes
       return false;
   }
 });
@@ -553,9 +568,11 @@ function extractPageContent() {
       '[aria-label*="advert"]', '[aria-label*="ad"]', '[id*="ad-"]', '[class*="ad-"]'
     ];
 
-    removeSelectors.forEach(sel => {
-      clone.querySelectorAll(sel).forEach(el => el.remove());
-    });
+     removeSelectors.forEach(sel => {
+       clone.querySelectorAll(sel).forEach(el => {
+         el.remove();
+       });
+     });
 
     const noisePattern = /(ad-|ads|advert|promo|sponsor|cookie|consent|subscribe|newsletter|share|social|comment|breadcrumb|related|recommend|popup|modal|banner|toolbar|nav|footer|header)/i;
 

@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "SidePilot",
+    "description": "擴充功能顯示名稱"
+  },
+  "appDescription": {
+    "message": "整合 GitHub Copilot 的 Chrome 擴充功能",
+    "description": "擴充功能描述"
+  }
+}

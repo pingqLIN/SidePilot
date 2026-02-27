@@ -1,0 +1,10 @@
+{
+  "appName": {
+    "message": "SidePilot",
+    "description": "The extension display name"
+  },
+  "appDescription": {
+    "message": "Chrome extension with GitHub Copilot integration",
+    "description": "The extension description"
+  }
+}

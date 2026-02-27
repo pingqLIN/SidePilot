@@ -62,7 +62,19 @@ async function loadTemplateContent(templatePath) {
     if (!response.ok) {
       throw new Error(`Failed to fetch template: ${response.status}`);
     }
-    return await response.text();
+    
+    const content = await response.text();
+    
+    // Validate template content
+    if (!content || content.trim().length === 0) {
+      throw new Error('Template content is empty');
+    }
+    
+    if (content.length > 500000) {
+      throw new Error('Template content exceeds 500KB limit');
+    }
+    
+    return content;
   } catch (err) {
     console.error('[RulesManager] Failed to load template:', templatePath, err);
     throw err;
@@ -219,6 +231,16 @@ async function importFromFile(file) {
       return { success: false, error: 'No file provided' };
     }
 
+    const MAX_FILE_SIZE = 500 * 1024; // 500 KB
+    
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      return { 
+        success: false, 
+        error: `File size exceeds 500KB limit (current: ${(file.size / 1024).toFixed(2)}KB)` 
+      };
+    }
+
     // Validate file type
     const validTypes = ['text/markdown', 'text/plain', 'text/x-markdown'];
     const isMarkdown = validTypes.includes(file.type) || 
@@ -236,6 +258,11 @@ async function importFromFile(file) {
       reader.onerror = () => reject(reader.error);
       reader.readAsText(file);
     });
+
+    // Validate content
+    if (!content || content.trim().length === 0) {
+      return { success: false, error: 'File content is empty' };
+    }
 
     // Save imported content
     const saved = await saveRules(content);

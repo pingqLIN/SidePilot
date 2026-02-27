@@ -241,10 +241,69 @@ function isConnected() {
  */
 async function connect(port = DEFAULT_PORT) {
   currentPort = port;
+<<<<<<< Updated upstream
   const healthy = await checkHealth();
 
   if (!healthy) {
     throw new Error(`Bridge server not available at localhost:${port}`);
+=======
+  
+  const MAX_RETRIES = 3;
+  const INITIAL_RETRY_DELAY = 1000;
+  
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
+
+      const response = await fetch(`${getBaseUrl()}/health`, {
+        method: 'GET',
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw createSDKError('SDK server returned non-OK status', ErrorCodes.SDK_NOT_RUNNING);
+      }
+
+      setConnectionState(true);
+      startHealthCheck();
+      return;
+      
+    } catch (err) {
+      clearTimeout(timeoutId);
+      
+      if (err.code) {
+        setConnectionState(false);
+        stopHealthCheck();
+        throw err;
+      }
+
+      if (err.name === 'AbortError') {
+        if (attempt < MAX_RETRIES) {
+          const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+          console.log(`[SDKClient] Connection timeout, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+        setConnectionState(false);
+        stopHealthCheck();
+        throw createSDKError('Connection timed out after retries', ErrorCodes.CONNECTION_TIMEOUT);
+      }
+
+      if (attempt < MAX_RETRIES) {
+        const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+        console.log(`[SDKClient] Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+
+      setConnectionState(false);
+      stopHealthCheck();
+      throw createSDKError('SDK server is not running', ErrorCodes.SDK_NOT_RUNNING);
+    }
+>>>>>>> Stashed changes
   }
 
   startHealthCheck();
