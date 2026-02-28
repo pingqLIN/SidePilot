@@ -6,9 +6,10 @@
 // via HTTP REST + SSE (Server-Sent Events) for streaming
 // ============================================
 
-const DEFAULT_PORT = 3000;
+const DEFAULT_PORT = 31031;
 const CONNECT_TIMEOUT_MS = 5000;
 const BRIDGE_BASE = `http://localhost:${DEFAULT_PORT}`;
+const BRIDGE_SERVICE_NAME = 'sidepilot-copilot-bridge';
 
 // ============================================
 // Module State
@@ -77,9 +78,13 @@ async function checkHealth() {
     clearTimeout(timeoutId);
 
     if (response.ok) {
-      const data = await response.json();
-      setConnectionState(true);
-      return true;
+      const data = await response.json().catch(() => null);
+      const isExpectedBridge = data?.service === BRIDGE_SERVICE_NAME && data?.status === 'ok';
+
+      if (isExpectedBridge) {
+        setConnectionState(true);
+        return true;
+      }
     }
 
     setConnectionState(false);
@@ -241,12 +246,6 @@ function isConnected() {
  */
 async function connect(port = DEFAULT_PORT) {
   currentPort = port;
-<<<<<<< Updated upstream
-  const healthy = await checkHealth();
-
-  if (!healthy) {
-    throw new Error(`Bridge server not available at localhost:${port}`);
-=======
   
   const MAX_RETRIES = 3;
   const INITIAL_RETRY_DELAY = 1000;
@@ -264,7 +263,13 @@ async function connect(port = DEFAULT_PORT) {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw createSDKError('SDK server returned non-OK status', ErrorCodes.SDK_NOT_RUNNING);
+        throw new Error(`Health check failed: HTTP ${response.status}`);
+      }
+
+      const payload = await response.json().catch(() => null);
+      const isExpectedBridge = payload?.service === BRIDGE_SERVICE_NAME && payload?.status === 'ok';
+      if (!isExpectedBridge) {
+        throw new Error(`Port ${port} is reachable but not SidePilot Bridge`);
       }
 
       setConnectionState(true);
@@ -274,12 +279,6 @@ async function connect(port = DEFAULT_PORT) {
     } catch (err) {
       clearTimeout(timeoutId);
       
-      if (err.code) {
-        setConnectionState(false);
-        stopHealthCheck();
-        throw err;
-      }
-
       if (err.name === 'AbortError') {
         if (attempt < MAX_RETRIES) {
           const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
@@ -289,21 +288,20 @@ async function connect(port = DEFAULT_PORT) {
         }
         setConnectionState(false);
         stopHealthCheck();
-        throw createSDKError('Connection timed out after retries', ErrorCodes.CONNECTION_TIMEOUT);
+        throw new Error('Connection timed out after retries');
       }
 
       if (attempt < MAX_RETRIES) {
         const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
-        console.log(`[SDKClient] Network error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
+        console.log(`[SDKClient] Connection error (${err.message}), retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
 
       setConnectionState(false);
       stopHealthCheck();
-      throw createSDKError('SDK server is not running', ErrorCodes.SDK_NOT_RUNNING);
+      throw new Error(err?.message || 'SDK server is not running');
     }
->>>>>>> Stashed changes
   }
 
   startHealthCheck();
@@ -319,6 +317,36 @@ function disconnect() {
   setConnectionState(false);
   currentSessionId = null;
   currentSessionProfileKey = null;
+}
+
+/**
+ * List available models from bridge server.
+ * @returns {Promise<string[]>}
+ */
+async function listModels() {
+  if (!connected) {
+    const healthy = await checkHealth();
+    if (!healthy) {
+      throw new Error('Bridge server not available');
+    }
+  }
+
+  const response = await fetch(`${getBaseUrl()}/api/models`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
+    throw new Error(err.error || `HTTP ${response.status} (/api/models)`);
+  }
+
+  const data = await response.json();
+  if (!data?.success) {
+    throw new Error(data?.error || 'Failed to load models');
+  }
+
+  return Array.isArray(data.models) ? data.models : [];
 }
 
 /**
@@ -350,9 +378,25 @@ async function sendMessage(msg) {
     }),
   });
 
+  // Backward compatibility:
+  // Some older bridge builds only expose /api/chat (SSE) and return 404 on /api/chat/sync.
+  if (response.status === 404) {
+    const streamedContent = await sendMessageStreaming({
+      content: msg.content,
+      model: msg.model,
+      systemMessage: msg.systemMessage,
+    });
+
+    return {
+      success: true,
+      content: streamedContent,
+      sessionId: currentSessionId,
+    };
+  }
+
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status}`);
+    throw new Error(err.error || `HTTP ${response.status} (/api/chat/sync)`);
   }
 
   const data = await response.json();
@@ -406,7 +450,7 @@ async function sendMessageStreaming(msg, onDelta, onTool) {
       body,
     }).then(response => {
       if (!response.ok) {
-        reject(new Error(`HTTP ${response.status}`));
+        reject(new Error(`HTTP ${response.status} (/api/chat)`));
         return;
       }
 
@@ -497,6 +541,7 @@ export {
   isConnected,
   connect,
   disconnect,
+  listModels,
   sendMessage,
   sendMessageStreaming,
   onConnectionChange

@@ -1,13 +1,19 @@
 // ============================================
-// SidePilot Copilot Bridge Server
-// Lightweight HTTP bridge between Chrome Extension and GitHub Copilot CLI SDK
+// SidePilot Copilot Bridge — Worker Process
+// Runs the Express HTTP server and manages ACP sessions.
+// Launched by supervisor.ts via child_process.fork().
+// Can also run standalone for development.
 // ============================================
 
 import express from 'express';
 import cors from 'cors';
 import { SessionManager } from './session-manager.js';
+import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } from './ipc-types.js';
 
-const PORT = parseInt(process.env.PORT || '3000', 10);
+const PORT = parseInt(process.env.PORT || '31031', 10);
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const isForked = !!process.send;
+
 const app = express();
 
 // --- Middleware ---
@@ -31,10 +37,12 @@ const sessionManager = new SessionManager();
  */
 app.get('/health', (_req, res) => {
   const state = sessionManager.getState();
+  const backend = sessionManager.getBackendInfo();
   res.json({
     status: 'ok',
     service: 'sidepilot-copilot-bridge',
     sdk: state,
+    backend,
   });
 });
 
@@ -127,44 +135,35 @@ app.post('/api/chat', async (req, res) => {
   try {
     // 取得或建立 session
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
+    const result = await sessionManager.sendPrompt(session.sessionId, prompt, (update) => {
+      if (update?.sessionUpdate === 'agent_message_chunk') {
+        const content = update?.content;
+        if (content?.type === 'text' && content?.text) {
+          sendEvent('delta', { content: content.text });
+        }
+        return;
+      }
 
-    // 訂閱事件
-    const unsubscribe = session.on((event: any) => {
-      switch (event.type) {
-        case 'assistant.message_delta':
-          sendEvent('delta', { content: event.data.deltaContent });
-          break;
-        case 'assistant.message':
-          sendEvent('message', { content: event.data.content });
-          break;
-        case 'tool.execution_start':
-          sendEvent('tool', {
-            name: event.data.toolName,
-            status: 'start',
-          });
-          break;
-        case 'tool.execution_end':
-          sendEvent('tool', {
-            name: event.data.toolName,
-            status: 'end',
-            result: event.data.result,
-          });
-          break;
-        case 'session.idle':
-          sendEvent('done', {});
-          unsubscribe();
-          res.end();
-          break;
+      if (update?.sessionUpdate === 'tool_call') {
+        sendEvent('tool', {
+          name: update?.title || update?.kind || 'tool_call',
+          status: update?.status || 'start',
+        });
+        return;
+      }
+
+      if (update?.sessionUpdate === 'tool_call_update') {
+        sendEvent('tool', {
+          name: update?.toolCallId || 'tool_call_update',
+          status: update?.status || 'update',
+          result: update,
+        });
       }
     });
 
-    // 傳送訊息
-    await session.send({ prompt });
-
-    // 客戶端斷開時清理
-    req.on('close', () => {
-      unsubscribe();
-    });
+    sendEvent('message', { content: result.content || '' });
+    sendEvent('done', {});
+    res.end();
   } catch (err: any) {
     sendEvent('error', { message: err.message });
     res.end();
@@ -186,12 +185,12 @@ app.post('/api/chat/sync', async (req, res) => {
 
   try {
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
-    const response = await session.sendAndWait({ prompt }, 60_000);
+    const response = await sessionManager.sendPrompt(session.sessionId, prompt);
 
     res.json({
       success: true,
-      sessionId: session.sessionId,
-      content: response?.data?.content ?? '',
+      sessionId: response.sessionId,
+      content: response?.content ?? '',
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -205,7 +204,27 @@ app.post('/api/chat/sync', async (req, res) => {
 const server = app.listen(PORT, () => {
   console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
+
+  // Notify supervisor that worker is ready
+  if (isForked && process.send) {
+    process.send({ type: 'ready', port: PORT } satisfies WorkerReadyMessage);
+  }
 });
+
+// --- IPC: Heartbeat & Supervisor messages ---
+if (isForked && process.send) {
+  const heartbeatTimer = setInterval(() => {
+    process.send!({ type: 'heartbeat' } satisfies WorkerHeartbeatMessage);
+  }, HEARTBEAT_INTERVAL_MS);
+  heartbeatTimer.unref();
+
+  process.on('message', (msg: SupervisorMessage) => {
+    if (msg?.type === 'shutdown') {
+      clearInterval(heartbeatTimer);
+      shutdown();
+    }
+  });
+}
 
 // Graceful shutdown
 const shutdown = async () => {
