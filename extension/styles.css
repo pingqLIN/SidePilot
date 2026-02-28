@@ -25,6 +25,14 @@
   --accent-green-glow: rgba(63, 185, 80, 0.1);
   --accent-yellow: #d29922;
 
+  /* Foreground aliases (SDK mode reuses these) */
+  --fg-primary: #e6edf3;
+  --fg-tertiary: #6e7681;
+
+  /* Accent aliases for SDK user bubble */
+  --accent-bg: #58a6ff;
+  --accent-fg: #ffffff;
+
   /* Overlay */
   --overlay-dark: rgba(1, 4, 9, 0.8);
 
@@ -556,8 +564,13 @@ body {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.floating-capture-btn.capture-hidden {
-  display: none;
+.floating-capture-btn.capture-zero {
+  opacity: 0;
+  transition: opacity 1s ease, transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.floating-capture-btn.capture-zero:hover {
+  opacity: 1;
 }
 
 .capture-panel.visible {
@@ -1557,6 +1570,8 @@ body {
 .sdk-message-content {
   padding: 12px 16px;
   border-radius: var(--radius-md);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
   line-height: 1.6;
   word-wrap: break-word;
 }
@@ -1601,13 +1616,13 @@ body {
   padding: 10px;
   white-space: pre-wrap;
   word-break: break-word;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.55;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .sdk-structured-block.format-markdown .sdk-structured-block-body {
-  font-family: "Segoe UI", "Noto Sans TC", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   white-space: normal;
   line-height: 1.6;
 }
@@ -1783,8 +1798,8 @@ body {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
-  font-family: inherit;
-  font-size: 14px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
   resize: vertical;
   min-height: 44px;
   max-height: 200px;
