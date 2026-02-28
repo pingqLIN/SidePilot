@@ -323,7 +323,7 @@ function clampCaptureButtonWidth(value) {
   if (!Number.isFinite(number)) {
     return DEFAULT_CAPTURE_BUTTON_WIDTH;
   }
-  return Math.min(64, Math.max(0, Math.round(number)));
+  return Math.min(128, Math.max(0, Math.round(number)));
 }
 
 function normalizeLinkAllowlist(value) {
@@ -429,11 +429,12 @@ function updateCaptureWidthLabel(width) {
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
   if (normalized === 0) {
-    dom.floatingCaptureBtn?.classList.add('capture-hidden');
+    dom.floatingCaptureBtn?.classList.add('capture-zero');
+    document.documentElement.style.setProperty('--capture-button-width', `${DEFAULT_CAPTURE_BUTTON_WIDTH}px`);
     return;
   }
 
-  dom.floatingCaptureBtn?.classList.remove('capture-hidden');
+  dom.floatingCaptureBtn?.classList.remove('capture-zero');
   document.documentElement.style.setProperty('--capture-button-width', `${normalized}px`);
 }
 
