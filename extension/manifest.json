@@ -3,6 +3,7 @@
   "name": "SidePilot",
   "version": "1.0.0",
   "description": "AI-powered Chrome side panel that keeps GitHub Copilot always accessible",
+  "default_locale": "zh_TW",
   "permissions": [
     "sidePanel",
     "activeTab",
@@ -17,10 +18,21 @@
     "https://github.com/*",
     "<all_urls>"
   ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://github.com/*"
+      ],
+      "js": [
+        "js/link-guard.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
   "background": {
     "service_worker": "background.js",
     "type": "module"
-<<<<<<< Updated upstream
   },
   "commands": {
     "_execute_action": {
@@ -30,8 +42,6 @@
       },
       "description": "Open SidePilot side panel"
     }
-=======
->>>>>>> Stashed changes
   },
   "side_panel": {
     "default_path": "sidepanel.html"

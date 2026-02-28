@@ -11,7 +11,7 @@ const STORAGE_KEYS = {
 };
 
 // Copilot Bridge server health endpoint (scripts/copilot-bridge)
-const SDK_HEALTH_URL = 'http://localhost:3000/health';
+const SDK_HEALTH_URL = 'http://localhost:31031/health';
 const DETECTION_TIMEOUT_MS = 5000;
 
 // ============================================
