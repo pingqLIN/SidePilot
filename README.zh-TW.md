@@ -1,4 +1,8 @@
 <p align="center">
+  <img src="docs/banner.png" width="1000" alt="SidePilot banner">
+</p>
+
+<p align="center">
   <img src="extension/icons/icon128.png" width="120" alt="SidePilot logo">
 </p>
 
@@ -26,13 +30,12 @@
 
 ## ✨ Screenshots
 
-### iframe 模式
-
-![iframe mode](docs/screenshots/iframe-mode.png)
-
-### SDK 模式
-
-![SDK mode](docs/screenshots/sdk-mode.png)
+<table>
+  <tr>
+    <td align="center"><b>iframe 模式</b><br><img src="docs/screenshots/iframe-mode.png" height="360" alt="iframe mode"></td>
+    <td align="center"><b>SDK 模式</b><br><img src="docs/screenshots/sdk-mode.png" height="360" alt="SDK mode"></td>
+  </tr>
+</table>
 
 ---
 
