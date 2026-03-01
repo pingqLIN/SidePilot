@@ -15,8 +15,10 @@
           <img src="icons/icon48.png" class="pilot-icon" alt="SidePilot Logo">
           <span>SidePilot</span>
         </div>
-        <button class="btn btn-secondary btn-sm toolbar-home-btn" id="homeBtn" title="回到 Copilot 首頁">
-          HOME
+        <button class="btn-icon toolbar-home-btn" id="homeBtn" title="回到 Copilot 首頁" aria-label="回到 Copilot 首頁">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 4.1 3.5 11h1.8v7.4c0 .9.7 1.6 1.6 1.6h4.3v-5.1c0-.5.4-.9.9-.9h2c.5 0 .9.4.9.9V20h4.3c.9 0 1.6-.7 1.6-1.6V11h1.8L12 4.1Z" fill="currentColor"/>
+          </svg>
         </button>
       </header>
 
@@ -91,23 +93,19 @@
           </div>
           <div class="sdk-chat-input-container">
             <div class="sdk-chat-tools">
-              <div class="sdk-chat-toggles">
-                <label class="sdk-memory-toggle" for="sdkIncludeMemory">
-                  <input type="checkbox" id="sdkIncludeMemory" checked>
-                  Include Memory in prompt
-                </label>
-                <label class="sdk-memory-toggle" for="sdkAssistantOnly">
-                  <input type="checkbox" id="sdkAssistantOnly">
-                  Only assistant block
-                </label>
-              </div>
               <label class="sdk-model-picker" for="sdkModelSelect">
                 Model
                 <select id="sdkModelSelect" class="sdk-model-select">
                   <option value="">default</option>
                 </select>
               </label>
-              <span id="sdkMemorySummary" class="sdk-memory-summary">Memory injection: on</span>
+              <div class="sdk-chat-status">
+                <span id="sdkMemorySummary" class="sdk-memory-summary">Memory injection: on</span>
+                <div id="sdkStorageLocation" class="sdk-storage-location hidden">
+                  <span class="sdk-storage-label">對話儲存位置</span>
+                  <a id="sdkStorageLink" href="#" target="_blank" rel="noopener noreferrer">-</a>
+                </div>
+              </div>
             </div>
             <div class="sdk-chat-input-row">
               <textarea 
@@ -153,9 +151,9 @@
                   d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"
                 />
               </svg>
-              複製全部內容
+              輸出文字到對話
             </button>
-            <div class="capture-hint">複製後可直接貼到 Copilot 對話中</div>
+            <div class="capture-hint">輸出後可在對話輸入框中調整</div>
           </div>
         </div>
         <!-- /capture-panel -->
@@ -244,51 +242,31 @@
       <!-- Settings Tab -->
       <div class="tab-content" id="settings-tab">
         <div class="settings-container">
-          <div class="settings-section">
-            <div class="settings-section-title">SDK 模式</div>
-            <label class="settings-item settings-toggle">
-              <div class="settings-item-text">
-                <div class="settings-item-title">首次切換 SDK 自動帶出登入引導</div>
-                <div class="settings-item-desc">第一次點選 SDK 時自動跳出登入提示</div>
-              </div>
-              <input type="checkbox" id="settingAutoSdkLogin" checked>
-            </label>
-            <div class="settings-inline-actions">
-              <button class="btn btn-secondary settings-inline-btn" id="openSdkLoginGuideBtn">
-                立即開啟 GitHub 登入頁
-              </button>
-              <button class="btn btn-secondary settings-inline-btn" id="testSdkBridgeBtn">
-                測試 Bridge 連線
-              </button>
+          <div class="settings-section settings-toc">
+            <div class="settings-section-title">快捷目錄</div>
+            <div class="settings-toc-grid">
+              <button type="button" class="settings-toc-link" data-target="intro">啟動畫面</button>
+              <button type="button" class="settings-toc-link" data-target="install">安裝助手</button>
+              <button type="button" class="settings-toc-link" data-target="sdk">SDK 模式</button>
+              <button type="button" class="settings-toc-link" data-target="iframe">iframe 模式</button>
+              <button type="button" class="settings-toc-link" data-target="capture">擷取功能</button>
             </div>
           </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">安裝助手</div>
-            <div class="settings-item settings-install-card">
-              <div class="settings-item-text">
-                <div class="settings-item-title">Bridge 狀態 <span class="status-dot" id="bridgeStatusDot" aria-hidden="true"></span></div>
-                <div class="settings-item-desc" id="bridgeInstallStatus">尚未檢查</div>
-                <div class="settings-item-sub" id="bridgeInstallDetail">-</div>
-              </div>
-              <div class="settings-install-actions">
-                <button class="btn btn-secondary btn-sm" id="bridgeCheckBtn">檢查 Bridge</button>
-                <button class="btn btn-secondary btn-sm" id="bridgeCopyCmdBtn">複製啟動指令</button>
-                <button class="btn btn-secondary btn-sm" id="bridgeCopyCheckBtn">複製檢查指令</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-section">
-            <div class="settings-section-title">啟動畫面</div>
-            <label class="settings-item settings-toggle">
+          <div class="settings-section collapsible collapsed" data-section="intro">
+            <button type="button" class="settings-section-header" aria-expanded="false">
+              <span class="settings-section-title">啟動畫面</span>
+              <span class="settings-section-toggle" aria-hidden="true">+</span>
+            </button>
+            <div class="settings-section-body">
+            <label class="settings-item settings-toggle" data-help="開啟時每次進入 SidePilot 都會播放開場動畫。關閉後僅首次播放。">
               <div class="settings-item-text">
                 <div class="settings-item-title">每次開啟都播放動畫</div>
                 <div class="settings-item-desc">關閉後只在首次開啟播放 Intro 影片</div>
               </div>
               <input type="checkbox" id="settingPlayIntroEveryOpen">
             </label>
-            <label class="settings-item settings-toggle">
+            <label class="settings-item settings-toggle" data-help="開啟時每次進入 SidePilot 顯示風險聲明視窗。">
               <div class="settings-item-text">
                 <div class="settings-item-title">顯示風險提示視窗</div>
                 <div class="settings-item-desc">每次開啟顯示歡迎與風險聲明</div>
@@ -296,32 +274,248 @@
               <input type="checkbox" id="settingShowWarningOverlay" checked>
             </label>
           </div>
+            </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">擷取按鍵</div>
-            <label class="settings-item settings-range">
+          <div class="settings-section collapsible collapsed" data-section="install">
+            <button type="button" class="settings-section-header" aria-expanded="false">
+              <span class="settings-section-title">安裝助手</span>
+              <span class="settings-section-toggle" aria-hidden="true">+</span>
+            </button>
+            <div class="settings-section-body">
+            <div class="settings-item settings-install-card" data-help="顯示本機 Bridge 連線狀態與啟動資訊。若狀態異常，請先啟動 scripts/copilot-bridge。">
               <div class="settings-item-text">
-                <div class="settings-item-title">按鍵寬度</div>
-                <div class="settings-item-desc">0 = 隱藏，其他值顯示對應寬度（目前：<span id="captureBtnWidthValue">42</span>）</div>
+                <div class="settings-item-title">Bridge 狀態 <span class="status-dot" id="bridgeStatusDot" aria-hidden="true"></span></div>
+                <div class="settings-item-desc" id="bridgeInstallStatus">尚未檢查</div>
+                <div class="settings-item-sub" id="bridgeInstallDetail">-</div>
               </div>
-              <input type="range" id="settingCaptureButtonWidth" min="0" max="64" step="2" value="42">
-            </label>
+              <div class="settings-install-actions">
+                <button class="btn btn-secondary btn-sm" id="bridgeCheckBtn" data-help="立即向本機 Bridge 發送健康檢查。">檢查 Bridge</button>
+                <button class="btn btn-secondary btn-sm" id="bridgeCopyCmdBtn" data-help="複製啟動 Bridge 的建議指令。">複製啟動指令</button>
+                <button class="btn btn-secondary btn-sm" id="bridgeCopyCheckBtn" data-help="複製健康檢查指令，用於終端測試。">複製檢查指令</button>
+              </div>
+            </div>
           </div>
+            </div>
 
-          <div class="settings-section">
-            <div class="settings-section-title">虛擬層邊界</div>
+          <div class="settings-section collapsible collapsed" data-section="sdk">
+            <button type="button" class="settings-section-header" aria-expanded="false">
+              <span class="settings-section-title">SDK 模式</span>
+              <span class="settings-section-toggle" aria-hidden="true">+</span>
+            </button>
+            <div class="settings-section-body">
+            <label class="settings-item settings-toggle" data-help="SDK 模式送出訊息前，會自動跳出登入引導。首次使用 Copilot CLI 時可避免忘記登入。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">首次切換 SDK 自動帶出登入引導</div>
+                <div class="settings-item-desc">第一次點選 SDK 時自動跳出登入提示</div>
+              </div>
+              <input type="checkbox" id="settingAutoSdkLogin" checked>
+            </label>
+            <div class="settings-inline-actions">
+              <button class="btn btn-secondary settings-inline-btn" id="openSdkLoginGuideBtn" data-help="開啟 GitHub Copilot 登入頁，完成 Copilot CLI 授權。">
+                立即開啟 GitHub 登入頁
+              </button>
+              <button class="btn btn-secondary settings-inline-btn" id="testSdkBridgeBtn" data-help="測試本機 Bridge 是否已啟動並可連線。">
+                測試 Bridge 連線
+              </button>
+            </div>
+            <div class="settings-item settings-note">
+              <div class="settings-item-text">
+                <div class="settings-item-title">記憶 vs 規則</div>
+                <div class="settings-item-desc">
+                  記憶：具體內容或片段，依提問注入作為上下文
+                  <br>
+                  規則：長期行為準則或偏好，影響回答風格與限制
+                </div>
+              </div>
+            </div>
+            <label class="settings-item settings-toggle" data-help="在 SDK 模式送出訊息前，將記憶條目注入提示，可能增加上下文長度。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">Include Memory in prompt</div>
+              </div>
+              <input type="checkbox" id="settingSdkIncludeMemory" checked>
+            </label>
+            <label class="settings-item settings-toggle" data-help="在 SDK 模式送出訊息前，將規則內容注入提示，影響回答風格與限制。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">Include Rules in prompt</div>
+              </div>
+              <input type="checkbox" id="settingSdkIncludeRules" checked>
+            </label>
+            <label class="settings-item settings-toggle" data-help="SDK 模式顯示本機 session-state 路徑；iframe 模式顯示 GitHub Copilot 網頁入口。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">自動顯示對話儲存位置</div>
+              </div>
+              <input type="checkbox" id="settingSdkShowStorageLocation">
+            </label>
+            <label class="settings-item settings-text-input" data-help="用於顯示本機 session-state 位置與超連結。此欄位不會改動 Copilot CLI 的實際儲存位置。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">本機 session-state 路徑</div>
+                <div class="settings-item-desc">例：C:\Users\miles\.copilot\session-state\</div>
+              </div>
+              <input type="text" id="settingSdkSessionPath" class="settings-input" placeholder="C:\Users\miles\.copilot\session-state\">
+            </label>
+            <label class="settings-item settings-text-input" data-help="用於對話輸出或下載檔案時的預設資料夾。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">對話存檔預設路徑</div>
+              </div>
+              <input type="text" id="settingSdkConversationSavePath" class="settings-input" placeholder="C:\Users\miles\copilot\chat-exports\">
+            </label>
+            <label class="settings-item settings-text-input" data-help="SDK 模式截圖會先存到此資料夾，再送出路徑給 Copilot。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">截圖存檔預設路徑</div>
+              </div>
+              <input type="text" id="settingSdkScreenshotSavePath" class="settings-input" placeholder="C:\Users\miles\copilot\screenshots\">
+            </label>
+            <div class="settings-item settings-checkbox-group" data-help="控制 SDK 回覆顯示哪些區塊。assistant_response 為主要回覆，sidepilot_packet / raw_output 為結構化資訊。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">顯示輸出標籤</div>
+              </div>
+              <div class="settings-checkbox-list">
+                <label class="settings-checkbox">
+                  <input type="checkbox" id="settingSdkTagAssistant" checked>
+                  <span>assistant_response</span>
+                </label>
+                <label class="settings-checkbox">
+                  <input type="checkbox" id="settingSdkTagPacket">
+                  <span>sidepilot_packet</span>
+                </label>
+                <label class="settings-checkbox">
+                  <input type="checkbox" id="settingSdkTagRaw">
+                  <span>raw_output</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="settings-subgroup">
+              <div class="settings-subgroup-title">Copilot CLI 設定</div>
+              <div class="settings-item settings-note" data-help="顯示 Copilot CLI config.json 位置與摘要，需 Bridge 連線才能讀取。">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">設定檔位置</div>
+                  <div class="settings-item-desc" id="sdkConfigPath">尚未讀取</div>
+                  <div class="settings-item-sub" id="sdkConfigSummary">-</div>
+                </div>
+              </div>
+
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">同步 render_markdown</div>
+                  <div class="settings-item-desc">Copilot CLI 是否渲染 Markdown</div>
+                </div>
+                <input type="checkbox" id="settingSdkSyncRenderMarkdown">
+              </label>
+              <label class="settings-item settings-text-input" data-help="選擇 default 會移除該欄位，交由 Copilot CLI 預設值處理。">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">render_markdown 值</div>
+                </div>
+                <select id="settingSdkRenderMarkdown" class="settings-input">
+                  <option value="">default</option>
+                  <option value="true">true</option>
+                  <option value="false">false</option>
+                </select>
+              </label>
+
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">同步 theme</div>
+                  <div class="settings-item-desc">Copilot CLI 輸出主題</div>
+                </div>
+                <input type="checkbox" id="settingSdkSyncTheme">
+              </label>
+              <label class="settings-item settings-text-input" data-help="選擇 default 會移除該欄位，交由 Copilot CLI 預設值處理。">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">theme 值</div>
+                </div>
+                <select id="settingSdkTheme" class="settings-input">
+                  <option value="">default</option>
+                  <option value="auto">auto</option>
+                  <option value="dark">dark</option>
+                  <option value="light">light</option>
+                </select>
+              </label>
+
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">同步 banner</div>
+                  <div class="settings-item-desc">Copilot CLI 啟動畫面顯示頻率</div>
+                </div>
+                <input type="checkbox" id="settingSdkSyncBanner">
+              </label>
+              <label class="settings-item settings-text-input" data-help="選擇 default 會移除該欄位，交由 Copilot CLI 預設值處理。">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">banner 值</div>
+                </div>
+                <select id="settingSdkBanner" class="settings-input">
+                  <option value="">default</option>
+                  <option value="always">always</option>
+                  <option value="once">once</option>
+                  <option value="never">never</option>
+                </select>
+              </label>
+
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">同步 reasoning_effort</div>
+                  <div class="settings-item-desc">Copilot CLI 推理強度</div>
+                </div>
+                <input type="checkbox" id="settingSdkSyncReasoningEffort">
+              </label>
+              <label class="settings-item settings-text-input" data-help="此欄位屬於 Copilot CLI 進階選項。選擇 default 會移除該欄位。">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">reasoning_effort 值</div>
+                </div>
+                <select id="settingSdkReasoningEffort" class="settings-input">
+                  <option value="">default</option>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                </select>
+              </label>
+            </div>
+          </div>
+            </div>
+
+          <div class="settings-section collapsible collapsed" data-section="iframe">
+            <button type="button" class="settings-section-header" aria-expanded="false">
+              <span class="settings-section-title">iframe 模式</span>
+              <span class="settings-section-toggle" aria-hidden="true">+</span>
+            </button>
+            <div class="settings-section-body">
+            <label class="settings-item settings-text-input" data-help="白名單模式：只有符合清單的連結會留在 iframe，其餘改新分頁。黑名單模式則相反。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">模式</div>
+                <div class="settings-item-desc">切換白名單或黑名單邊界規則</div>
+              </div>
+              <select id="settingLinkGuardMode" class="settings-input">
+                <option value="allow">白名單</option>
+                <option value="deny">黑名單</option>
+              </select>
+            </label>
             <div class="settings-item settings-textarea-wrap">
               <div class="settings-item-text">
-                <div class="settings-item-title">允許留在 Sidecar 的連結前綴</div>
-                <div class="settings-item-desc">每行一個 URL 前綴，支援結尾萬用字元 `*`</div>
+                <div class="settings-item-title" id="linkAllowlistTitle">允許留在 Sidecar 的連結前綴</div>
+                <div class="settings-item-desc" id="linkAllowlistDesc">每行一個 URL 前綴，支援結尾萬用字元 `*`</div>
               </div>
               <textarea id="settingLinkAllowlist" class="settings-textarea" rows="5" placeholder="https://github.com/copilot/*&#10;https://github.com/settings/copilot*"></textarea>
             </div>
           </div>
+            </div>
+
+          <div class="settings-section collapsible collapsed" data-section="capture">
+            <button type="button" class="settings-section-header" aria-expanded="false">
+              <span class="settings-section-title">擷取功能</span>
+              <span class="settings-section-toggle" aria-hidden="true">+</span>
+            </button>
+            <div class="settings-section-body">
+            <label class="settings-item settings-range" data-help="調整側邊直式擷取按鍵的寬度。寬度較小時會自動隱藏文字與圖示。">
+              <div class="settings-item-text">
+                <div class="settings-item-title">按鍵寬度（<span id="captureBtnWidthValue">42</span>）</div>
+              </div>
+              <input type="range" id="settingCaptureButtonWidth" min="1" max="128" step="1" value="42">
+            </label>
+          </div>
+            </div>
 
           <div class="settings-footer">
             <span id="settingsStatus" class="settings-status">設定尚未載入</span>
-            <button class="btn btn-primary" id="saveSettingsBtn">儲存設定</button>
           </div>
         </div>
       </div>

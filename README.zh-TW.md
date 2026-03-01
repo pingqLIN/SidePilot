@@ -1,227 +1,131 @@
-# SidePilot
+<p align="center">
+  <img src="extension/icons/icon128.png" width="120" alt="SidePilot logo">
+</p>
+
+<h1 align="center">SidePilot</h1>
+
+<p align="center">
+  <img alt="Chrome" src="https://img.shields.io/badge/Chrome-114+-4285F4?style=flat&logo=google-chrome&logoColor=white">
+  <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-green">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue">
+</p>
+
+<p align="center"><b>SidePilot — GitHub Copilot for your Browser Side Panel</b></p>
+
+<p align="center">
+  <a href="#screenshots">截圖</a> •
+  <a href="#features">功能特色</a> •
+  <a href="#getting-started">快速開始</a> •
+  <a href="#sdk-mode-setup">SDK 模式</a> •
+  <a href="#configuration">設定</a>
+</p>
 
 [English](README.md)
 
-> 🚧 **開發中** - 目前處於 v2.0 架構重構階段
+---
 
-**SidePilot** 是一個 Chrome 擴充功能，讓 GitHub Copilot 常駐於瀏覽器側邊欄，提供持續的 AI 協助，不會因為切換分頁而中斷。
+## ✨ Screenshots
 
-![Chrome](https://img.shields.io/badge/Chrome-114+-4285F4?style=flat&logo=google-chrome&logoColor=white)
-![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
-![License](https://img.shields.io/badge/License-MIT-blue)
+### iframe 模式
+
+![iframe mode](docs/screenshots/iframe-mode.png)
+
+### SDK 模式
+
+![SDK mode](docs/screenshots/sdk-mode.png)
 
 ---
 
-## ✨ 功能特色
+## ✨ Features
 
-- **🎯 雙模式架構**
-  - **iframe 模式**: 直接嵌入 GitHub Copilot 網頁（需登入 GitHub）
-  - **SDK 模式**: 透過本地 Proxy Server 連接 Copilot API（開發中）
-- **📝 Rules 管理**: 自訂 AI 行為規則，支援匯入/匯出與模板
-- **🧠 Memory Bank**: 儲存任務、筆記、參考資料，支援一鍵傳送至 VS Code
-- **📋 頁面擷取**: 底部浮動按鈕一鍵擷取當前頁面的標題、內容、程式碼區塊
-- **⌨️ 快捷鍵**: `Alt+Shift+P` 快速開啟側邊欄
-- **✈️ 飛行員風格**: 專屬飛行員 Logo，GitHub Dark Theme 介面
+- **雙模式**：iframe 模式直接顯示 Copilot 網頁，SDK 模式連接 Copilot CLI bridge
+- **規則與記憶**：管理行為規則與可重用記憶條目
+- **頁面擷取**：直式擷取按鍵，可調整寬度
+- **Sidecar 邊界**：iframe 連結支援白名單與黑名單
+- **Config 同步**：可選擇同步 `~/.copilot/config.json`
 
 ---
 
-## 🚀 快速開始
+## 🚀 Getting Started
 
 ### 安裝擴充功能
 
-1. **下載或克隆專案**
+1. 開啟 `chrome://extensions/`
+2. 啟用「開發人員模式」
+3. 點擊「載入未封裝項目」
+4. 選擇 `SidePilot/extension`
 
-   ```powershell
-   git clone https://github.com/yourusername/SidePilot.git
-   cd SidePilot
-   ```
+### 開啟側邊欄
 
-2. **在 Chrome 中載入**
-   - 開啟 `chrome://extensions/`
-   - 啟用「開發人員模式」
-   - 點擊「載入未封裝項目」
-   - 選擇 `SidePilot/extension` 目錄
-
-3. **開啟側邊欄**
-   - 點擊擴充功能圖示，或
-   - 按下 `Alt+Shift+P`（Windows/Linux）或 `Opt+Shift+P`（Mac）
+- 點擊擴充功能圖示，或
+- 按下 `Alt+Shift+P`（Windows/Linux）或 `Opt+Shift+P`（macOS）
 
 ---
 
-## 🔧 SDK 模式設定（選用）
+## 🔧 SDK Mode Setup
 
-SDK 模式透過官方 `@github/copilot-sdk` 連接 GitHub Copilot CLI，需要啟動輕量 bridge server。
+SDK 模式會透過本機 bridge 連接 GitHub Copilot CLI。
 
-### 啟動 Bridge Server
+### 需求
+
+- Node.js 18+
+- 已安裝並登入 GitHub Copilot CLI
+
+### 啟動 Bridge
 
 ```powershell
-# 1. 進入 bridge server 目錄
 cd scripts/copilot-bridge
-
-# 2. 安裝依賴
 npm install
-
-# 3. 啟動 server
 npm run dev
 ```
 
-完整設定教學請參考 [scripts/copilot-bridge/README.md](scripts/copilot-bridge/README.md)
+啟動完成後，切換至 **SDK** 模式即可使用。
 
 ---
 
-## 📚 專案結構
+## ⚙️ Configuration
 
-```text
-SidePilot/
-├── extension/              # Chrome Extension 主體
-│   ├── manifest.json      # 擴充功能配置
-│   ├── sidepanel.html     # 側邊欄 UI（3 tabs: Copilot, Rules, Memory）
-│   ├── sidepanel.js       # 主要邏輯
-│   ├── styles.css         # 樣式（GitHub dark theme）
-│   ├── background.js      # Service Worker
-│   ├── rules.json         # Header 剝除規則（iframe 模式）
-│   └── js/                # 功能模組
-│       ├── mode-manager.js       # 模式偵測與切換
-│       ├── sdk-client.js         # SDK API 客戶端
-│       ├── rules-manager.js      # 規則管理
-│       ├── memory-bank.js        # 記憶庫
-│       ├── storage-manager.js    # Chrome Storage 封裝
-│       ├── automation.js         # 自動化腳本注入
-│       └── vscode-connector.js   # VS Code 整合
-│
-├── scripts/
-│   ├── copilot-bridge/        # Copilot CLI SDK Bridge Server
-│   │   ├── README.md          # 設定教學
-│   │   ├── src/
-│   │   │   ├── server.ts      # Express + SSE streaming
-│   │   │   └── session-manager.ts  # SDK session 生命週期
-│   │   └── package.json
-│   │
-│   └── tests/                 # 單元測試（Vanilla JS）
-│       ├── run-tests.html     # 測試執行器
-│       ├── storage-manager.test.js
-│       ├── rules-manager.test.js
-│       └── memory-bank.test.js
-│
-├── docs/
-│   └── DEVELOPMENT_PLAN.md    # v2.0 開發計畫（4 階段里程碑）
-│
-└── README.md
-```
+| 區域 | 主要設定 | 說明 |
+| --- | --- | --- |
+| iframe 模式 | 白名單 / 黑名單 | 控制哪些連結留在 iframe | 
+| 擷取功能 | 按鍵寬度 | 調整直式擷取按鍵大小 | 
+| SDK 模式 | Include Memory / Rules | 注入上下文後再送出 | 
+| Copilot CLI | Config 同步 | 同步設定到 `~/.copilot/config.json` | 
+| 儲存位置 | 路徑 | 對話匯出與截圖存檔路徑 | 
 
 ---
 
-## 🧪 測試
+## 🧭 Troubleshooting
 
-### 單元測試（瀏覽器）
-
-```powershell
-# 在瀏覽器中開啟測試執行器
-start chrome "file:///C:/Dev/Projects/SidePilot/scripts/tests/run-tests.html"
-```
-
-點擊「Run Tests」按鈕執行 18 個測試（storage, rules, memory bank）。
-
-### 手動測試
-
-參考 [scripts/tests/MANUAL_TESTS.md](scripts/tests/MANUAL_TESTS.md) 進行完整的手動驗證流程。
+- **Bridge server not available**：啟動 `scripts/copilot-bridge` 並確認 `copilot --acp` 可用
+- **HTTP 404 from SDK**：確認 bridge 服務已在 `31031` 埠口啟動
 
 ---
 
-## 📖 功能說明
+## ⚠️ Legal Notice
 
-### 1️⃣ Copilot Tab
-
-- **iframe 模式**（預設）：直接嵌入 `github.com/copilot`
-- **SDK 模式**（需啟動 bridge server）：透過官方 SDK 連接 Copilot CLI
-- **Mode Badge**：tab-bar 右側顯示當前模式（SDK=綠色 / iframe=藍色）
-- **浮動擷取按鈕**：底部中央的擷取按鈕，一鍵擷取當前頁面內容
-
-### 2️⃣ Rules Tab
-
-- 編輯 AI 行為規則（Markdown 格式）
-- 套用內建模板（Web 開發、程式碼審查等）
-- 匯入/匯出 `.txt` 規則檔案
-
-### 3️⃣ Memory Tab
-
-- 建立四種類型條目：Task / Note / Context / Reference
-- 搜尋與篩選功能
-- 一鍵傳送至 VS Code（透過 `vscode://` 協議）
+> 此擴充會嵌入 GitHub Copilot 網頁並使用 Copilot CLI SDK。使用前請確認符合 GitHub 服務條款，風險自負。
 
 ---
 
-## ⚠️ 法律聲明
+## 🤝 Contributing
 
-> **重要**: SidePilot 透過移除 HTTP Header 的方式嵌入 GitHub Copilot 網頁介面，此行為可能違反 GitHub 服務條款。使用本擴充功能需**自行承擔風險**，包括但不限於帳號停用、服務中斷等可能後果。
->
-> 本專案僅供教育與研究用途，不建議用於生產環境。
+歡迎貢獻，建議先開 Issue 討論需求。
 
 ---
 
-## 🛠️ 開發狀態
+## 📜 License
 
-當前版本：**v2.0 Alpha**
-
-### ✅ 已完成（Phase 1: 穩定化 + UI 重設計）
-
-- [x] 修復 `renderMemoryList` 重複定義
-- [x] 補齊 CSS 變數定義（GitHub dark theme）
-- [x] 統一 SDK port 為 3000
-- [x] 建立 `.gitignore`
-- [x] UI 重設計：簡化工具列、飛行員 Logo、浮動擷取按鈕
-- [x] 修復 manifest `type: module`（關鍵 Bug）
-- [x] 註冊鍵盤快捷鍵 `Alt+Shift+P`
-- [x] Memory Tab 加入「Send to VS Code」按鈕
-- [x] Mode Badge 移至 tab-bar 右側
-
-### 🚧 進行中（Phase 2: SDK 模式）
-
-- [x] 官方 SDK Bridge Server（`@github/copilot-sdk`）
-- [x] SDK Chat UI + Streaming 支援
-- [ ] 對話歷史管理
-- [ ] 手動模式切換 UI
-
-### 📅 規劃中
-
-- **Phase 3**: Context Injection、Memory ↔ Copilot 整合、VS Code Extension
-- **Phase 4**: 自動化測試、Chrome Web Store 發布
-
-詳見 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)
+本專案採用 [MIT License](https://opensource.org/licenses/MIT)。
 
 ---
 
-## 🤝 貢獻
+## 🤖 AI-Assisted Development
 
-歡迎提交 Issue 與 Pull Request！
+This project was developed with AI assistance.
 
-開發規範：
+**AI Models/Services Used:**
 
-- 使用 TypeScript（Proxy Server）與 Vanilla JavaScript（Extension）
-- 遵循 ES6+ 模組化設計
-- 所有 Chrome API 調用需錯誤處理
-- 新增功能需補充單元測試
+- OpenAI GPT-5 (Codex)
 
----
-
-## 📄 授權
-
-MIT License - 詳見 [LICENSE](LICENSE) 檔案
-
----
-
-## 🙏 致謝
-
-- **GitHub Copilot** - AI 核心引擎
-- **[@github/copilot-sdk](https://github.com/github/copilot-sdk)** - Official Copilot CLI SDK
-- **Chrome Extensions API** - MV3 平台支援
-
----
-
-## 📮 聯絡
-
-如有問題或建議，歡迎開 Issue 或 Email 至 `your-email@example.com`
-
----
-
-_最後更新: 2026-02-13_ <!-- last updated -->
+> ⚠️ **Disclaimer:** While the author has made every effort to review and validate the AI-generated code, no guarantee can be made regarding its correctness, security, or fitness for any particular purpose. Use at your own risk.

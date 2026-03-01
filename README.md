@@ -1,223 +1,122 @@
-# SidePilot
+<p align="center">
+  <img src="extension/icons/icon128.png" width="120" alt="SidePilot logo">
+</p>
+
+<h1 align="center">SidePilot</h1>
+
+<p align="center">
+  <img alt="Chrome" src="https://img.shields.io/badge/Chrome-114+-4285F4?style=flat&logo=google-chrome&logoColor=white">
+  <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-green">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-blue">
+</p>
+
+<p align="center"><b>SidePilot — GitHub Copilot for your Browser Side Panel</b></p>
+
+<p align="center">
+  <a href="#screenshots">Screenshots</a> •
+  <a href="#features">Features</a> •
+  <a href="#getting-started">Getting Started</a> •
+  <a href="#sdk-mode-setup">SDK Mode</a> •
+  <a href="#configuration">Configuration</a>
+</p>
 
 [中文版](README.zh-TW.md)
 
-> 🚧 **Work in Progress** - Currently in v2.0 architecture refactoring phase
+---
 
-**SidePilot** is a Chrome extension that keeps GitHub Copilot accessible in your browser's side panel, providing continuous AI assistance without interruption when switching tabs.
+## ✨ Screenshots
 
-![Chrome](https://img.shields.io/badge/Chrome-114+-4285F4?style=flat&logo=google-chrome&logoColor=white)
-![Manifest V3](https://img.shields.io/badge/Manifest-V3-green)
-![License](https://img.shields.io/badge/License-MIT-blue)
+### iframe Mode
+
+![iframe mode](docs/screenshots/iframe-mode.png)
+
+### SDK Mode
+
+![SDK mode](docs/screenshots/sdk-mode.png)
 
 ---
 
 ## ✨ Features
 
-- **🎯 Dual-Mode Architecture**
-  - **iframe Mode**: Directly embeds GitHub Copilot web interface (requires GitHub login)
-  - **SDK Mode**: Connects to Copilot CLI via official `@github/copilot-sdk` bridge server
-- **📝 Rules Management**: Customize AI behavior rules with import/export and template support
-- **🧠 Memory Bank**: Store tasks, notes, and references with one-click send to VS Code
-- **📋 Page Capture**: Floating bottom button to capture current page's title, content, and code blocks
-- **⌨️ Keyboard Shortcuts**: `Alt+Shift+P` to quickly open side panel
-- **✈️ Pilot Style**: Exclusive pilot logo with GitHub Dark Theme interface
+- **Dual Modes**: iframe mode for web Copilot, SDK mode for Copilot CLI bridge
+- **Rules & Memory**: manage behavioral rules and reusable memory entries
+- **Page Capture**: vertical capture button with adjustable width
+- **Sidecar Guard**: allowlist or denylist links for iframe navigation
+- **Config Sync**: optional sync to `~/.copilot/config.json`
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Getting Started
 
-### Installing the Extension
+### Install the Extension
 
-1. **Download or clone the project**
+1. Open `chrome://extensions/` in Chrome
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select `SidePilot/extension`
 
-   ```powershell
-   git clone https://github.com/pingqLIN/SidePilot.git
-   cd SidePilot
-   ```
+### Open the Side Panel
 
-2. **Load in Chrome**
-   - Open `chrome://extensions/`
-   - Enable "Developer mode"
-   - Click "Load unpacked"
-   - Select the `SidePilot/extension` directory
-
-3. **Open the side panel**
-   - Click the extension icon, or
-   - Press `Alt+Shift+P` (Windows/Linux) or `Opt+Shift+P` (Mac)
+- Click the extension icon, or
+- Press `Alt+Shift+P` (Windows/Linux) or `Opt+Shift+P` (macOS)
 
 ---
 
-## 🔧 SDK Mode Setup (Optional)
+## 🔧 SDK Mode Setup
 
-SDK mode requires a local proxy server to convert Copilot API to OpenAI-compatible format.
+SDK mode connects to GitHub Copilot CLI through the local bridge.
 
-### Starting the Proxy Server
+### Requirements
+
+- Node.js 18+
+- GitHub Copilot CLI installed and logged in
+
+### Start the Bridge
 
 ```powershell
-# 1. Navigate to proxy server directory
-cd scripts/github-copilot-proxy
-
-# 2. Install dependencies
+cd scripts/copilot-bridge
 npm install
-
-# 3. Configure GitHub Copilot Token (see SETUP.md for details)
-# Recommended: Use OAuth Device Flow
-gh auth login
-gh api /copilot_internal/v2/token --jq '.token' > .env-token
-echo "COPILOT_TOKEN=$(cat .env-token)" > .env
-echo "PORT=3000" >> .env
-
-# 4. Start server
 npm run dev
 ```
 
-For complete setup instructions, see [scripts/github-copilot-proxy/SETUP.md](scripts/github-copilot-proxy/SETUP.md)
+Once running, switch to **SDK** mode in the side panel and start chatting.
 
 ---
 
-## 📚 Project Structure
+## ⚙️ Configuration
 
-```text
-SidePilot/
-├── extension/              # Chrome Extension core
-│   ├── manifest.json      # Extension configuration
-│   ├── sidepanel.html     # Side panel UI (3 tabs: Copilot, Rules, Memory)
-│   ├── sidepanel.js       # Main logic
-│   ├── styles.css         # Styles (GitHub dark theme)
-│   ├── background.js      # Service Worker
-│   ├── rules.json         # Header removal rules (iframe mode)
-│   └── js/                # Feature modules
-│       ├── mode-manager.js       # Mode detection and switching
-│       ├── sdk-client.js         # SDK API client
-│       ├── rules-manager.js      # Rules management
-│       ├── memory-bank.js        # Memory bank
-│       ├── storage-manager.js    # Chrome Storage wrapper
-│       ├── automation.js         # Automation script injection
-│       └── vscode-connector.js   # VS Code integration
-│
-├── scripts/
-│   ├── copilot-bridge/        # Copilot CLI SDK Bridge Server
-│   │   ├── SETUP.md           # Detailed setup guide
-│   │   ├── src/
-│   │   │   ├── server.ts      # Express main program
-│   │   │   ├── routes/        # API routes
-│   │   │   ├── services/      # Copilot API service
-│   │   │   └── utils/         # Message format conversion
-│   │   └── package.json
-│   │
-│   └── tests/                 # Unit tests (Vanilla JS)
-│       ├── run-tests.html     # Test runner
-│       ├── storage-manager.test.js
-│       ├── rules-manager.test.js
-│       └── memory-bank.test.js
-│
-├── docs/
-│   └── DEVELOPMENT_PLAN.md    # v2.0 development plan (4-phase milestones)
-│
-└── README.md
-```
+| Area | Key Options | Description |
+| --- | --- | --- |
+| iframe mode | Allowlist / Denylist | Control which links stay in iframe | 
+| Capture | Button width | Adjust vertical capture button size | 
+| SDK mode | Include Memory / Rules | Inject context before sending prompts | 
+| Copilot CLI | Config Sync | Sync model and settings to `~/.copilot/config.json` | 
+| Storage | Paths | Default save locations for chat exports & screenshots | 
 
 ---
 
-## 🧪 Testing
+## 🧭 Troubleshooting
 
-### Unit Tests (Browser)
-
-```powershell
-# Open test runner in browser
-start chrome "file:///C:/Dev/Projects/SidePilot/scripts/tests/run-tests.html"
-```
-
-Click "Run Tests" button to execute 18 tests (storage, rules, memory bank).
-
-### Manual Testing
-
-Refer to [scripts/tests/MANUAL_TESTS.md](scripts/tests/MANUAL_TESTS.md) for complete manual verification workflow.
+- **Bridge server not available**: start `scripts/copilot-bridge` and ensure `copilot --acp` works
+- **HTTP 404 from SDK**: verify the bridge service is running on port `31031`
 
 ---
 
-## 📖 Feature Overview
+## ⚠️ Legal Notice
 
-### 1️⃣ Copilot Tab
-
-- **iframe Mode** (default): Directly embeds `github.com/copilot`
-- **SDK Mode** (requires proxy): Auto-detects `localhost:3000` and switches
-- **Mode Badge**: Displayed on the right side of tab-bar (SDK=green / iframe=blue)
-- **Floating Capture Button**: Bottom center capture button for one-click page content extraction
-
-### 2️⃣ Rules Tab
-
-- Edit AI behavior rules (Markdown format)
-- Apply built-in templates (Web development, code review, etc.)
-- Import/export `.txt` rule files
-
-### 3️⃣ Memory Tab
-
-- Create four types of entries: Task / Note / Context / Reference
-- Search and filter functionality
-- One-click send to VS Code (via `vscode://` protocol)
-
----
-
-## ⚠️ Legal Disclaimer
-
-> **Important**: SidePilot embeds the GitHub Copilot web interface by removing HTTP headers. This behavior may violate GitHub's Terms of Service. Use this extension **at your own risk**, including but not limited to potential account suspension or service interruption.
->
-> This project is for educational and research purposes only and is not recommended for production use.
-
----
-
-## 🛠️ Development Status
-
-Current Version: **v2.0 Alpha**
-
-### ✅ Completed (Phase 1: Stabilization + UI Redesign)
-
-- [x] Fixed `renderMemoryList` duplicate definition
-- [x] Added missing CSS variables (GitHub dark theme)
-- [x] Unified SDK port to 3000
-- [x] Created `.gitignore`
-- [x] UI redesign: simplified toolbar, pilot logo, floating capture button
-- [x] Fixed manifest `type: module` (critical bug)
-- [x] Registered keyboard shortcut `Alt+Shift+P`
-- [x] Added "Send to VS Code" button in Memory Tab
-- [x] Moved Mode Badge to right side of tab-bar
-
-### 🚧 In Progress (Phase 2: SDK Mode)
-
-- [ ] Proxy server testing (requires GitHub Copilot Token)
-- [ ] Implement SDK Chat UI (replace iframe)
-- [ ] Conversation history management
-- [ ] Manual mode switching UI
-
-### 📅 Planned
-
-- **Phase 3**: Context Injection, Memory ↔ Copilot integration, VS Code Extension
-- **Phase 4**: Automated testing, Chrome Web Store publishing
-
-See [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for details
+> This extension embeds the GitHub Copilot web interface and uses the Copilot CLI SDK. Use at your own risk and ensure you comply with GitHub’s Terms of Service.
 
 ---
 
 ## 🤝 Contributing
 
-Issues and Pull Requests are welcome!
-
-Development guidelines:
-
-- Use TypeScript (Proxy Server) and Vanilla JavaScript (Extension)
-- Follow ES6+ modular design
-- All Chrome API calls require error handling
-- New features require unit tests
+Contributions are welcome. Open an Issue first to discuss changes.
 
 ---
 
-## 📄 License
+## 📜 License
 
-MIT License - See [LICENSE](LICENSE) file
-
-**Official License**: [MIT License](https://opensource.org/licenses/MIT)
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
 
 ---
 
@@ -227,25 +126,6 @@ This project was developed with AI assistance.
 
 **AI Models/Services Used:**
 
-- Google Gemini 2.5 Pro
-- Claude 4.5 Sonnet
+- OpenAI GPT-5 (Codex)
 
 > ⚠️ **Disclaimer:** While the author has made every effort to review and validate the AI-generated code, no guarantee can be made regarding its correctness, security, or fitness for any particular purpose. Use at your own risk.
-
----
-
-## 🙏 Acknowledgments
-
-- **GitHub Copilot** - AI core engine
-- **[BjornMelin/github-copilot-proxy](https://github.com/BjornMelin/github-copilot-proxy)** - Proxy server foundation
-- **Chrome Extensions API** - MV3 platform support
-
----
-
-## 📮 Contact
-
-For questions or suggestions, please open an Issue.
-
----
-
-_Last updated: 2026-02-12_ <!-- last updated -->
