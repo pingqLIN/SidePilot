@@ -38,5 +38,8 @@ coverage/
 *.tmp
 .cache/
 
+# Local screenshots (raw exports)
+docs/screenshots/螢幕擷取畫面*.png
+
 # Archived legacy files
 .delete/
