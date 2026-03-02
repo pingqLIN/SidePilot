@@ -22,6 +22,8 @@ const DEFAULT_CAPTURE_BUTTON_WIDTH = 42;
 const BRIDGE_WORKDIR_HINT = 'C:\\Dev\\Projects\\SidePilot\\scripts\\copilot-bridge';
 const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
+const LOG_STORAGE_KEY = 'sidepilot.logs.v1';
+const LOG_MAX_ENTRIES = 300;
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
   `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
   'For each response, output exactly 2 XML blocks in this order:',
@@ -64,7 +66,8 @@ const state = {
   frameLoaded: false,
   loadTimeout: null,
   detectedMode: null,
-  settings: { ...DEFAULT_SETTINGS }
+  settings: { ...DEFAULT_SETTINGS },
+  logs: []
 };
 
 // ============================================
@@ -154,6 +157,13 @@ function init() {
   dom.memoryModalTitle = document.getElementById('memoryModalTitle');
   dom.sendToVSCodeBtn = document.getElementById('sendToVSCodeBtn');
 
+  // Logs tab
+  dom.logList = document.getElementById('logList');
+  dom.logSearch = document.getElementById('logSearch');
+  dom.logLevelFilter = document.getElementById('logLevelFilter');
+  dom.copyLogsBtn = document.getElementById('copyLogsBtn');
+  dom.clearLogsBtn = document.getElementById('clearLogsBtn');
+
   // Settings tab
   dom.saveSettingsBtn = document.getElementById('saveSettingsBtn');
   dom.settingsStatus = document.getElementById('settingsStatus');
@@ -189,6 +199,9 @@ function init() {
   }
 
   setupEventListeners();
+  loadLogs();
+  renderLogs();
+  addLog('info', 'SidePilot 已啟動');
   setBridgeInstallDefaultHint();
   setupFrameLoadDetection();
   loadCurrentPageInfo();
@@ -218,14 +231,17 @@ async function detectModeOnStartup() {
     if (stored?.success && (stored.mode === 'sdk' || stored.mode === 'iframe')) {
       state.detectedMode = stored.mode;
       console.log('[SidePilot] Loaded mode:', stored.mode);
+      addLog('info', `模式載入：${stored.mode}`);
     } else {
       const detected = await chrome.runtime.sendMessage({ action: 'detectMode' });
       if (detected?.success) {
         state.detectedMode = detected.mode;
         console.log('[SidePilot] Detected mode:', detected.mode);
+        addLog('info', `模式偵測：${detected.mode}`);
       } else {
         state.detectedMode = 'iframe';
         console.warn('[SidePilot] Mode detection failed, defaulting to iframe');
+        addLog('warn', '模式偵測失敗，已切回 iframe');
       }
     }
     updateModeBadge();
@@ -239,6 +255,7 @@ async function detectModeOnStartup() {
   } catch (err) {
     state.detectedMode = 'iframe';
     console.warn('[SidePilot] Mode detection error, defaulting to iframe:', err.message);
+    addLog('error', '模式偵測發生錯誤，已切回 iframe', err.message);
     updateModeBadge();
   }
 }
@@ -295,9 +312,13 @@ function switchTab(tabId) {
     loadTemplates();
   } else if (tabId === 'memory') {
     loadMemoryEntries();
+  } else if (tabId === 'logs') {
+    renderLogs();
   } else if (tabId === 'settings') {
     applySettingsToUI();
   }
+
+  addLog('info', `切換分頁：${tabId}`);
 }
 
 // ============================================
@@ -1090,6 +1111,12 @@ function setupEventListeners() {
       localStorage.removeItem(STORAGE_KEY_SDK_MODEL);
     }
   });
+
+  // Logs Tab
+  dom.logSearch?.addEventListener('input', () => renderLogs());
+  dom.logLevelFilter?.addEventListener('change', () => renderLogs());
+  dom.clearLogsBtn?.addEventListener('click', clearLogs);
+  dom.copyLogsBtn?.addEventListener('click', copyLogsToClipboard);
 
   // Settings Tab
   dom.saveSettingsBtn?.addEventListener('click', () => {
@@ -2177,6 +2204,132 @@ function handleBackgroundMessage(message, sender, sendResponse) {
 }
 
 // ============================================
+// Logs
+// ============================================
+
+function loadLogs() {
+  try {
+    const raw = localStorage.getItem(LOG_STORAGE_KEY);
+    if (!raw) {
+      state.logs = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    state.logs = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    state.logs = [];
+  }
+}
+
+function persistLogs() {
+  try {
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(state.logs.slice(-LOG_MAX_ENTRIES)));
+  } catch {
+    // ignore persistence failure
+  }
+}
+
+function addLog(level, message, detail = '') {
+  const normalizedLevel = level === 'error' || level === 'warn' ? level : 'info';
+  const safeMessage = String(message || '').trim();
+  if (!safeMessage) return;
+
+  const detailText = typeof detail === 'string'
+    ? detail.trim()
+    : (detail ? JSON.stringify(detail) : '');
+
+  state.logs.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ts: Date.now(),
+    level: normalizedLevel,
+    message: safeMessage,
+    detail: detailText
+  });
+
+  if (state.logs.length > LOG_MAX_ENTRIES) {
+    state.logs = state.logs.slice(-LOG_MAX_ENTRIES);
+  }
+
+  persistLogs();
+
+  const activeTab = Array.from(dom.tabs || []).find(tab => tab.classList.contains('active'));
+  if (activeTab?.dataset?.tab === 'logs') {
+    renderLogs();
+  }
+}
+
+function getFilteredLogs() {
+  const level = (dom.logLevelFilter?.value || '').trim();
+  const query = (dom.logSearch?.value || '').trim().toLowerCase();
+
+  return state.logs.filter((entry) => {
+    if (level && entry.level !== level) return false;
+    if (!query) return true;
+    const haystack = `${entry.message} ${entry.detail || ''}`.toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function renderLogs() {
+  if (!dom.logList) return;
+
+  const entries = getFilteredLogs().slice().reverse();
+  if (entries.length === 0) {
+    dom.logList.innerHTML = '<div class="log-empty">目前沒有符合條件的 log</div>';
+    return;
+  }
+
+  dom.logList.innerHTML = entries.map((entry) => {
+    const timeText = new Date(entry.ts).toLocaleString('zh-TW', {
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const detailHtml = entry.detail
+      ? `<pre class="log-detail">${escapeHtml(entry.detail)}</pre>`
+      : '';
+
+    return `
+      <article class="log-entry level-${entry.level}">
+        <div class="log-header">
+          <span class="log-time">${timeText}</span>
+          <span class="log-level">${entry.level.toUpperCase()}</span>
+        </div>
+        <div class="log-message">${escapeHtml(entry.message)}</div>
+        ${detailHtml}
+      </article>
+    `;
+  }).join('');
+}
+
+function clearLogs() {
+  state.logs = [];
+  persistLogs();
+  renderLogs();
+  showToast('Logs 已清空');
+}
+
+async function copyLogsToClipboard() {
+  const entries = getFilteredLogs();
+  if (entries.length === 0) {
+    showToast('沒有可複製的 log', 'warning');
+    return;
+  }
+
+  const lines = entries.map((entry) => {
+    const timeText = new Date(entry.ts).toLocaleString('zh-TW', { hour12: false });
+    const detail = entry.detail ? ` | ${entry.detail}` : '';
+    return `[${timeText}] [${entry.level.toUpperCase()}] ${entry.message}${detail}`;
+  });
+
+  await copyToClipboard(lines.join('\n'), 'Logs 已複製');
+}
+
+// ============================================
 // Toast 通知
 // ============================================
 
@@ -2185,6 +2338,7 @@ function showToast(message, type = 'success') {
 
   dom.toast.textContent = message;
   dom.toast.className = 'toast visible' + (type !== 'success' ? ` ${type}` : '');
+  addLog(type === 'warning' ? 'warn' : (type === 'error' ? 'error' : 'info'), message);
 
   setTimeout(() => {
     dom.toast.classList.remove('visible');

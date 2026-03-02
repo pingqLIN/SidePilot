@@ -34,6 +34,10 @@
           <span class="tab-icon">🧠</span>
           <span class="tab-label">Memory</span>
         </button>
+        <button class="tab" data-tab="logs">
+          <span class="tab-icon">🧾</span>
+          <span class="tab-label">Logs</span>
+        </button>
         <button class="tab" data-tab="settings">
           <span class="tab-icon">⚙️</span>
           <span class="tab-label">Settings</span>
@@ -237,6 +241,26 @@
               <button class="btn btn-secondary" id="cancelMemoryBtn">Cancel</button>
               <button class="btn btn-primary" id="saveMemoryBtn">Save</button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs Tab -->
+      <div class="tab-content" id="logs-tab">
+        <div class="logs-container">
+          <div class="logs-toolbar">
+            <input type="search" id="logSearch" class="logs-search" placeholder="搜尋 log...">
+            <select id="logLevelFilter" class="logs-filter">
+              <option value="">全部等級</option>
+              <option value="error">Error</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+            </select>
+            <button class="btn btn-secondary btn-sm" id="copyLogsBtn">Copy</button>
+            <button class="btn btn-secondary btn-sm" id="clearLogsBtn">Clear</button>
+          </div>
+          <div id="logList" class="log-list">
+            <div class="log-empty">目前沒有 log</div>
           </div>
         </div>
       </div>
