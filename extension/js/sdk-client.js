@@ -219,14 +219,6 @@ function cleanup() {
 }
 
 /**
- * Reset current session so next send creates a new one.
- */
-function resetSession() {
-  currentSessionId = null;
-  currentSessionProfileKey = null;
-}
-
-/**
  * Get the current status of the SDK client.
  * @returns {{initialized: boolean, connected: boolean, port: number, sessionId: string|null}}
  */
@@ -355,75 +347,6 @@ async function listModels() {
   }
 
   return Array.isArray(data.models) ? data.models : [];
-}
-
-/**
- * Get Copilot CLI config from bridge server.
- * @returns {Promise<{path: string, exists: boolean, config: object}>}
- */
-async function getConfig() {
-  if (!connected) {
-    const healthy = await checkHealth();
-    if (!healthy) {
-      throw new Error('Bridge server not available');
-    }
-  }
-
-  const response = await fetch(`${getBaseUrl()}/api/config`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/config)`);
-  }
-
-  const data = await response.json();
-  if (!data?.success) {
-    throw new Error(data?.error || 'Failed to load config');
-  }
-
-  return {
-    path: data.path,
-    exists: !!data.exists,
-    config: data.config || {},
-  };
-}
-
-/**
- * Patch Copilot CLI config via bridge server.
- * @param {object} patch
- * @returns {Promise<{path: string, config: object}>}
- */
-async function updateConfig(patch = {}) {
-  if (!connected) {
-    const healthy = await checkHealth();
-    if (!healthy) {
-      throw new Error('Bridge server not available');
-    }
-  }
-
-  const response = await fetch(`${getBaseUrl()}/api/config`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch || {}),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/config)`);
-  }
-
-  const data = await response.json();
-  if (!data?.success) {
-    throw new Error(data?.error || 'Failed to update config');
-  }
-
-  return {
-    path: data.path,
-    config: data.config || {},
-  };
 }
 
 /**
@@ -614,14 +537,11 @@ function onConnectionChange(callback) {
 export {
   init,
   cleanup,
-  resetSession,
   getStatus,
   isConnected,
   connect,
   disconnect,
   listModels,
-  getConfig,
-  updateConfig,
   sendMessage,
   sendMessageStreaming,
   onConnectionChange

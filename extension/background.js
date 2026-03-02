@@ -114,11 +114,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false;
 
-    case 'sdkResetSession':
-      SDKClient.resetSession();
-      sendResponse({ success: true });
-      return false;
-
     case 'sdkSend':
       SDKClient.sendMessage(message.data).then(response => {
         sendResponse({ success: true, data: response });
@@ -134,22 +129,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'sdkModels':
       SDKClient.listModels().then(models => {
         sendResponse({ success: true, models });
-      }).catch(err => {
-        sendResponse({ success: false, error: err.message });
-      });
-      return true;
-
-    case 'sdkConfig.get':
-      SDKClient.getConfig().then(result => {
-        sendResponse({ success: true, ...result });
-      }).catch(err => {
-        sendResponse({ success: false, error: err.message });
-      });
-      return true;
-
-    case 'sdkConfig.update':
-      SDKClient.updateConfig(message.patch || {}).then(result => {
-        sendResponse({ success: true, ...result });
       }).catch(err => {
         sendResponse({ success: false, error: err.message });
       });

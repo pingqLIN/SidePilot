@@ -7,96 +7,25 @@
 
 import express from 'express';
 import cors from 'cors';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import os from 'node:os';
 import { SessionManager } from './session-manager.js';
 import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } from './ipc-types.js';
 
 const PORT = parseInt(process.env.PORT || '31031', 10);
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const isForked = !!process.send;
-const COPILOT_CONFIG_PATH = process.env.COPILOT_CONFIG_PATH
-  || path.join(os.homedir(), '.copilot', 'config.json');
-
-const COPILOT_CONFIG_ALLOWLIST = new Set([
-  'model',
-  'reasoning_effort',
-  'render_markdown',
-  'theme',
-  'banner',
-]);
 
 const app = express();
 
 // --- Middleware ---
 app.use(cors({
   origin: '*', // Chrome extension context
-  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type'],
 }));
 app.use(express.json());
 
 // --- Session Manager (singleton) ---
 const sessionManager = new SessionManager();
-
-async function readCopilotConfig() {
-  try {
-    const raw = await fs.readFile(COPILOT_CONFIG_PATH, 'utf8');
-    const config = JSON.parse(raw);
-    return {
-      path: COPILOT_CONFIG_PATH,
-      exists: true,
-      config: config && typeof config === 'object' ? config : {},
-    };
-  } catch (err: any) {
-    if (err?.code === 'ENOENT') {
-      return {
-        path: COPILOT_CONFIG_PATH,
-        exists: false,
-        config: {},
-      };
-    }
-    throw err;
-  }
-}
-
-async function writeCopilotConfig(patch: Record<string, unknown>) {
-  const { config: current } = await readCopilotConfig();
-  const nextConfig: Record<string, unknown> = {
-    ...(current && typeof current === 'object' ? current : {}),
-  };
-
-  for (const [key, value] of Object.entries(patch)) {
-    if (value === null) {
-      delete nextConfig[key];
-      continue;
-    }
-    nextConfig[key] = value;
-  }
-
-  await fs.mkdir(path.dirname(COPILOT_CONFIG_PATH), { recursive: true });
-  await fs.writeFile(COPILOT_CONFIG_PATH, JSON.stringify(nextConfig, null, 2), 'utf8');
-
-  return nextConfig;
-}
-
-function sanitizeCopilotConfigPatch(input: Record<string, unknown>) {
-  const patch: Record<string, unknown> = {};
-  if (!input || typeof input !== 'object') return patch;
-
-  for (const [key, value] of Object.entries(input)) {
-    if (!COPILOT_CONFIG_ALLOWLIST.has(key)) continue;
-    if (value === '' || value === undefined) continue;
-    if (value === null) {
-      patch[key] = null;
-      continue;
-    }
-    patch[key] = value;
-  }
-
-  return patch;
-}
 
 // ============================================
 // Routes
@@ -125,45 +54,6 @@ app.get('/api/models', async (_req, res) => {
   try {
     const models = await sessionManager.listModels();
     res.json({ success: true, models });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * GET /api/config
- * 讀取 Copilot CLI 設定檔
- */
-app.get('/api/config', async (_req, res) => {
-  try {
-    const result = await readCopilotConfig();
-    res.json({ success: true, ...result });
-  } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-/**
- * PATCH /api/config
- * 更新 Copilot CLI 設定檔（僅允許部分欄位）
- * Body: { model?: string, reasoning_effort?: string, render_markdown?: boolean, theme?: string, banner?: string }
- */
-app.patch('/api/config', async (req, res) => {
-  try {
-    const patch = sanitizeCopilotConfigPatch(req.body || {});
-    if (!Object.keys(patch).length) {
-      const result = await readCopilotConfig();
-      res.json({ success: true, ...result });
-      return;
-    }
-
-    const config = await writeCopilotConfig(patch);
-    res.json({
-      success: true,
-      path: COPILOT_CONFIG_PATH,
-      exists: true,
-      config,
-    });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

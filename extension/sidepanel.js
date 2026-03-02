@@ -6,6 +6,7 @@
 
 const STORAGE_KEY = 'copilot_sidepanel_welcomed';
 const STORAGE_KEY_DECLINED = 'copilot_sidepanel_declined';
+const STORAGE_KEY_SDK_ASSISTANT_ONLY = 'sidepilot_sdk_assistant_only';
 const STORAGE_KEY_SDK_MODEL = 'sidepilot_sdk_model';
 const STORAGE_KEY_SDK_LOGIN_GUIDE_SHOWN = 'sidepilot_sdk_login_guide_shown';
 const FRAME_LOAD_TIMEOUT = 15000;
@@ -14,18 +15,13 @@ const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
 const MEMORY_PROMPT_MAX_ENTRY_CONTENT = 700;
 const RULES_PROMPT_MAX_LENGTH = 2200;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
-const SETTINGS_AUTOSAVE_DELAY = 600;
 const SDK_LOGIN_URL = 'https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot';
 const SDK_BRIDGE_PORT = 31031;
 const COPILOT_HOME_URL = 'https://github.com/copilot';
 const DEFAULT_CAPTURE_BUTTON_WIDTH = 42;
 const BRIDGE_WORKDIR_HINT = 'C:\\Dev\\Projects\\SidePilot\\scripts\\copilot-bridge';
-const SDK_SESSION_STATE_PATH_HINT = 'C:\\Users\\miles\\.copilot\\session-state\\';
-const DEFAULT_CHAT_SAVE_PATH = 'C:\\Users\\miles\\copilot\\chat-exports\\';
-const DEFAULT_SCREENSHOT_SAVE_PATH = 'C:\\Users\\miles\\copilot\\screenshots\\';
 const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
-const SETTINGS_TOOLTIP_DELAY_MS = 800;
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
   `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
   'For each response, output exactly 2 XML blocks in this order:',
@@ -52,22 +48,6 @@ const DEFAULT_SETTINGS = {
   playIntroEveryOpen: false,
   showWarningOverlay: true,
   captureButtonWidth: DEFAULT_CAPTURE_BUTTON_WIDTH,
-  sdkIncludeMemory: true,
-  sdkIncludeRules: true,
-  sdkShowStorageLocation: false,
-  sdkSessionStatePath: SDK_SESSION_STATE_PATH_HINT,
-  sdkConversationSavePath: DEFAULT_CHAT_SAVE_PATH,
-  sdkScreenshotSavePath: DEFAULT_SCREENSHOT_SAVE_PATH,
-  sdkConfigSyncRenderMarkdown: false,
-  sdkConfigSyncTheme: false,
-  sdkConfigSyncBanner: false,
-  sdkConfigSyncReasoningEffort: false,
-  sdkDisplayTags: {
-    assistant: true,
-    packet: false,
-    raw: false
-  },
-  linkGuardMode: 'allow',
   linkAllowlist: [
     'https://github.com/copilot/*',
     'https://github.com/settings/copilot*',
@@ -84,15 +64,8 @@ const state = {
   frameLoaded: false,
   loadTimeout: null,
   detectedMode: null,
-  settings: { ...DEFAULT_SETTINGS },
-  sdkConfigInfo: null
+  settings: { ...DEFAULT_SETTINGS }
 };
-
-let settingsAutoSaveTimer = null;
-let settingsAutoSaveInFlight = null;
-let settingsTooltipTimer = null;
-let settingsTooltipEl = null;
-let settingsTooltipAnchor = null;
 
 // ============================================
 // DOM 元素
@@ -116,7 +89,6 @@ function init() {
   dom.pageUrl = document.getElementById('pageUrl');
   dom.capturePanel = document.getElementById('capturePanel');
   dom.captureContent = document.getElementById('captureContent');
-  dom.copyAllBtn = document.getElementById('copyAllBtn');
   dom.closeCaptureBtn = document.getElementById('closeCaptureBtn');
   dom.retryBtn = document.getElementById('retryBtn');
   dom.openWindowBtn = document.getElementById('openWindowBtn');
@@ -144,12 +116,14 @@ function init() {
   dom.sdkMessages = document.getElementById('sdkMessages');
   dom.sdkInput = document.getElementById('sdkInput');
   dom.sdkSendBtn = document.getElementById('sdkSendBtn');
-  dom.settingSdkIncludeMemory = document.getElementById('settingSdkIncludeMemory');
+  dom.sdkIncludeMemory = document.getElementById('sdkIncludeMemory');
+  dom.sdkAssistantOnly = document.getElementById('sdkAssistantOnly');
   dom.sdkMemorySummary = document.getElementById('sdkMemorySummary');
   dom.sdkModelSelect = document.getElementById('sdkModelSelect');
-  dom.sdkStorageLocation = document.getElementById('sdkStorageLocation');
-  dom.sdkStorageLink = document.getElementById('sdkStorageLink');
 
+  if (dom.sdkAssistantOnly) {
+    dom.sdkAssistantOnly.checked = localStorage.getItem(STORAGE_KEY_SDK_ASSISTANT_ONLY) === 'true';
+  }
   if (dom.sdkModelSelect) {
     const selectedModel = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || '';
     dom.sdkModelSelect.value = selectedModel;
@@ -189,29 +163,8 @@ function init() {
   dom.settingCaptureButtonWidth = document.getElementById('settingCaptureButtonWidth');
   dom.settingLinkAllowlist = document.getElementById('settingLinkAllowlist');
   dom.captureBtnWidthValue = document.getElementById('captureBtnWidthValue');
-  dom.settingLinkGuardMode = document.getElementById('settingLinkGuardMode');
-  dom.linkAllowlistTitle = document.getElementById('linkAllowlistTitle');
-  dom.linkAllowlistDesc = document.getElementById('linkAllowlistDesc');
   dom.openSdkLoginGuideBtn = document.getElementById('openSdkLoginGuideBtn');
   dom.testSdkBridgeBtn = document.getElementById('testSdkBridgeBtn');
-  dom.settingSdkTagAssistant = document.getElementById('settingSdkTagAssistant');
-  dom.settingSdkTagPacket = document.getElementById('settingSdkTagPacket');
-  dom.settingSdkTagRaw = document.getElementById('settingSdkTagRaw');
-  dom.settingSdkIncludeRules = document.getElementById('settingSdkIncludeRules');
-  dom.settingSdkShowStorageLocation = document.getElementById('settingSdkShowStorageLocation');
-  dom.settingSdkSessionPath = document.getElementById('settingSdkSessionPath');
-  dom.settingSdkConversationSavePath = document.getElementById('settingSdkConversationSavePath');
-  dom.settingSdkScreenshotSavePath = document.getElementById('settingSdkScreenshotSavePath');
-  dom.settingSdkSyncRenderMarkdown = document.getElementById('settingSdkSyncRenderMarkdown');
-  dom.settingSdkSyncTheme = document.getElementById('settingSdkSyncTheme');
-  dom.settingSdkSyncBanner = document.getElementById('settingSdkSyncBanner');
-  dom.settingSdkSyncReasoningEffort = document.getElementById('settingSdkSyncReasoningEffort');
-  dom.settingSdkRenderMarkdown = document.getElementById('settingSdkRenderMarkdown');
-  dom.settingSdkTheme = document.getElementById('settingSdkTheme');
-  dom.settingSdkBanner = document.getElementById('settingSdkBanner');
-  dom.settingSdkReasoningEffort = document.getElementById('settingSdkReasoningEffort');
-  dom.sdkConfigPath = document.getElementById('sdkConfigPath');
-  dom.sdkConfigSummary = document.getElementById('sdkConfigSummary');
   dom.bridgeInstallStatus = document.getElementById('bridgeInstallStatus');
   dom.bridgeInstallDetail = document.getElementById('bridgeInstallDetail');
   dom.bridgeCheckBtn = document.getElementById('bridgeCheckBtn');
@@ -235,8 +188,6 @@ function init() {
     }
   }
 
-  setupSettingsSections();
-  setupSettingsTooltips();
   setupEventListeners();
   setBridgeInstallDefaultHint();
   setupFrameLoadDetection();
@@ -313,7 +264,6 @@ function updateModeBadge() {
   }
 
   syncCapturePanelMode();
-  updateSDKStorageLocationDisplay();
 }
 
 // ============================================
@@ -346,11 +296,7 @@ function switchTab(tabId) {
   } else if (tabId === 'memory') {
     loadMemoryEntries();
   } else if (tabId === 'settings') {
-    loadSettings().catch((err) => {
-      console.warn('[SidePilot] Failed to reload settings:', err?.message || err);
-      applySettingsToUI();
-    });
-    loadSDKConfigAndApplyUI();
+    applySettingsToUI();
   }
 }
 
@@ -361,53 +307,26 @@ function switchTab(tabId) {
 function normalizeSettings(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const captureWidth = clampCaptureButtonWidth(source.captureButtonWidth);
-  const sdkIncludeMemory = source.sdkIncludeMemory !== false;
-  const sdkIncludeRules = source.sdkIncludeRules !== false;
-  const sdkShowStorageLocation = source.sdkShowStorageLocation === true;
-  const sdkSessionStatePath = normalizeSessionStatePath(source.sdkSessionStatePath);
-  const sdkConversationSavePath = normalizeSavePath(source.sdkConversationSavePath, DEFAULT_CHAT_SAVE_PATH);
-  const sdkScreenshotSavePath = normalizeSavePath(source.sdkScreenshotSavePath, DEFAULT_SCREENSHOT_SAVE_PATH);
-  const sdkConfigSyncRenderMarkdown = source.sdkConfigSyncRenderMarkdown === true;
-  const sdkConfigSyncTheme = source.sdkConfigSyncTheme === true;
-  const sdkConfigSyncBanner = source.sdkConfigSyncBanner === true;
-  const sdkConfigSyncReasoningEffort = source.sdkConfigSyncReasoningEffort === true;
-  const sdkDisplayTags = normalizeSdkDisplayTags(source.sdkDisplayTags);
-  const linkGuardMode = source.linkGuardMode === 'deny' ? 'deny' : 'allow';
-  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist, linkGuardMode);
+  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist);
 
   return {
     autoSDKLoginGuide: source.autoSDKLoginGuide !== false,
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
     captureButtonWidth: captureWidth,
-    sdkIncludeMemory,
-    sdkIncludeRules,
-    sdkShowStorageLocation,
-    sdkSessionStatePath,
-    sdkConversationSavePath,
-    sdkScreenshotSavePath,
-    sdkConfigSyncRenderMarkdown,
-    sdkConfigSyncTheme,
-    sdkConfigSyncBanner,
-    sdkConfigSyncReasoningEffort,
-    sdkDisplayTags,
-    linkGuardMode,
     linkAllowlist
   };
 }
 
 function clampCaptureButtonWidth(value) {
-  if (value === '' || value === null || value === undefined) {
-    return DEFAULT_CAPTURE_BUTTON_WIDTH;
-  }
   const number = Number(value);
   if (!Number.isFinite(number)) {
     return DEFAULT_CAPTURE_BUTTON_WIDTH;
   }
-  return Math.min(128, Math.max(1, Math.round(number)));
+  return Math.min(64, Math.max(0, Math.round(number)));
 }
 
-function normalizeLinkAllowlist(value, mode = 'allow') {
+function normalizeLinkAllowlist(value) {
   const sourceList = Array.isArray(value)
     ? value
     : (typeof value === 'string' ? value.split('\n') : []);
@@ -423,41 +342,12 @@ function normalizeLinkAllowlist(value, mode = 'allow') {
     normalized.push(trimmed);
   }
 
-  if (normalized.length > 0) return normalized;
-  return mode === 'deny' ? [] : [...DEFAULT_SETTINGS.linkAllowlist];
+  return normalized.length > 0 ? normalized : [...DEFAULT_SETTINGS.linkAllowlist];
 }
 
-function formatAllowlistForTextarea(list, mode) {
-  const normalized = normalizeLinkAllowlist(list, mode);
+function formatAllowlistForTextarea(list) {
+  const normalized = normalizeLinkAllowlist(list);
   return normalized.join('\n');
-}
-
-function normalizeSdkDisplayTags(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const assistant = source.assistant !== false;
-  const packet = source.packet === true;
-  const raw = source.raw === true;
-
-  if (!assistant && !packet && !raw) {
-    return { assistant: true, packet: false, raw: false };
-  }
-
-  return { assistant, packet, raw };
-}
-
-function isAssistantOnlyTags(tags) {
-  const normalized = normalizeSdkDisplayTags(tags);
-  return normalized.assistant && !normalized.packet && !normalized.raw;
-}
-
-function normalizeSessionStatePath(value) {
-  const trimmed = String(value || '').trim();
-  return trimmed || SDK_SESSION_STATE_PATH_HINT;
-}
-
-function normalizeSavePath(value, fallback) {
-  const trimmed = String(value || '').trim();
-  return trimmed || fallback;
 }
 
 async function loadSettings() {
@@ -512,86 +402,18 @@ function applySettingsToUI() {
   if (dom.settingCaptureButtonWidth) {
     dom.settingCaptureButtonWidth.value = String(settings.captureButtonWidth);
   }
-  if (dom.settingSdkIncludeMemory) {
-    dom.settingSdkIncludeMemory.checked = settings.sdkIncludeMemory !== false;
-  }
-  if (dom.settingSdkIncludeRules) {
-    dom.settingSdkIncludeRules.checked = settings.sdkIncludeRules !== false;
-  }
-  if (dom.settingSdkShowStorageLocation) {
-    dom.settingSdkShowStorageLocation.checked = settings.sdkShowStorageLocation === true;
-  }
-  if (dom.settingSdkSessionPath) {
-    dom.settingSdkSessionPath.value = settings.sdkSessionStatePath || SDK_SESSION_STATE_PATH_HINT;
-  }
-  if (dom.settingSdkConversationSavePath) {
-    dom.settingSdkConversationSavePath.value = settings.sdkConversationSavePath || DEFAULT_CHAT_SAVE_PATH;
-  }
-  if (dom.settingSdkScreenshotSavePath) {
-    dom.settingSdkScreenshotSavePath.value = settings.sdkScreenshotSavePath || DEFAULT_SCREENSHOT_SAVE_PATH;
-  }
-  if (dom.settingSdkSyncRenderMarkdown) {
-    dom.settingSdkSyncRenderMarkdown.checked = settings.sdkConfigSyncRenderMarkdown === true;
-  }
-  if (dom.settingSdkSyncTheme) {
-    dom.settingSdkSyncTheme.checked = settings.sdkConfigSyncTheme === true;
-  }
-  if (dom.settingSdkSyncBanner) {
-    dom.settingSdkSyncBanner.checked = settings.sdkConfigSyncBanner === true;
-  }
-  if (dom.settingSdkSyncReasoningEffort) {
-    dom.settingSdkSyncReasoningEffort.checked = settings.sdkConfigSyncReasoningEffort === true;
-  }
-  if (dom.settingSdkTagAssistant) {
-    dom.settingSdkTagAssistant.checked = settings.sdkDisplayTags.assistant !== false;
-  }
-  if (dom.settingSdkTagPacket) {
-    dom.settingSdkTagPacket.checked = settings.sdkDisplayTags.packet === true;
-  }
-  if (dom.settingSdkTagRaw) {
-    dom.settingSdkTagRaw.checked = settings.sdkDisplayTags.raw === true;
-  }
-  if (dom.settingLinkGuardMode) {
-    dom.settingLinkGuardMode.value = settings.linkGuardMode || 'allow';
-  }
   if (dom.settingLinkAllowlist) {
-    dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist, settings.linkGuardMode);
+    dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist);
   }
-  updateLinkGuardLabels(settings.linkGuardMode);
   updateCaptureWidthLabel(settings.captureButtonWidth);
-  refreshSDKMemorySummary();
-  applySDKAssistantOnlyMode();
-  updateSDKStorageLocationDisplay();
-  applySDKConfigToUI();
 }
 
 function collectSettingsFromUI() {
-  const rawWidth = dom.settingCaptureButtonWidth?.value;
-  const captureWidth = rawWidth === '' || rawWidth === null || rawWidth === undefined
-    ? state.settings.captureButtonWidth
-    : rawWidth;
-
   return normalizeSettings({
     autoSDKLoginGuide: !!dom.settingAutoSdkLogin?.checked,
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
-    captureButtonWidth: captureWidth,
-    sdkIncludeMemory: !!dom.settingSdkIncludeMemory?.checked,
-    sdkIncludeRules: !!dom.settingSdkIncludeRules?.checked,
-    sdkShowStorageLocation: !!dom.settingSdkShowStorageLocation?.checked,
-    sdkSessionStatePath: dom.settingSdkSessionPath?.value,
-    sdkConversationSavePath: dom.settingSdkConversationSavePath?.value,
-    sdkScreenshotSavePath: dom.settingSdkScreenshotSavePath?.value,
-    sdkConfigSyncRenderMarkdown: !!dom.settingSdkSyncRenderMarkdown?.checked,
-    sdkConfigSyncTheme: !!dom.settingSdkSyncTheme?.checked,
-    sdkConfigSyncBanner: !!dom.settingSdkSyncBanner?.checked,
-    sdkConfigSyncReasoningEffort: !!dom.settingSdkSyncReasoningEffort?.checked,
-    sdkDisplayTags: {
-      assistant: !!dom.settingSdkTagAssistant?.checked,
-      packet: !!dom.settingSdkTagPacket?.checked,
-      raw: !!dom.settingSdkTagRaw?.checked
-    },
-    linkGuardMode: dom.settingLinkGuardMode?.value,
+    captureButtonWidth: dom.settingCaptureButtonWidth?.value,
     linkAllowlist: dom.settingLinkAllowlist?.value
   });
 }
@@ -599,28 +421,20 @@ function collectSettingsFromUI() {
 function updateCaptureWidthLabel(width) {
   if (!dom.captureBtnWidthValue) return;
   const normalized = clampCaptureButtonWidth(width);
-  dom.captureBtnWidthValue.textContent = `${normalized}px`;
+  dom.captureBtnWidthValue.textContent = normalized === 0
+    ? '隱藏'
+    : `${normalized}px`;
 }
 
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
-  if (normalized <= 15) {
-    dom.floatingCaptureBtn?.classList.add('capture-compact');
-  } else {
-    dom.floatingCaptureBtn?.classList.remove('capture-compact');
+  if (normalized === 0) {
+    dom.floatingCaptureBtn?.classList.add('capture-hidden');
+    return;
   }
-  document.documentElement.style.setProperty('--capture-button-width', `${normalized}px`);
-  document.documentElement.style.setProperty('--capture-idle-opacity', `${computeCaptureIdleOpacity(normalized)}`);
-}
 
-function computeCaptureIdleOpacity(width) {
-  const normalized = Math.max(1, Math.round(width));
-  if (normalized === 1) return 1;
-  if (normalized > 15) return 0.5;
-  const span = 14;
-  const ratio = (normalized - 1) / span;
-  const opacity = 1 - ratio * 0.5;
-  return Math.max(0.5, Math.min(1, Number(opacity.toFixed(2))));
+  dom.floatingCaptureBtn?.classList.remove('capture-hidden');
+  document.documentElement.style.setProperty('--capture-button-width', `${normalized}px`);
 }
 
 async function saveSettings() {
@@ -628,234 +442,10 @@ async function saveSettings() {
   await persistSettings(nextSettings, { showToast: true });
 }
 
-function queueSettingsAutoSave(options = {}) {
-  const { immediate = false, showToast = false } = options;
-
-  if (settingsAutoSaveTimer) {
-    clearTimeout(settingsAutoSaveTimer);
-    settingsAutoSaveTimer = null;
-  }
-
-  if (immediate) {
-    void runSettingsAutoSave({ showToast });
-    return;
-  }
-
-  settingsAutoSaveTimer = setTimeout(() => {
-    settingsAutoSaveTimer = null;
-    void runSettingsAutoSave({ showToast });
-  }, SETTINGS_AUTOSAVE_DELAY);
-}
-
-async function runSettingsAutoSave(options = {}) {
-  if (settingsAutoSaveInFlight) return settingsAutoSaveInFlight;
-
-  const { showToast = false } = options;
-  const nextSettings = collectSettingsFromUI();
-
-  settingsAutoSaveInFlight = persistSettings(nextSettings, {
-    showToast,
-    statusText: '已自動儲存'
-  })
-    .catch((err) => {
-      console.error('[SidePilot] Auto-save settings failed:', err);
-      updateSettingsStatus('自動儲存失敗', 'error');
-    })
-    .finally(() => {
-      settingsAutoSaveInFlight = null;
-    });
-
-  return settingsAutoSaveInFlight;
-}
-
 function updateSettingsStatus(text, type = 'info') {
   if (!dom.settingsStatus) return;
   dom.settingsStatus.textContent = text;
   dom.settingsStatus.className = `settings-status ${type}`;
-}
-
-function setSettingsSectionExpanded(section, expanded, options = {}) {
-  if (!section) return;
-  const header = section.querySelector('.settings-section-header');
-  const toggle = section.querySelector('.settings-section-toggle');
-  const willExpand = !!expanded;
-  section.classList.toggle('collapsed', !willExpand);
-  if (header) {
-    header.setAttribute('aria-expanded', String(willExpand));
-  }
-  if (toggle) {
-    toggle.textContent = willExpand ? '–' : '+';
-  }
-
-  if (willExpand && options.scrollIntoView) {
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-}
-
-function setupSettingsSections() {
-  const sections = document.querySelectorAll('.settings-section.collapsible');
-  sections.forEach((section) => {
-    const header = section.querySelector('.settings-section-header');
-    if (!header) return;
-    const isCollapsed = section.classList.contains('collapsed');
-    setSettingsSectionExpanded(section, !isCollapsed);
-    header.addEventListener('click', () => {
-      const isCollapsed = section.classList.contains('collapsed');
-      setSettingsSectionExpanded(section, isCollapsed);
-    });
-    header.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        const isCollapsed = section.classList.contains('collapsed');
-        setSettingsSectionExpanded(section, isCollapsed);
-      }
-    });
-  });
-
-  const tocLinks = document.querySelectorAll('.settings-toc-link');
-  tocLinks.forEach((link) => {
-    link.addEventListener('click', () => {
-      const target = link.dataset.target;
-      if (!target) return;
-      const section = document.querySelector(`.settings-section.collapsible[data-section="${target}"]`);
-      if (!section) return;
-      setSettingsSectionExpanded(section, true, { scrollIntoView: true });
-    });
-  });
-}
-
-function ensureSettingsTooltip() {
-  if (settingsTooltipEl) return settingsTooltipEl;
-  const tooltip = document.createElement('div');
-  tooltip.className = 'settings-tooltip';
-  tooltip.id = 'settingsTooltip';
-  document.body.appendChild(tooltip);
-  settingsTooltipEl = tooltip;
-  return settingsTooltipEl;
-}
-
-function getSettingsTooltipText(target) {
-  if (!target) return '';
-  const explicit = target.closest?.('[data-help]');
-  if (explicit?.dataset?.help) {
-    const text = explicit.dataset.help.trim();
-    if (text) return text;
-  }
-
-  const item = target.closest?.('.settings-item');
-  if (item) {
-    const desc = item.querySelector('.settings-item-desc');
-    if (desc?.textContent?.trim()) {
-      return desc.textContent.trim();
-    }
-    const title = item.querySelector('.settings-item-title');
-    if (title?.textContent?.trim()) {
-      return title.textContent.trim();
-    }
-  }
-
-  return '';
-}
-
-function positionSettingsTooltip(anchor) {
-  if (!settingsTooltipEl || !anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const tooltipRect = settingsTooltipEl.getBoundingClientRect();
-  const padding = 8;
-  const spacing = 8;
-  let top = rect.bottom + spacing;
-
-  if (top + tooltipRect.height > window.innerHeight - padding) {
-    top = rect.top - tooltipRect.height - spacing;
-  }
-  if (top < padding) {
-    top = padding;
-  }
-
-  let left = rect.left;
-  if (left + tooltipRect.width > window.innerWidth - padding) {
-    left = window.innerWidth - tooltipRect.width - padding;
-  }
-  if (left < padding) {
-    left = padding;
-  }
-
-  settingsTooltipEl.style.top = `${Math.round(top)}px`;
-  settingsTooltipEl.style.left = `${Math.round(left)}px`;
-}
-
-function showSettingsTooltip(anchor, text) {
-  if (!text) return;
-  const tooltip = ensureSettingsTooltip();
-  tooltip.textContent = text;
-  tooltip.classList.add('visible');
-  positionSettingsTooltip(anchor);
-}
-
-function hideSettingsTooltip() {
-  if (!settingsTooltipEl) return;
-  settingsTooltipEl.classList.remove('visible');
-}
-
-function clearSettingsTooltipTimer() {
-  if (settingsTooltipTimer) {
-    clearTimeout(settingsTooltipTimer);
-    settingsTooltipTimer = null;
-  }
-}
-
-function setupSettingsTooltips() {
-  const container = document.getElementById('settings-tab');
-  if (!container) return;
-
-  const handleMouseOver = (event) => {
-    const target = event.target;
-    const anchor = target.closest?.('.settings-item, [data-help]');
-    if (!anchor || !container.contains(anchor)) return;
-    const helpText = getSettingsTooltipText(target);
-    if (!helpText) return;
-
-    if (settingsTooltipAnchor === anchor) return;
-    settingsTooltipAnchor = anchor;
-    clearSettingsTooltipTimer();
-    hideSettingsTooltip();
-    settingsTooltipTimer = setTimeout(() => {
-      showSettingsTooltip(anchor, helpText);
-    }, SETTINGS_TOOLTIP_DELAY_MS);
-  };
-
-  const handleMouseOut = (event) => {
-    if (!settingsTooltipAnchor) return;
-    const related = event.relatedTarget;
-    if (related && settingsTooltipAnchor.contains(related)) return;
-    clearSettingsTooltipTimer();
-    hideSettingsTooltip();
-    settingsTooltipAnchor = null;
-  };
-
-  container.addEventListener('mouseover', handleMouseOver, true);
-  container.addEventListener('mouseout', handleMouseOut, true);
-  container.addEventListener('mousedown', hideSettingsTooltip, true);
-  document.addEventListener('scroll', hideSettingsTooltip, true);
-  window.addEventListener('resize', () => {
-    if (settingsTooltipAnchor && settingsTooltipEl?.classList.contains('visible')) {
-      positionSettingsTooltip(settingsTooltipAnchor);
-    }
-  });
-}
-
-function updateLinkGuardLabels(mode) {
-  const resolved = mode === 'deny' ? 'deny' : 'allow';
-  if (dom.linkAllowlistTitle) {
-    dom.linkAllowlistTitle.textContent = resolved === 'deny'
-      ? '禁止留在 Sidecar 的連結前綴'
-      : '允許留在 Sidecar 的連結前綴';
-  }
-  if (dom.linkAllowlistDesc) {
-    dom.linkAllowlistDesc.textContent = resolved === 'deny'
-      ? '符合以下前綴的連結會改用新分頁開啟'
-      : '每行一個 URL 前綴，支援結尾萬用字元 *';
-  }
 }
 
 function getBridgeHealthUrl(port = SDK_BRIDGE_PORT) {
@@ -964,8 +554,7 @@ async function checkBridgeHealth(options = {}) {
 }
 
 function markSettingsDirty() {
-  updateSettingsStatus('變更已記錄，稍後自動儲存', 'warning');
-  queueSettingsAutoSave();
+  updateSettingsStatus('設定尚未儲存', 'warning');
 }
 
 async function goCopilotHome() {
@@ -1054,214 +643,16 @@ function sendSDKMessageViaBackground(data) {
   });
 }
 
-async function loadSDKConfig() {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'sdkConfig.get' });
-    if (!response?.success) {
-      throw new Error(response?.error || 'Failed to load SDK config');
-    }
-    state.sdkConfigInfo = {
-      path: response.path,
-      exists: !!response.exists,
-      config: response.config || {}
-    };
-    return state.sdkConfigInfo;
-  } catch (err) {
-    console.warn('[SidePilot] Failed to load SDK config:', err?.message || err);
-    state.sdkConfigInfo = {
-      path: '',
-      exists: false,
-      config: null,
-      error: err?.message || 'unknown'
-    };
-    return null;
-  }
-}
-
-async function loadSDKConfigAndApplyUI() {
-  await loadSDKConfig();
-  applySDKConfigToUI();
-}
-
-function getSDKConfigValue(key) {
-  const config = state.sdkConfigInfo?.config;
-  if (!config || typeof config !== 'object') return undefined;
-  return config[key];
-}
-
-function getSDKConfigSummaryText() {
-  const info = state.sdkConfigInfo;
-  if (!info) {
-    return '尚未讀取 Copilot CLI 設定';
-  }
-  if (info?.error) {
-    return 'Bridge 未連線，無法讀取設定';
-  }
-  const config = info.config || {};
-  const model = config.model || 'default';
-  const renderMarkdown = typeof config.render_markdown === 'boolean' ? config.render_markdown : 'default';
-  const theme = config.theme || 'default';
-  const banner = config.banner || 'default';
-  const reasoningEffort = config.reasoning_effort || 'default';
-
-  return `model: ${model} | render_markdown: ${renderMarkdown} | theme: ${theme} | banner: ${banner} | reasoning_effort: ${reasoningEffort}`;
-}
-
-function setSDKConfigSelectValue(select, value) {
-  if (!select) return;
-  const nextValue = value === undefined || value === null ? '' : String(value);
-  select.value = nextValue;
-  if (select.value !== nextValue) {
-    select.value = '';
-  }
-}
-
-function applySDKConfigToUI() {
-  const info = state.sdkConfigInfo;
-  const hasConfig = !!info && !info?.error;
-
-  if (dom.sdkConfigPath) {
-    if (!info) {
-      dom.sdkConfigPath.textContent = '尚未讀取';
-    } else if (info.error) {
-      dom.sdkConfigPath.textContent = 'Bridge 未連線';
-    } else {
-      const suffix = info.exists === false ? ' (尚未建立)' : '';
-      dom.sdkConfigPath.textContent = `${info.path || '未知路徑'}${suffix}`;
-    }
-  }
-
-  if (dom.sdkConfigSummary) {
-    dom.sdkConfigSummary.textContent = getSDKConfigSummaryText();
-  }
-
-  setSDKConfigSelectValue(dom.settingSdkRenderMarkdown, getSDKConfigValue('render_markdown'));
-  setSDKConfigSelectValue(dom.settingSdkTheme, getSDKConfigValue('theme'));
-  setSDKConfigSelectValue(dom.settingSdkBanner, getSDKConfigValue('banner'));
-  setSDKConfigSelectValue(dom.settingSdkReasoningEffort, getSDKConfigValue('reasoning_effort'));
-
-  if (!hasConfig) {
-    setSDKConfigSelectValue(dom.settingSdkRenderMarkdown, '');
-    setSDKConfigSelectValue(dom.settingSdkTheme, '');
-    setSDKConfigSelectValue(dom.settingSdkBanner, '');
-    setSDKConfigSelectValue(dom.settingSdkReasoningEffort, '');
-  }
-
-  updateSDKConfigControlState();
-}
-
-function updateSDKConfigControlState() {
-  const info = state.sdkConfigInfo;
-  const hasConfig = !!info && !info?.error;
-
-  const setDisabled = (el, disabled) => {
-    if (!el) return;
-    el.disabled = disabled;
-  };
-
-  setDisabled(dom.settingSdkRenderMarkdown, !hasConfig || !state.settings.sdkConfigSyncRenderMarkdown);
-  setDisabled(dom.settingSdkTheme, !hasConfig || !state.settings.sdkConfigSyncTheme);
-  setDisabled(dom.settingSdkBanner, !hasConfig || !state.settings.sdkConfigSyncBanner);
-  setDisabled(dom.settingSdkReasoningEffort, !hasConfig || !state.settings.sdkConfigSyncReasoningEffort);
-}
-
-function buildSDKConfigPatchFromUI(fields = null) {
-  const patch = {};
-  const allow = Array.isArray(fields) ? new Set(fields) : null;
-
-  if (state.settings.sdkConfigSyncRenderMarkdown && (!allow || allow.has('render_markdown'))) {
-    const value = dom.settingSdkRenderMarkdown?.value ?? '';
-    patch.render_markdown = value === '' ? null : value === 'true';
-  }
-  if (state.settings.sdkConfigSyncTheme && (!allow || allow.has('theme'))) {
-    const value = dom.settingSdkTheme?.value ?? '';
-    patch.theme = value === '' ? null : value;
-  }
-  if (state.settings.sdkConfigSyncBanner && (!allow || allow.has('banner'))) {
-    const value = dom.settingSdkBanner?.value ?? '';
-    patch.banner = value === '' ? null : value;
-  }
-  if (state.settings.sdkConfigSyncReasoningEffort && (!allow || allow.has('reasoning_effort'))) {
-    const value = dom.settingSdkReasoningEffort?.value ?? '';
-    patch.reasoning_effort = value === '' ? null : value;
-  }
-
-  return patch;
-}
-
-async function updateSDKConfigFromUI(options = {}) {
-  const patch = buildSDKConfigPatchFromUI(options.fields);
-  if (!Object.keys(patch).length) return;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'sdkConfig.update',
-      patch
-    });
-    if (!response?.success) {
-      throw new Error(response?.error || 'Failed to update config');
-    }
-
-    state.sdkConfigInfo = {
-      path: response.path || state.sdkConfigInfo?.path || '',
-      exists: true,
-      config: response.config || {}
-    };
-    applySDKConfigToUI();
-
-    if (options.showToast) {
-      showToast('Copilot CLI 設定已更新');
-    }
-  } catch (err) {
-    console.warn('[SidePilot] Failed to update SDK config:', err?.message || err);
-    if (options.showToast) {
-      showToast('Copilot CLI 設定更新失敗', 'error');
-    }
-  }
-}
-
-async function syncSDKConfigModel(model) {
-  const trimmed = String(model || '').trim();
-  const current = typeof getSDKConfigValue('model') === 'string' ? getSDKConfigValue('model') : null;
-
-  if (!trimmed) {
-    if (current === null || current === undefined || current === '') return;
-  } else if (current === trimmed) {
-    return;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'sdkConfig.update',
-      patch: { model: trimmed ? trimmed : null }
-    });
-    if (response?.success) {
-      state.sdkConfigInfo = {
-        path: response.path || state.sdkConfigInfo?.path || '',
-        exists: true,
-        config: response.config || {}
-      };
-      applySDKConfigToUI();
-    }
-  } catch (err) {
-    console.warn('[SidePilot] Failed to update SDK config model:', err?.message || err);
-  }
-}
-
 async function loadSDKModelOptions() {
   if (!dom.sdkModelSelect) return;
 
   try {
-    const [response, configInfo] = await Promise.all([
-      chrome.runtime.sendMessage({ action: 'sdkModels' }),
-      loadSDKConfig()
-    ]);
+    const response = await chrome.runtime.sendMessage({ action: 'sdkModels' });
     if (!response?.success || !Array.isArray(response.models)) {
       throw new Error(response?.error || 'Failed to load model list');
     }
 
     const current = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || '';
-    const configModel = typeof configInfo?.config?.model === 'string' ? configInfo.config.model.trim() : '';
     dom.sdkModelSelect.innerHTML = '';
 
     const defaultOption = document.createElement('option');
@@ -1278,13 +669,10 @@ async function loadSDKModelOptions() {
 
     if (current && response.models.includes(current)) {
       dom.sdkModelSelect.value = current;
-    } else if (configModel && response.models.includes(configModel)) {
-      dom.sdkModelSelect.value = configModel;
     } else {
       dom.sdkModelSelect.value = '';
       localStorage.removeItem(STORAGE_KEY_SDK_MODEL);
     }
-    applySDKConfigToUI();
   } catch (err) {
     console.warn('[SidePilot] Failed to load SDK models:', err?.message || err);
   }
@@ -1643,7 +1031,6 @@ function setupEventListeners() {
   // 擷取面板
   dom.closeCaptureBtn?.addEventListener('click', closeCapturePanel);
   dom.captureContent?.addEventListener('click', handleCaptureContentClick);
-  dom.copyAllBtn?.addEventListener('click', outputTextToChat);
 
   // 錯誤處理
   dom.retryBtn?.addEventListener('click', refreshFrame);
@@ -1692,92 +1079,8 @@ function setupEventListeners() {
     }
   });
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
-  dom.settingSdkIncludeMemory?.addEventListener('change', () => {
-    state.settings.sdkIncludeMemory = !!dom.settingSdkIncludeMemory?.checked;
-    refreshSDKMemorySummary();
-    markSettingsDirty();
-  });
-  dom.settingSdkIncludeRules?.addEventListener('change', () => {
-    state.settings.sdkIncludeRules = !!dom.settingSdkIncludeRules?.checked;
-    refreshSDKMemorySummary();
-    markSettingsDirty();
-  });
-  dom.settingSdkShowStorageLocation?.addEventListener('change', () => {
-    state.settings.sdkShowStorageLocation = !!dom.settingSdkShowStorageLocation?.checked;
-    updateSDKStorageLocationDisplay();
-    markSettingsDirty();
-  });
-  dom.settingSdkSessionPath?.addEventListener('input', () => {
-    state.settings.sdkSessionStatePath = normalizeSessionStatePath(dom.settingSdkSessionPath?.value);
-    updateSDKStorageLocationDisplay();
-    markSettingsDirty();
-  });
-  dom.settingSdkConversationSavePath?.addEventListener('input', () => {
-    state.settings.sdkConversationSavePath = normalizeSavePath(
-      dom.settingSdkConversationSavePath?.value,
-      DEFAULT_CHAT_SAVE_PATH
-    );
-    markSettingsDirty();
-  });
-  dom.settingSdkScreenshotSavePath?.addEventListener('input', () => {
-    state.settings.sdkScreenshotSavePath = normalizeSavePath(
-      dom.settingSdkScreenshotSavePath?.value,
-      DEFAULT_SCREENSHOT_SAVE_PATH
-    );
-    markSettingsDirty();
-  });
-  dom.settingSdkSyncRenderMarkdown?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncRenderMarkdown = !!dom.settingSdkSyncRenderMarkdown?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncRenderMarkdown) {
-      updateSDKConfigFromUI({ fields: ['render_markdown'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncTheme?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncTheme = !!dom.settingSdkSyncTheme?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncTheme) {
-      updateSDKConfigFromUI({ fields: ['theme'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncBanner?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncBanner = !!dom.settingSdkSyncBanner?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncBanner) {
-      updateSDKConfigFromUI({ fields: ['banner'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncReasoningEffort?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncReasoningEffort = !!dom.settingSdkSyncReasoningEffort?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncReasoningEffort) {
-      updateSDKConfigFromUI({ fields: ['reasoning_effort'], showToast: true });
-    }
-  });
-  dom.settingSdkRenderMarkdown?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncRenderMarkdown) {
-      updateSDKConfigFromUI({ fields: ['render_markdown'], showToast: true });
-    }
-  });
-  dom.settingSdkTheme?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncTheme) {
-      updateSDKConfigFromUI({ fields: ['theme'], showToast: true });
-    }
-  });
-  dom.settingSdkBanner?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncBanner) {
-      updateSDKConfigFromUI({ fields: ['banner'], showToast: true });
-    }
-  });
-  dom.settingSdkReasoningEffort?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncReasoningEffort) {
-      updateSDKConfigFromUI({ fields: ['reasoning_effort'], showToast: true });
-    }
-  });
+  dom.sdkIncludeMemory?.addEventListener('change', refreshSDKMemorySummary);
+  dom.sdkAssistantOnly?.addEventListener('change', applySDKAssistantOnlyMode);
   dom.sdkModelSelect?.addEventListener('change', () => {
     const value = dom.sdkModelSelect?.value || '';
     if (value) {
@@ -1785,8 +1088,6 @@ function setupEventListeners() {
     } else {
       localStorage.removeItem(STORAGE_KEY_SDK_MODEL);
     }
-    syncSDKConfigModel(value);
-    chrome.runtime.sendMessage({ action: 'sdkResetSession' });
   });
 
   // Settings Tab
@@ -1807,14 +1108,6 @@ function setupEventListeners() {
   dom.settingPlayIntroEveryOpen?.addEventListener('change', markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener('change', markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener('input', markSettingsDirty);
-  dom.settingLinkGuardMode?.addEventListener('change', () => {
-    state.settings.linkGuardMode = dom.settingLinkGuardMode?.value === 'deny' ? 'deny' : 'allow';
-    updateLinkGuardLabels(state.settings.linkGuardMode);
-    markSettingsDirty();
-  });
-  dom.settingSdkTagAssistant?.addEventListener('change', markSettingsDirty);
-  dom.settingSdkTagPacket?.addEventListener('change', markSettingsDirty);
-  dom.settingSdkTagRaw?.addEventListener('change', markSettingsDirty);
   dom.openSdkLoginGuideBtn?.addEventListener('click', openSDKLoginPage);
   dom.testSdkBridgeBtn?.addEventListener('click', async () => {
     updateSettingsStatus('測試 Bridge 連線中...', 'warning');
@@ -1824,7 +1117,6 @@ function setupEventListeners() {
         updateSettingsStatus('Bridge 連線成功', 'success');
         showToast('SDK Bridge 已連線');
         loadSDKModelOptions();
-        loadSDKConfigAndApplyUI();
       } else {
         updateSettingsStatus('Bridge 未啟動或無法連線', 'error');
         showToast('Bridge 連線失敗，請先啟動本機服務', 'error');
@@ -1882,14 +1174,11 @@ function setupEventListeners() {
       let promptToSend = content;
       let sandboxSystemMessage;
 
-      const includeMemory = state.settings.sdkIncludeMemory !== false;
-      const includeRules = state.settings.sdkIncludeRules !== false;
-
-      if (includeMemory || includeRules) {
+      if (dom.sdkIncludeMemory?.checked) {
         try {
           const [allMemoryEntries, rulesContent] = await Promise.all([
-            includeMemory ? listAllMemoryEntries() : Promise.resolve([]),
-            includeRules ? loadRulesContent().catch(() => '') : Promise.resolve('')
+            listAllMemoryEntries(),
+            loadRulesContent().catch(() => '')
           ]);
           const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent);
           promptToSend = composed.prompt;
@@ -2171,18 +1460,21 @@ function updatePageInfo(title, url) {
 // ============================================
 
 function toggleCapturePanel() {
-  if (!state.isCapturePanelOpen) {
+  if (state.isCapturePanelOpen) {
+    closeCapturePanel();
+  } else {
     openCapturePanel();
-    return;
   }
-
-  clearCaptureState();
-  loadPageContent();
 }
 
 async function openCapturePanel() {
+  if (state.detectedMode !== 'sdk') {
+    showToast('擷取面板僅在 SDK 模式顯示', 'warning');
+    return;
+  }
   state.isCapturePanelOpen = true;
   dom.capturePanel?.classList.add('visible');
+  dom.floatingCaptureBtn?.classList.add('active');
 
   await loadPageContent();
 }
@@ -2190,18 +1482,13 @@ async function openCapturePanel() {
 function closeCapturePanel() {
   state.isCapturePanelOpen = false;
   dom.capturePanel?.classList.remove('visible');
+  dom.floatingCaptureBtn?.classList.remove('active');
 }
 
 function syncCapturePanelMode() {
-  // Capture panel now available in both modes
-}
-
-function clearCaptureState() {
-  state.currentPageContent = null;
-  state.currentPageScreenshot = null;
-  state.currentPartialScreenshot = null;
-  state.currentPageError = null;
-  renderCaptureLoading();
+  if (state.detectedMode !== 'sdk' && state.isCapturePanelOpen) {
+    closeCapturePanel();
+  }
 }
 
 async function loadPageContent() {
@@ -2330,7 +1617,6 @@ function renderCaptureContent() {
         </div>
         <div class="capture-card-actions">
           <button class="btn-soft" data-action="refresh-full">重新擷取</button>
-          <button class="btn-soft" data-action="send-full">送出至聊天對話</button>
           <button class="btn-soft" data-action="download-full">下載截圖</button>
         </div>
       </div>
@@ -2345,7 +1631,6 @@ function renderCaptureContent() {
         </div>
         <div class="capture-card-actions">
           <button class="btn-soft" data-action="capture-partial">選取範圍</button>
-          <button class="btn-soft" data-action="send-partial">送出至聊天對話</button>
           <button class="btn-soft" data-action="download-partial">下載截圖</button>
         </div>
       </div>
@@ -2399,12 +1684,6 @@ function handleCaptureContentClick(event) {
       break;
     case 'download-partial':
       downloadScreenshot(state.currentPartialScreenshot, 'sidepilot-partial.png');
-      break;
-    case 'send-full':
-      sendScreenshotToChat(state.currentPageScreenshot, 'page-screenshot');
-      break;
-    case 'send-partial':
-      sendScreenshotToChat(state.currentPartialScreenshot, 'partial-screenshot');
       break;
     case 'open-full':
       openScreenshotInTab(state.currentPageScreenshot);
@@ -2523,82 +1802,18 @@ function openScreenshotInTab(dataUrl) {
   chrome.tabs.create({ url: dataUrl });
 }
 
-function sanitizeDownloadPath(path) {
-  const raw = String(path || '').trim();
-  if (!raw) return '';
-  let normalized = raw.replace(/\\/g, '/');
-  normalized = normalized.replace(/^[A-Za-z]:\/?/, '');
-  normalized = normalized.replace(/^\/+/, '');
-  normalized = normalized.replace(/\.\.(\/|\\)/g, '');
-  return normalized.replace(/\/+$/, '');
-}
-
-function buildDownloadFilename(folder, filename) {
-  const safeFolder = sanitizeDownloadPath(folder);
-  if (!safeFolder) return filename;
-  return `${safeFolder}/${filename}`;
-}
-
 function downloadScreenshot(dataUrl, filename) {
   if (!dataUrl) {
     showToast('尚無截圖可下載', 'error');
     return;
   }
-  const targetFolder = state.settings.sdkScreenshotSavePath;
-  const finalName = buildDownloadFilename(targetFolder, filename);
-  const saveAs = !sanitizeDownloadPath(targetFolder);
-  chrome.downloads.download({ url: dataUrl, filename: finalName, saveAs }, () => {
+  chrome.downloads.download({ url: dataUrl, filename, saveAs: true }, () => {
     if (chrome.runtime.lastError) {
       showToast('下載失敗: ' + chrome.runtime.lastError.message, 'error');
     } else {
       showToast('已開始下載');
     }
   });
-}
-
-async function copyImageToClipboard(dataUrl) {
-  if (!dataUrl || !navigator.clipboard?.write) return false;
-  try {
-    const response = await fetch(dataUrl);
-    const blob = await response.blob();
-    const item = new ClipboardItem({ [blob.type]: blob });
-    await navigator.clipboard.write([item]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function sendScreenshotToChat(dataUrl, label) {
-  if (!dataUrl) {
-    showToast('尚無截圖可送出', 'error');
-    return;
-  }
-
-  if (state.detectedMode === 'sdk') {
-    if (!dom.sdkInput || !dom.sdkSendBtn) {
-      showToast('SDK 對話輸入框不可用', 'error');
-      return;
-    }
-    const filename = label === 'partial-screenshot' ? 'sidepilot-partial.png' : 'sidepilot-page.png';
-    const targetFolder = state.settings.sdkScreenshotSavePath;
-    const relativePath = buildDownloadFilename(targetFolder, filename);
-    downloadScreenshot(dataUrl, filename);
-    dom.sdkInput.value = `已儲存截圖：${relativePath}`;
-    dom.sdkSendBtn.click();
-    showToast('SDK 不支援圖片，已送出截圖路徑', 'warning');
-    return;
-  }
-
-  const copied = await copyImageToClipboard(dataUrl);
-  if (copied) {
-    showToast('圖片已複製，請貼到 Copilot 對話框', 'success');
-    dom.copilotFrame?.focus();
-    return;
-  }
-
-  openScreenshotInTab(dataUrl);
-  showToast('已開啟截圖，請拖曳到 Copilot 對話框', 'warning');
 }
 
 // ============================================
@@ -2821,65 +2036,22 @@ function updateSDKMemorySummary(text) {
   dom.sdkMemorySummary.textContent = text;
 }
 
-function truncateText(text, maxLength) {
-  const value = String(text || '');
-  if (value.length <= maxLength) return value;
-  return value.slice(0, Math.max(0, maxLength - 1)) + '…';
-}
-
-function toFileUrl(path) {
-  const normalized = String(path || '').replace(/\\/g, '/');
-  return `file:///${encodeURI(normalized)}`;
-}
-
-function getConversationStorageLocation() {
-  if (state.detectedMode === 'sdk') {
-    const path = normalizeSessionStatePath(state.settings?.sdkSessionStatePath);
-    return {
-      label: '本機對話階段',
-      display: path,
-      url: toFileUrl(path)
-    };
-  }
-
-  return {
-    label: 'GitHub Copilot',
-    display: COPILOT_HOME_URL,
-    url: COPILOT_HOME_URL
-  };
-}
-
-function updateSDKStorageLocationDisplay() {
-  if (!dom.sdkStorageLocation || !dom.sdkStorageLink) return;
-
-  const enabled = state.settings.sdkShowStorageLocation === true;
-  dom.sdkStorageLocation.classList.toggle('hidden', !enabled);
-  if (!enabled) return;
-
-  const location = getConversationStorageLocation();
-  const displayText = truncateText(location.display || location.url, 42);
-  dom.sdkStorageLink.textContent = displayText;
-  dom.sdkStorageLink.href = location.url;
-  dom.sdkStorageLink.title = location.url;
-}
-
 function refreshSDKMemorySummary() {
-  const includeMemory = state.settings.sdkIncludeMemory !== false;
-  const includeRules = state.settings.sdkIncludeRules !== false;
-  if (!includeMemory && !includeRules) {
-    updateSDKMemorySummary('Memory/rules injection: off');
-    return;
-  }
-  const memText = includeMemory ? 'mem on' : 'mem off';
-  const rulesText = includeRules ? 'rules on' : 'rules off';
-  updateSDKMemorySummary(`Memory/rules injection: ${memText}, ${rulesText}`);
+  const enabled = !!dom.sdkIncludeMemory?.checked;
+  updateSDKMemorySummary(enabled ? 'Memory injection: on' : 'Memory injection: off');
 }
 
 function applySDKAssistantOnlyMode() {
-  const enabled = isAssistantOnlyTags(state.settings?.sdkDisplayTags);
+  const enabled = !!dom.sdkAssistantOnly?.checked;
 
   if (dom.sdkMessages) {
     dom.sdkMessages.classList.toggle('assistant-only', enabled);
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY_SDK_ASSISTANT_ONLY, enabled ? 'true' : 'false');
+  } catch (err) {
+    console.warn('[SidePilot] Failed to persist assistant-only mode:', err?.message || err);
   }
 }
 
@@ -2895,42 +2067,6 @@ async function copyAllContent() {
 
   const markdown = formatAsMarkdown(state.currentPageContent);
   await copyToClipboard(markdown, '文字摘要已複製，可貼到 Copilot 對話中');
-}
-
-function buildPlainText(content) {
-  if (!content) return '';
-  if (content.text) return String(content.text).trim();
-  if (Array.isArray(content.paragraphs) && content.paragraphs.length) {
-    return content.paragraphs.join('\n\n').trim();
-  }
-  return '';
-}
-
-async function outputTextToChat() {
-  if (!state.currentPageContent) {
-    showToast('沒有可輸出的內容', 'error');
-    return;
-  }
-
-  const text = buildPlainText(state.currentPageContent);
-  if (!text) {
-    showToast('沒有可輸出的文字內容', 'error');
-    return;
-  }
-
-  if (state.detectedMode === 'sdk') {
-    if (dom.sdkInput) {
-      dom.sdkInput.value = text;
-      dom.sdkInput.focus();
-      showToast('文字已輸出到 SDK 對話輸入框');
-      return;
-    }
-  }
-
-  const copied = await copyToClipboard(text, '文字已複製，請貼到 Copilot 對話框');
-  if (copied) {
-    dom.copilotFrame?.focus();
-  }
 }
 
 async function copyStructuredContent() {
@@ -3036,7 +2172,6 @@ function handleBackgroundMessage(message, sender, sendResponse) {
 
   if (message.action === 'externalLinkRedirected') {
     showToast('連結超出 Sidecar 範圍，已改為新分頁開啟', 'warning');
-    return;
   }
 }
 
@@ -3305,11 +2440,6 @@ function parseSDKSandboxResponse(rawContent) {
   };
 }
 
-function getSdkDisplayTags() {
-  const tags = normalizeSdkDisplayTags(state.settings?.sdkDisplayTags);
-  return tags;
-}
-
 function addSDKStructuredAssistantMessage(parsedResponse) {
   if (!dom.sdkMessages) return;
 
@@ -3317,26 +2447,13 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
     ? parsedResponse
     : parseSDKSandboxResponse(parsedResponse);
 
-  const displayTags = getSdkDisplayTags();
-  const visibleBlocks = parsed.blocks.filter((block) => {
-    if (block.type === 'assistant') return displayTags.assistant;
-    if (block.type === 'packet') return displayTags.packet;
-    if (block.type === 'raw') return displayTags.raw;
-    return false;
-  });
-
-  if (visibleBlocks.length === 0) {
-    addSDKMessage('assistant', '（此回覆已被標籤設定隱藏）');
-    return;
-  }
-
   const msgEl = document.createElement('div');
   msgEl.className = 'sdk-message assistant';
 
   const contentEl = document.createElement('div');
   contentEl.className = 'sdk-message-content sdk-structured-content';
 
-  visibleBlocks.forEach((block) => {
+  parsed.blocks.forEach((block) => {
     let format = null;
     if (block.type === 'packet') {
       const packetValue = block.parsed && typeof block.parsed === 'object'

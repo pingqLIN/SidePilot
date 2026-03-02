@@ -13,8 +13,7 @@ const DEFAULT_ALLOWLIST = [
   'https://github.com/features/copilot*'
 ];
 
-let allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST, 'allow');
-let guardMode = 'allow';
+let allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST);
 
 function isSidePilotIframeContext() {
   if (window.top === window.self) {
@@ -25,7 +24,7 @@ function isSidePilotIframeContext() {
   return ref.startsWith(`chrome-extension://${chrome.runtime.id}/`);
 }
 
-function normalizeAllowlist(raw, mode = 'allow') {
+function normalizeAllowlist(raw) {
   const source = Array.isArray(raw) ? raw : [];
   const clean = [];
   const seen = new Set();
@@ -39,8 +38,7 @@ function normalizeAllowlist(raw, mode = 'allow') {
     clean.push(value);
   }
 
-  if (clean.length > 0) return clean;
-  return mode === 'deny' ? [] : [...DEFAULT_ALLOWLIST];
+  return clean.length > 0 ? clean : [...DEFAULT_ALLOWLIST];
 }
 
 function escapeRegex(value) {
@@ -52,29 +50,22 @@ function wildcardToRegex(pattern) {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
-function buildRegexPatterns(list, mode) {
-  return normalizeAllowlist(list, mode).map(wildcardToRegex);
+function buildRegexPatterns(list) {
+  return normalizeAllowlist(list).map(wildcardToRegex);
 }
 
 async function refreshAllowPatternsFromStorage() {
   try {
     const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
-    const settings = result?.[SETTINGS_STORAGE_KEY] || {};
-    guardMode = settings?.linkGuardMode === 'deny' ? 'deny' : 'allow';
-    const allowlist = settings?.linkAllowlist;
-    allowPatterns = buildRegexPatterns(allowlist, guardMode);
+    const allowlist = result?.[SETTINGS_STORAGE_KEY]?.linkAllowlist;
+    allowPatterns = buildRegexPatterns(allowlist);
   } catch {
-    allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST, 'allow');
-    guardMode = 'allow';
+    allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST);
   }
 }
 
 function shouldKeepInIframe(urlString) {
-  const matches = allowPatterns.some((pattern) => pattern.test(urlString));
-  if (guardMode === 'deny') {
-    return !matches;
-  }
-  return matches;
+  return allowPatterns.some((pattern) => pattern.test(urlString));
 }
 
 function onAnchorClick(event) {
@@ -112,8 +103,7 @@ function onStorageChanged(changes, areaName) {
   if (areaName !== 'local') return;
   if (!changes?.[SETTINGS_STORAGE_KEY]) return;
   const nextSettings = changes[SETTINGS_STORAGE_KEY].newValue || {};
-  guardMode = nextSettings.linkGuardMode === 'deny' ? 'deny' : 'allow';
-  allowPatterns = buildRegexPatterns(nextSettings.linkAllowlist, guardMode);
+  allowPatterns = buildRegexPatterns(nextSettings.linkAllowlist);
 }
 
 if (isSidePilotIframeContext()) {
