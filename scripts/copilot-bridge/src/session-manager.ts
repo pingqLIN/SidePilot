@@ -310,11 +310,21 @@ export class SessionManager {
 
     this.pendingPermissions.delete(id);
 
-    if (approved && optionId) {
-      pending.resolve({
-        outcome: { outcome: 'selected', optionId }
-      });
-      this.pushLog('info', `[Permission] Approved: ${id} (option: ${optionId})`);
+    if (approved) {
+      // 如果前端未指定 optionId，預設選第一個 option
+      const resolvedOptionId = optionId || (pending.options.length > 0 ? pending.options[0].optionId : undefined);
+      if (resolvedOptionId) {
+        pending.resolve({
+          outcome: { outcome: 'selected', optionId: resolvedOptionId }
+        });
+        this.pushLog('info', `[Permission] Approved: ${id} (option: ${resolvedOptionId})`);
+      } else {
+        // 沒有任何 option 可選，仍視為 cancel
+        pending.resolve({
+          outcome: { outcome: 'cancelled' }
+        });
+        this.pushLog('warn', `[Permission] Approved but no options available: ${id}`);
+      }
     } else {
       pending.resolve({
         outcome: { outcome: 'cancelled' }
@@ -330,8 +340,10 @@ export class SessionManager {
    */
   private async requestPermissionAsync(sessionId: string, params: any): Promise<any> {
     const options = params?.options || [];
-    const scope = params?.scope || params?.title || 'unknown';
+    const scope = params?.scope || params?.title || params?.resource?.uri || 'unknown';
     const reason = params?.message || params?.reason || '';
+
+    this.pushLog('info', `[Permission] Incoming request — scope: ${scope}, options: ${options.length}, params keys: ${Object.keys(params || {}).join(',')}`);
 
     // 白名單檢查 — 低風險操作自動 approve
     const isWhitelisted = this.permissionWhitelist.some(pattern =>

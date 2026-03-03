@@ -3656,24 +3656,47 @@ function disconnectPermissionSSE() {
 }
 
 let _currentPermissionId = null;
+let _currentPermissionOptions = [];
+let _selectedOptionId = null;
 
 function showPermissionModal(permission) {
   if (!dom.permissionModal) return;
   _currentPermissionId = permission.id;
+  _currentPermissionOptions = permission.options || [];
+  _selectedOptionId = _currentPermissionOptions.length > 0 ? _currentPermissionOptions[0].optionId : null;
 
-  if (dom.permissionScope) dom.permissionScope.textContent = permission.scope || '';
+  if (dom.permissionScope) dom.permissionScope.textContent = permission.scope || '(unknown)';
   if (dom.permissionReason) dom.permissionReason.textContent = permission.reason || '';
-  if (dom.permissionOptions) dom.permissionOptions.innerHTML = '';
+
+  // 渲染 permission options 供使用者選擇
+  if (dom.permissionOptions) {
+    dom.permissionOptions.innerHTML = '';
+    _currentPermissionOptions.forEach((opt, idx) => {
+      const label = document.createElement('label');
+      label.className = 'permission-option-label';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'permissionOption';
+      radio.value = opt.optionId;
+      if (idx === 0) radio.checked = true;
+      radio.addEventListener('change', () => { _selectedOptionId = opt.optionId; });
+      label.appendChild(radio);
+      label.appendChild(document.createTextNode(` ${opt.label || opt.optionId}`));
+      dom.permissionOptions.appendChild(label);
+    });
+  }
 
   dom.permissionModal.classList.remove('hidden');
   startPermissionCountdown(60);
-  addLog('info', `[Permission] 收到權限請求: ${permission.scope}`);
+  addLog('info', `[Permission] 收到權限請求: ${permission.scope} (options: ${_currentPermissionOptions.length})`);
 }
 
 function hidePermissionModal() {
   if (dom.permissionModal) dom.permissionModal.classList.add('hidden');
   stopPermissionCountdown();
   _currentPermissionId = null;
+  _currentPermissionOptions = [];
+  _selectedOptionId = null;
 }
 
 function startPermissionCountdown(seconds) {
@@ -3698,16 +3721,18 @@ function stopPermissionCountdown() {
 
 async function resolvePermission(decision) {
   const permId = _currentPermissionId;
+  const optionId = _selectedOptionId;
   hidePermissionModal();
   if (!permId) return;
 
+  const approved = decision === 'allow';
   try {
     await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: permId, decision })
+      body: JSON.stringify({ id: permId, approved, optionId: approved ? optionId : undefined })
     });
-    addLog('info', `[Permission] ${decision === 'allow' ? '已允許' : '已拒絕'}: ${permId}`);
+    addLog('info', `[Permission] ${approved ? '已允許' : '已拒絕'}: ${permId}${approved && optionId ? ` (option: ${optionId})` : ''}`);
   } catch (err) {
     addLog('error', `[Permission] 解析失敗: ${err.message}`);
   }
