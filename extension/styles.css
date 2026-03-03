@@ -1300,6 +1300,22 @@ body {
   overflow-y: auto;
 }
 
+.memory-entry-footer {
+  padding: 6px 0 0;
+}
+
+.memory-edit-link {
+  font-size: 11px;
+  color: var(--accent-blue);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.memory-edit-link:hover {
+  text-decoration: underline;
+  color: var(--accent-blue-bright);
+}
+
 /* Settings identity section */
 .settings-identity-content {
   white-space: pre-wrap;

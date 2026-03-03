@@ -229,6 +229,7 @@ function init() {
 
   // Rules tab
   dom.rulesEditor = document.getElementById('rulesEditor');
+  dom.rulesModuleChips = document.getElementById('rulesModuleChips');
   dom.saveRulesBtn = document.getElementById('saveRulesBtn');
   dom.exportRulesBtn = document.getElementById('exportRulesBtn');
   dom.importRulesBtn = document.getElementById('importRulesBtn');
@@ -248,6 +249,7 @@ function init() {
   dom.entryType = document.getElementById('entryType');
   dom.entryTitle = document.getElementById('entryTitle');
   dom.entryContent = document.getElementById('entryContent');
+  dom.memoryModuleChips = document.getElementById('memoryModuleChips');
   dom.entryStatus = document.getElementById('entryStatus');
   dom.memoryModalTitle = document.getElementById('memoryModalTitle');
   dom.sendToVSCodeBtn = document.getElementById('sendToVSCodeBtn');
@@ -439,9 +441,11 @@ function switchTab(tabId) {
   if (tabId === 'rules') {
     loadRules();
     loadTemplates();
+    setupModuleChips(dom.rulesModuleChips, dom.rulesEditor);
   } else if (tabId === 'memory') {
     loadMemoryEntries();
-  } else if (tabId === 'logs') {
+    setupModuleChips(dom.memoryModuleChips, dom.entryContent);
+  }else if (tabId === 'logs') {
     renderLogs();
     connectBridgeLogSSE();
   } else if (tabId === 'log') {
@@ -669,6 +673,24 @@ async function resetIdentityTemplate() {
   SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
   updateIdentityPreview();
   showToast('已還原為預設自述');
+}
+
+// Populate identity module chips for a given container + textarea pair
+function setupModuleChips(container, textarea) {
+  if (!container || !textarea) return;
+  container.innerHTML = IDENTITY_MODULES.map(m =>
+    `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + ' → ' + m.resolve())}">${m.label}</button>`
+  ).join('');
+  container.querySelectorAll('.identity-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const token = chip.dataset.token;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + token + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + token.length;
+      textarea.focus();
+    });
+  });
 }
 
 function updateCaptureWidthLabel(width) {
@@ -1234,6 +1256,9 @@ function renderMemoryList(entries) {
         <span class="memory-entry-type">system</span>
       </div>
       <div class="memory-entry-content">${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.content)}</div>
+      <div class="memory-entry-footer">
+        <a href="#" class="memory-edit-link" data-action="edit-identity">⚙️ 前往設定修改</a>
+      </div>
     </div>
   `;
 
@@ -1276,6 +1301,13 @@ function renderMemoryList(entries) {
 function setupMemoryListeners() {
   if (dom.memoryList) {
     dom.memoryList.addEventListener('click', (e) => {
+      // Identity card → jump to settings tab
+      const editLink = e.target.closest('[data-action="edit-identity"]');
+      if (editLink) {
+        e.preventDefault();
+        switchTab('settings');
+        return;
+      }
       const entryDiv = e.target.closest('.memory-entry');
       if (entryDiv) {
         editMemoryEntry(entryDiv.dataset.id);
