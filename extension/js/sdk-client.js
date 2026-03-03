@@ -96,11 +96,11 @@ async function checkHealth() {
 }
 
 /**
- * Start health check interval (every 30s)
+ * Start health check interval (every 3s)
  */
 function startHealthCheck() {
   stopHealthCheck();
-  healthCheckIntervalId = setInterval(checkHealth, 30000);
+  healthCheckIntervalId = setInterval(checkHealth, 3000);
 }
 
 /**
@@ -352,7 +352,7 @@ async function listModels() {
 /**
  * Send a chat message to the bridge server.
  * Returns the full response (non-streaming).
- * @param {{type?: string, content: string, model?: string, systemMessage?: string}} msg
+ * @param {{type?: string, content: string, model?: string, systemMessage?: string, images?: Array<{mimeType: string, data: string}>}} msg
  * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
 async function sendMessage(msg) {
@@ -368,14 +368,19 @@ async function sendMessage(msg) {
     systemMessage: msg.systemMessage,
   });
 
+  const payload = {
+    sessionId: ensuredSessionId || currentSessionId,
+    prompt: msg.content,
+    model: msg.model,
+  };
+  if (msg.images && msg.images.length > 0) {
+    payload.images = msg.images;
+  }
+
   const response = await fetch(`${getBaseUrl()}/api/chat/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: ensuredSessionId || currentSessionId,
-      prompt: msg.content,
-      model: msg.model,
-    }),
+    body: JSON.stringify(payload),
   });
 
   // Backward compatibility:

@@ -8,6 +8,7 @@
 import express from 'express';
 import cors from 'cors';
 import { SessionManager } from './session-manager.js';
+import type { PendingPermission } from './session-manager.js';
 import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } from './ipc-types.js';
 
 const PORT = parseInt(process.env.PORT || '31031', 10);
@@ -22,7 +23,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type'],
 }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 // --- Session Manager (singleton) ---
 const sessionManager = new SessionManager();
@@ -100,6 +101,143 @@ app.delete('/api/sessions/:id', async (req, res) => {
   }
 });
 
+// ============================================
+// WP-01: Permission API
+// ============================================
+
+const permissionSSEClients = new Set<import('express').Response>();
+
+/**
+ * GET /api/permissions
+ * 列出所有待處理的權限請求
+ */
+app.get('/api/permissions', (_req, res) => {
+  const pending = sessionManager.getPendingPermissions();
+  res.json({
+    success: true,
+    permissions: pending.map(p => ({
+      id: p.id,
+      sessionId: p.sessionId,
+      scope: p.scope,
+      reason: p.reason,
+      options: p.options,
+      timestamp: p.timestamp,
+    }))
+  });
+});
+
+/**
+ * POST /api/permission/resolve
+ * 解決權限請求（approve / deny）
+ * Body: { id: string, approved: boolean, optionId?: string }
+ */
+app.post('/api/permission/resolve', (req, res) => {
+  const { id, approved, optionId } = req.body;
+  if (!id) {
+    res.status(400).json({ success: false, error: 'id is required' });
+    return;
+  }
+  const resolved = sessionManager.resolvePermission(id, !!approved, optionId);
+  if (!resolved) {
+    res.status(404).json({ success: false, error: `Permission ${id} not found or already resolved` });
+    return;
+  }
+  res.json({ success: true });
+});
+
+/**
+ * GET /api/permissions/whitelist
+ * 取得白名單
+ */
+app.get('/api/permissions/whitelist', (_req, res) => {
+  res.json({ success: true, whitelist: sessionManager.getPermissionWhitelist() });
+});
+
+/**
+ * POST /api/permissions/whitelist
+ * 更新白名單
+ * Body: { patterns: string[] }
+ */
+app.post('/api/permissions/whitelist', (req, res) => {
+  const { patterns } = req.body;
+  if (!Array.isArray(patterns)) {
+    res.status(400).json({ success: false, error: 'patterns must be an array' });
+    return;
+  }
+  sessionManager.setPermissionWhitelist(patterns);
+  res.json({ success: true, whitelist: sessionManager.getPermissionWhitelist() });
+});
+
+/**
+ * GET /api/permissions/stream
+ * SSE 即時推送權限請求
+ */
+app.get('/api/permissions/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write('data: {"connected":true}\n\n');
+  permissionSSEClients.add(res);
+  req.on('close', () => { permissionSSEClients.delete(res); });
+});
+
+// WP-01: 訂閱 permission 事件，推送給 SSE clients
+sessionManager.onPermissionRequest((permission: PendingPermission) => {
+  const data = JSON.stringify({
+    id: permission.id,
+    sessionId: permission.sessionId,
+    scope: permission.scope,
+    reason: permission.reason,
+    options: permission.options,
+    timestamp: permission.timestamp,
+  });
+  for (const client of permissionSSEClients) {
+    try { client.write(`event: permission_required\ndata: ${data}\n\n`); } catch { /* ignore */ }
+  }
+});
+
+// ============================================
+// WP-04: Config API / WP-05: Model Cache / WP-07: Prompt Strategy
+// ============================================
+
+/** GET /api/config — effective config（不含 secrets） */
+app.get('/api/config', (_req, res) => {
+  res.json({ success: true, config: sessionManager.getConfig() });
+});
+
+/** GET /api/models/info — model 列表來源與快取資訊 */
+app.get('/api/models/info', (_req, res) => {
+  res.json({ success: true, cacheInfo: sessionManager.getModelCacheInfo() });
+});
+
+/** GET /api/prompt/strategy — 取得 prompt 策略 */
+app.get('/api/prompt/strategy', (_req, res) => {
+  res.json({
+    success: true,
+    strategy: sessionManager.getPromptStrategy(),
+    maxHistoryTurns: sessionManager.getMaxHistoryTurns()
+  });
+});
+
+/** POST /api/prompt/strategy — 設定 prompt 策略 */
+app.post('/api/prompt/strategy', (req, res) => {
+  const { strategy, maxHistoryTurns } = req.body;
+  const valid = ['normal', 'concise', 'one-sentence'];
+  if (!valid.includes(strategy)) {
+    res.status(400).json({ success: false, error: `strategy must be one of: ${valid.join(', ')}` });
+    return;
+  }
+  sessionManager.setPromptStrategy(strategy);
+  if (typeof maxHistoryTurns === 'number') sessionManager.setMaxHistoryTurns(maxHistoryTurns);
+  res.json({
+    success: true,
+    strategy: sessionManager.getPromptStrategy(),
+    maxHistoryTurns: sessionManager.getMaxHistoryTurns()
+  });
+});
+
 /**
  * POST /api/chat
  * 傳送訊息並以 SSE 串流回應
@@ -113,17 +251,17 @@ app.delete('/api/sessions/:id', async (req, res) => {
  *   event: done      → {}
  */
 app.post('/api/chat', async (req, res) => {
-  const { sessionId, prompt, model } = req.body;
+  const { sessionId, prompt, model, images } = req.body;
 
   if (!prompt) {
     res.status(400).json({ success: false, error: 'prompt is required' });
     return;
   }
 
-  // --- SSE Headers ---
+  // --- SSE Headers (WP-08: 加入 no-transform 避免中介層暫存) ---
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
     'X-Accel-Buffering': 'no',
   });
@@ -135,6 +273,8 @@ app.post('/api/chat', async (req, res) => {
   try {
     // 取得或建立 session
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
+    // WP-02: 傳遞 timeout 到 sendPrompt
+    const timeout = req.body.timeout ? parseInt(req.body.timeout, 10) : undefined;
     const result = await sessionManager.sendPrompt(session.sessionId, prompt, (update) => {
       if (update?.sessionUpdate === 'agent_message_chunk') {
         const content = update?.content;
@@ -159,7 +299,7 @@ app.post('/api/chat', async (req, res) => {
           result: update,
         });
       }
-    });
+    }, images, timeout);
 
     sendEvent('message', { content: result.content || '' });
     sendEvent('done', {});
@@ -173,10 +313,10 @@ app.post('/api/chat', async (req, res) => {
 /**
  * POST /api/chat/sync
  * 同步傳送訊息（等待完成後回傳）
- * Body: { sessionId?: string, prompt: string, model?: string }
+ * Body: { sessionId?: string, prompt: string, model?: string, images?: Array<{mimeType, data}> }
  */
 app.post('/api/chat/sync', async (req, res) => {
-  const { sessionId, prompt, model } = req.body;
+  const { sessionId, prompt, model, images } = req.body;
 
   if (!prompt) {
     res.status(400).json({ success: false, error: 'prompt is required' });
@@ -185,13 +325,162 @@ app.post('/api/chat/sync', async (req, res) => {
 
   try {
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
-    const response = await sessionManager.sendPrompt(session.sessionId, prompt);
+    // WP-02: 傳遞 timeout
+    const timeout = req.body.timeout ? parseInt(req.body.timeout, 10) : undefined;
+    const response = await sessionManager.sendPrompt(session.sessionId, prompt, undefined, images, timeout);
 
     res.json({
       success: true,
       sessionId: response.sessionId,
       content: response?.content ?? '',
     });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================
+// Logs API (real-time bridge terminal output)
+// ============================================
+
+const logSSEClients = new Set<import('express').Response>();
+
+app.get('/api/logs', (_req, res) => {
+  const count = Math.min(Number(_req.query.count) || 200, 500);
+  res.json({ success: true, logs: sessionManager.getRecentLogs(count) });
+});
+
+app.get('/api/logs/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write('data: {"connected":true}\n\n');
+  logSSEClients.add(res);
+
+  // Send recent logs as initial batch
+  const recent = sessionManager.getRecentLogs(50);
+  for (const entry of recent) {
+    res.write(`data: ${JSON.stringify(entry)}\n\n`);
+  }
+
+  const unsubscribe = sessionManager.onLog((entry) => {
+    try { res.write(`data: ${JSON.stringify(entry)}\n\n`); } catch { /* ignore */ }
+  });
+
+  req.on('close', () => {
+    logSSEClients.delete(res);
+    unsubscribe();
+  });
+});
+
+// ============================================
+// History API
+// ============================================
+
+import { readdir, readFile, appendFile, mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
+
+const HISTORY_DIR = join(homedir(), 'copilot', 'history');
+const historySSEClients = new Set<import('express').Response>();
+
+function getHistoryFilePath(): string {
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10);
+  return join(HISTORY_DIR, `history_${dateStr}.jsonl`);
+}
+
+async function appendToHistory(entry: Record<string, unknown>): Promise<void> {
+  try {
+    await mkdir(HISTORY_DIR, { recursive: true });
+    const filePath = getHistoryFilePath();
+    const line = JSON.stringify({ ...entry, timestamp: new Date().toISOString() }) + '\n';
+    await appendFile(filePath, line, 'utf-8');
+
+    // Push to SSE clients
+    for (const client of historySSEClients) {
+      try {
+        client.write(`data: ${JSON.stringify(entry)}\n\n`);
+      } catch {
+        historySSEClients.delete(client);
+      }
+    }
+  } catch (err: any) {
+    console.error('[History] Failed to append:', err.message);
+  }
+}
+
+app.get('/api/history', async (_req, res) => {
+  try {
+    await mkdir(HISTORY_DIR, { recursive: true });
+    const entries = await readdir(HISTORY_DIR);
+    const files = entries
+      .filter(f => f.startsWith('history_') && f.endsWith('.jsonl'))
+      .sort()
+      .reverse()
+      .map(name => ({
+        name,
+        path: join(HISTORY_DIR, name),
+        date: name.replace('history_', '').replace('.jsonl', '')
+      }));
+    res.json({ success: true, files });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/history/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+  });
+  res.write('data: {"connected":true}\n\n');
+  historySSEClients.add(res);
+
+  req.on('close', () => {
+    historySSEClients.delete(res);
+  });
+});
+
+app.get('/api/history/:filename', async (req, res) => {
+  try {
+    const filename = req.params.filename;
+    if (!filename.startsWith('history_') || !filename.endsWith('.jsonl')) {
+      res.status(400).json({ success: false, error: 'Invalid filename' });
+      return;
+    }
+    const filePath = join(HISTORY_DIR, filename);
+    if (!existsSync(filePath)) {
+      res.json({ success: true, messages: [] });
+      return;
+    }
+    const raw = await readFile(filePath, 'utf-8');
+    const messages = raw
+      .split('\n')
+      .filter(line => line.trim())
+      .map(line => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter(Boolean);
+    res.json({ success: true, messages });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/history', async (req, res) => {
+  try {
+    const entry = req.body;
+    if (!entry || typeof entry !== 'object') {
+      res.status(400).json({ success: false, error: 'Body must be a JSON object' });
+      return;
+    }
+    await appendToHistory(entry);
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -219,9 +508,13 @@ if (isForked && process.send) {
   heartbeatTimer.unref();
 
   process.on('message', (msg: SupervisorMessage) => {
-    if (msg?.type === 'shutdown') {
-      clearInterval(heartbeatTimer);
-      shutdown();
+    try {
+      if (msg?.type === 'shutdown') {
+        clearInterval(heartbeatTimer);
+        shutdown();
+      }
+    } catch (err) {
+      console.error('[IPC] Error handling message:', err);
     }
   });
 }
@@ -230,9 +523,25 @@ if (isForked && process.send) {
 const shutdown = async () => {
   console.log('\n🛬 Shutting down bridge...');
   await sessionManager.cleanup();
-  server.close();
+  await new Promise<void>((resolve, reject) => {
+    server.close((err) => {
+      if (err) {
+        console.error('[Shutdown] Error closing server:', err.message);
+        reject(err);
+      } else {
+        resolve();
+      }
+    });
+  }).catch(() => { });
   process.exit(0);
 };
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+process.on('uncaughtException', (err) => {
+  console.error('[Bridge] Uncaught exception:', err);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[Bridge] Unhandled rejection:', reason);
+});

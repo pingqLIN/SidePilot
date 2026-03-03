@@ -24,6 +24,73 @@ const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
 const LOG_STORAGE_KEY = 'sidepilot.logs.v1';
 const LOG_MAX_ENTRIES = 300;
+
+// ── SidePilot 自述 (System Identity) ──
+const SIDEPILOT_SYSTEM_IDENTITY = {
+  id: '__sidepilot_system__',
+  type: 'system',
+  title: 'SidePilot — Extension Self-Description',
+  content: [
+    '【自我認知】',
+    'SidePilot 是一個 Chrome 擴充功能側邊面板 AI 助手。',
+    '我運行在瀏覽器 Side Panel 中，透過 SDK Bridge（localhost:31031）與 GitHub Copilot CLI 通訊。',
+    '',
+    '【目標任務】',
+    '• 提供即時 AI 對話（SDK 模式：直接 API / iframe 模式：嵌入 Copilot UI）',
+    '• 擷取當前頁面內容（文字、可見截圖、整頁截圖、區域截圖）',
+    '• 管理記憶庫（Memory Bank）：儲存 task / note / context / reference 條目',
+    '• 管理規則（Rules）：自訂 Instructions 注入對話',
+    '• 結構化輸出：使用 sidepilot_packet / assistant_response 協議',
+    '',
+    '【所在環境】',
+    '• Chrome Extension Manifest V3, Side Panel API',
+    '• Background Service Worker + Content Script (link-guard)',
+    '• SDK Bridge: Node.js 本機服務 (port 31031), 橋接 GitHub Copilot CLI',
+    '',
+    '【具備工具】',
+    '• 頁面擷取：文字提取、可見範圍截圖、整頁滾動拼接截圖、區域選取截圖',
+    '• 記憶系統：CRUD、搜尋、相關性評分、自動注入 Prompt',
+    '• 規則引擎：自訂規則模板、即時載入注入',
+    '• 對話格式：Context 開關（Memory / Rules / System / Structured Output）',
+    '• 歷史紀錄：按日期分檔、按 Session 分組、標籤分類',
+    '• 即時 Log：Bridge SSE 串流、等級過濾、搜尋',
+    '',
+    '【權限】',
+    'sidePanel, activeTab, scripting, tabs, storage, downloads,',
+    'declarativeNetRequest (CSP bypass for github.com)',
+  ].join('\n'),
+  status: null,
+  updatedAt: Date.now(),
+  pinned: true
+};
+const IDENTITY_STORAGE_KEY = 'sidepilot.identity.template.v1';
+
+// Identity module tokens — auto-resolved at save time
+const IDENTITY_MODULES = [
+  { token: '{{BROWSER}}',       label: '🌐 瀏覽器',     resolve: () => `${navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] || 'Chrome'} (${navigator.platform})` },
+  { token: '{{BRIDGE_PORT}}',   label: '🔌 Bridge Port', resolve: () => String(SDK_BRIDGE_PORT) },
+  { token: '{{BRIDGE_URL}}',    label: '🔗 Bridge URL',  resolve: () => `http://localhost:${SDK_BRIDGE_PORT}` },
+  { token: '{{EXTENSION_ID}}',  label: '🆔 Extension ID', resolve: () => chrome.runtime?.id || 'unknown' },
+  { token: '{{EXT_VERSION}}',   label: '📦 版本',        resolve: () => chrome.runtime?.getManifest?.()?.version || '1.0.0' },
+  { token: '{{MANIFEST_V}}',    label: '📋 Manifest',    resolve: () => `MV${chrome.runtime?.getManifest?.()?.manifest_version || 3}` },
+  { token: '{{STORAGE_PATH}}',  label: '💾 儲存位置',    resolve: () => 'chrome.storage.local (Extension sandbox)' },
+  { token: '{{BRIDGE_DIR}}',    label: '📁 Bridge 路徑', resolve: () => BRIDGE_WORKDIR_HINT },
+  { token: '{{PERMISSIONS}}',   label: '🔐 權限',        resolve: () => (chrome.runtime?.getManifest?.()?.permissions || []).join(', ') },
+  { token: '{{LANG}}',          label: '🌍 語系',        resolve: () => navigator.language || 'zh-TW' },
+  { token: '{{SCREEN}}',        label: '🖥️ 螢幕',       resolve: () => `${screen.width}×${screen.height} @${devicePixelRatio}x` },
+  { token: '{{TIMESTAMP}}',     label: '🕐 時間戳',      resolve: () => new Date().toISOString() },
+];
+
+function resolveIdentityTokens(template) {
+  let result = template;
+  for (const mod of IDENTITY_MODULES) {
+    if (result.includes(mod.token)) {
+      try { result = result.replaceAll(mod.token, mod.resolve()); } catch { /* skip */ }
+    }
+  }
+  return result;
+}
+
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
   `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
   'For each response, output exactly 2 XML blocks in this order:',
@@ -61,13 +128,21 @@ const state = {
   currentPageContent: null,
   currentPageScreenshot: null,
   currentPartialScreenshot: null,
+  currentFullPageScreenshot: null,
   currentPageError: null,
+  pendingChatImages: [],
   isCapturePanelOpen: false,
   frameLoaded: false,
   loadTimeout: null,
   detectedMode: null,
   settings: { ...DEFAULT_SETTINGS },
-  logs: []
+  logs: [],
+  logSSE: null,
+  bridgeLogSSE: null,
+  permissionSSE: null,
+  permissionCountdownTimer: null,
+  sdkHealthTimer: null,
+  bridgeSectionHealthTimer: null
 };
 
 // ============================================
@@ -113,6 +188,7 @@ function init() {
   dom.tabContents = document.querySelectorAll('.tab-content');
   dom.modeSwitch = document.getElementById('modeSwitch');
   dom.modeSwitchBtns = document.querySelectorAll('.mode-switch-btn');
+  dom.sdkModeBtn = document.getElementById('sdkModeBtn');
 
   // SDK Chat elements
   dom.sdkChat = document.getElementById('sdkChat');
@@ -120,13 +196,32 @@ function init() {
   dom.sdkInput = document.getElementById('sdkInput');
   dom.sdkSendBtn = document.getElementById('sdkSendBtn');
   dom.sdkIncludeMemory = document.getElementById('sdkIncludeMemory');
+  dom.sdkIncludeIdentity = document.getElementById('sdkIncludeIdentity');
+  dom.sdkIncludeMemoryEntries = document.getElementById('sdkIncludeMemoryEntries');
+  dom.sdkIncludeRules = document.getElementById('sdkIncludeRules');
+  dom.sdkIncludeSystemMsg = document.getElementById('sdkIncludeSystemMsg');
+  dom.sdkStructuredOutput = document.getElementById('sdkStructuredOutput');
   dom.sdkAssistantOnly = document.getElementById('sdkAssistantOnly');
   dom.sdkMemorySummary = document.getElementById('sdkMemorySummary');
   dom.sdkModelSelect = document.getElementById('sdkModelSelect');
+  dom.contextChildToggles = document.getElementById('contextChildToggles');
+  dom.settingsIdentityContent = document.getElementById('settingsIdentityContent');
+  dom.identityEditor = document.getElementById('identityEditor');
+  dom.identitySaveBtn = document.getElementById('identitySaveBtn');
+  dom.identityResetBtn = document.getElementById('identityResetBtn');
+  dom.identityModuleChips = document.getElementById('identityModuleChips');
 
   if (dom.sdkAssistantOnly) {
     dom.sdkAssistantOnly.checked = localStorage.getItem(STORAGE_KEY_SDK_ASSISTANT_ONLY) === 'true';
   }
+  // Restore granular toggle states
+  ['sdkIncludeIdentity', 'sdkIncludeMemoryEntries', 'sdkIncludeRules', 'sdkIncludeSystemMsg', 'sdkStructuredOutput'].forEach(key => {
+    if (dom[key]) {
+      const stored = localStorage.getItem(`sidepilot_${key}`);
+      dom[key].checked = stored !== null ? stored === 'true' : true;
+    }
+  });
+  syncContextChildToggles();
   if (dom.sdkModelSelect) {
     const selectedModel = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || '';
     dom.sdkModelSelect.value = selectedModel;
@@ -164,6 +259,10 @@ function init() {
   dom.copyLogsBtn = document.getElementById('copyLogsBtn');
   dom.clearLogsBtn = document.getElementById('clearLogsBtn');
 
+  // History Log tab (Bridge)
+  dom.logFileList = document.getElementById('logFileList');
+  dom.refreshLogBtn = document.getElementById('refreshLogBtn');
+
   // Settings tab
   dom.saveSettingsBtn = document.getElementById('saveSettingsBtn');
   dom.settingsStatus = document.getElementById('settingsStatus');
@@ -188,6 +287,18 @@ function init() {
   dom.sdkLoginLaterBtn = document.getElementById('sdkLoginLaterBtn');
   dom.sdkLoginNowBtn = document.getElementById('sdkLoginNowBtn');
   dom.sdkLoginSuppressCheckbox = document.getElementById('sdkLoginSuppressCheckbox');
+
+  // WP-01: Permission modal
+  dom.permissionModal = document.getElementById('permissionModal');
+  dom.permissionScope = document.getElementById('permissionScope');
+  dom.permissionReason = document.getElementById('permissionReason');
+  dom.permissionOptions = document.getElementById('permissionOptions');
+  dom.permissionCountdown = document.getElementById('permissionCountdown');
+  dom.permissionApproveBtn = document.getElementById('permissionApproveBtn');
+  dom.permissionDenyBtn = document.getElementById('permissionDenyBtn');
+
+  // WP-07: Prompt strategy
+  dom.promptStrategyBtns = document.getElementById('promptStrategyBtns');
 
   // 驗證必要元素
   const required = ['copilotFrame', 'loadingOverlay', 'capturePanel', 'toast'];
@@ -219,6 +330,14 @@ function init() {
 
   // Detect mode on startup (non-blocking)
   detectModeOnStartup();
+
+  // Load saved identity template (resolve tokens for prompt injection)
+  chrome.storage.local.get(IDENTITY_STORAGE_KEY, (r) => {
+    if (r[IDENTITY_STORAGE_KEY]) {
+      SIDEPILOT_SYSTEM_IDENTITY.content = resolveIdentityTokens(r[IDENTITY_STORAGE_KEY]);
+      SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+    }
+  });
 }
 
 // ============================================
@@ -250,6 +369,8 @@ async function detectModeOnStartup() {
       const bridgeReady = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
       if (bridgeReady) {
         await loadSDKModelOptions();
+        connectPermissionSSE();
+        loadPromptStrategy();
       }
     }
   } catch (err) {
@@ -275,9 +396,12 @@ function updateModeBadge() {
   if (mode === 'sdk') {
     dom.copilotFrame?.classList.add('hidden');
     dom.sdkChat?.classList.remove('hidden');
+    startSdkHealthPolling();
   } else {
     dom.copilotFrame?.classList.remove('hidden');
     dom.sdkChat?.classList.add('hidden');
+    stopSdkHealthPolling();
+    updateSdkStatusDot('');
   }
 
   syncCapturePanelMode();
@@ -306,6 +430,11 @@ function switchTab(tabId) {
     }
   });
 
+  // Fix iframe bleed-through: hide iframe when not on copilot tab
+  if (dom.copilotFrame) {
+    dom.copilotFrame.style.display = (tabId === 'copilot') ? '' : 'none';
+  }
+
   // Load content if needed
   if (tabId === 'rules') {
     loadRules();
@@ -314,8 +443,21 @@ function switchTab(tabId) {
     loadMemoryEntries();
   } else if (tabId === 'logs') {
     renderLogs();
+    connectBridgeLogSSE();
+  } else if (tabId === 'log') {
+    updateHistoryTabMode();
+    loadLogFiles();
   } else if (tabId === 'settings') {
     applySettingsToUI();
+    // Start bridge polling if install helper section is open
+    const installSection = document.getElementById('settingsSectionInstall');
+    if (installSection && !installSection.classList.contains('collapsed')) {
+      startBridgeSectionPolling();
+    }
+  } else {
+    // Stop bridge polling when leaving settings tab
+    stopBridgeSectionPolling();
+    disconnectBridgeLogSSE();
   }
 
   addLog('info', `切換分頁：${tabId}`);
@@ -335,7 +477,8 @@ function normalizeSettings(raw = {}) {
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
     captureButtonWidth: captureWidth,
-    linkAllowlist
+    linkAllowlist,
+    iframeHistoryUrl: source.iframeHistoryUrl || 'https://github.com/copilot'
   };
 }
 
@@ -344,7 +487,7 @@ function clampCaptureButtonWidth(value) {
   if (!Number.isFinite(number)) {
     return DEFAULT_CAPTURE_BUTTON_WIDTH;
   }
-  return Math.min(128, Math.max(0, Math.round(number)));
+  return Math.min(100, Math.max(2, Math.round(number)));
 }
 
 function normalizeLinkAllowlist(value) {
@@ -427,6 +570,21 @@ function applySettingsToUI() {
     dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist);
   }
   updateCaptureWidthLabel(settings.captureButtonWidth);
+
+  // Conversation records
+  const sdkHistoryPath = document.getElementById('settingSdkHistoryPath');
+  if (sdkHistoryPath) {
+    sdkHistoryPath.value = '~/copilot/history';
+  }
+  const iframeHistoryUrl = document.getElementById('settingIframeHistoryUrl');
+  if (iframeHistoryUrl) {
+    iframeHistoryUrl.value = settings.iframeHistoryUrl || 'https://github.com/copilot';
+  }
+
+  // Populate system identity editor and preview
+  if (dom.settingsIdentityContent) {
+    loadIdentityTemplate();
+  }
 }
 
 function collectSettingsFromUI() {
@@ -435,28 +593,109 @@ function collectSettingsFromUI() {
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
     captureButtonWidth: dom.settingCaptureButtonWidth?.value,
-    linkAllowlist: dom.settingLinkAllowlist?.value
+    linkAllowlist: dom.settingLinkAllowlist?.value,
+    iframeHistoryUrl: document.getElementById('settingIframeHistoryUrl')?.value
   });
+}
+
+// ── Identity Template Management ──
+
+function getDefaultIdentityTemplate() {
+  return SIDEPILOT_SYSTEM_IDENTITY.content;
+}
+
+async function loadIdentityTemplate() {
+  // Render module chips
+  if (dom.identityModuleChips) {
+    dom.identityModuleChips.innerHTML = IDENTITY_MODULES.map(m =>
+      `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + ' → ' + m.resolve())}">${m.label}</button>`
+    ).join('');
+    dom.identityModuleChips.querySelectorAll('.identity-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (!dom.identityEditor) return;
+        const token = chip.dataset.token;
+        const ta = dom.identityEditor;
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + token + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + token.length;
+        ta.focus();
+        updateIdentityPreview();
+      });
+    });
+  }
+
+  // Load saved template or use default
+  const stored = await new Promise(resolve => {
+    chrome.storage.local.get(IDENTITY_STORAGE_KEY, r => resolve(r[IDENTITY_STORAGE_KEY]));
+  });
+  const template = stored || getDefaultIdentityTemplate();
+  if (dom.identityEditor) dom.identityEditor.value = template;
+  updateIdentityPreview();
+
+  // Wire events
+  dom.identityEditor?.addEventListener('input', updateIdentityPreview);
+  dom.identitySaveBtn?.addEventListener('click', saveIdentityTemplate);
+  dom.identityResetBtn?.addEventListener('click', resetIdentityTemplate);
+}
+
+function updateIdentityPreview() {
+  if (!dom.settingsIdentityContent || !dom.identityEditor) return;
+  const resolved = resolveIdentityTokens(dom.identityEditor.value);
+  dom.settingsIdentityContent.textContent = resolved;
+}
+
+async function saveIdentityTemplate() {
+  if (!dom.identityEditor) return;
+  const template = dom.identityEditor.value;
+  await new Promise(resolve => {
+    chrome.storage.local.set({ [IDENTITY_STORAGE_KEY]: template }, resolve);
+  });
+  // Update the runtime identity content with resolved values
+  const resolved = resolveIdentityTokens(template);
+  SIDEPILOT_SYSTEM_IDENTITY.content = resolved;
+  SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+  updateIdentityPreview();
+  showToast('擴充自述已儲存');
+}
+
+async function resetIdentityTemplate() {
+  const defaultTemplate = getDefaultIdentityTemplate();
+  if (dom.identityEditor) dom.identityEditor.value = defaultTemplate;
+  await new Promise(resolve => {
+    chrome.storage.local.remove(IDENTITY_STORAGE_KEY, resolve);
+  });
+  SIDEPILOT_SYSTEM_IDENTITY.content = defaultTemplate;
+  SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+  updateIdentityPreview();
+  showToast('已還原為預設自述');
 }
 
 function updateCaptureWidthLabel(width) {
   if (!dom.captureBtnWidthValue) return;
   const normalized = clampCaptureButtonWidth(width);
-  dom.captureBtnWidthValue.textContent = normalized === 0
-    ? '隱藏'
+  dom.captureBtnWidthValue.textContent = normalized < 20
+    ? `${normalized}px (僅色塊)`
     : `${normalized}px`;
 }
 
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
-  if (normalized === 0) {
-    dom.floatingCaptureBtn?.classList.add('capture-zero');
-    document.documentElement.style.setProperty('--capture-button-width', `${DEFAULT_CAPTURE_BUTTON_WIDTH}px`);
-    return;
-  }
-
-  dom.floatingCaptureBtn?.classList.remove('capture-zero');
   document.documentElement.style.setProperty('--capture-button-width', `${normalized}px`);
+
+  // Hide text/icons when narrow
+  dom.floatingCaptureBtn?.classList.toggle('capture-compact', normalized < 20);
+
+  // Compute resting opacity based on width
+  let opacity;
+  if (normalized <= 20) {
+    // 2-20px → 1.0 to 0.5
+    opacity = 1.0 - ((normalized - 2) / 18) * 0.5;
+  } else {
+    // 21-100px → 0.5 to 0.8
+    opacity = 0.5 + ((normalized - 21) / 79) * 0.3;
+  }
+  document.documentElement.style.setProperty('--capture-btn-opacity', opacity.toFixed(3));
 }
 
 async function saveSettings() {
@@ -488,13 +727,26 @@ function buildBridgeCheckCommand(port = SDK_BRIDGE_PORT) {
   return `powershell -Command "Invoke-RestMethod ${url}"`;
 }
 
+// Cache last bridge status to avoid unnecessary DOM updates
+let _lastBridgeStatus = { text: '', detail: '', type: '' };
+
 function setBridgeInstallStatus(statusText, detailText, type = 'info') {
   if (!dom.bridgeInstallStatus) return;
+
+  // Skip DOM update if nothing changed
+  if (_lastBridgeStatus.text === statusText &&
+      _lastBridgeStatus.detail === detailText &&
+      _lastBridgeStatus.type === type) {
+    return;
+  }
+  _lastBridgeStatus = { text: statusText, detail: detailText, type };
+
   dom.bridgeInstallStatus.textContent = statusText;
   dom.bridgeInstallStatus.dataset.status = type;
   if (dom.bridgeStatusDot) {
     dom.bridgeStatusDot.dataset.status = type;
   }
+  updateSdkStatusDot(type);
 
   if (dom.bridgeInstallDetail) {
     dom.bridgeInstallDetail.textContent = detailText || '-';
@@ -512,8 +764,12 @@ async function checkBridgeHealth(options = {}) {
   const port = SDK_BRIDGE_PORT;
   const url = getBridgeHealthUrl(port);
   const toastEnabled = options.showToast !== false;
+  const isQuietPoll = !toastEnabled;
 
-  setBridgeInstallStatus('檢查中...', url, 'warning');
+  // Only show "檢查中..." on manual/first check, not on silent 1-sec polling
+  if (!isQuietPoll) {
+    setBridgeInstallStatus('檢查中...', url, 'warning');
+  }
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -528,15 +784,20 @@ async function checkBridgeHealth(options = {}) {
         const sdkState = sdkStateValue ? `sdk: ${sdkStateValue}` : '';
         const backendType = response?.data?.backend?.type ? `backend: ${response.data.backend.type}` : '';
         const detail = [url, sdkState, backendType].filter(Boolean).join(' | ');
-        const statusType = sdkStateValue && sdkStateValue !== 'ready' ? 'warning' : 'success';
+        const okStates = ['ready', 'idle', 'connected', ''];
+        const statusType = okStates.includes(sdkStateValue) ? 'success' : 'warning';
         setBridgeInstallStatus('Bridge 已連線', detail, statusType);
         if (toastEnabled) {
           showToast(statusType === 'success' ? 'Bridge 已連線' : 'Bridge 已連線但狀態異常', statusType === 'success' ? 'success' : 'warning');
         }
 
-        const connected = await ensureSDKBridgeConnection({ port });
-        if (connected) {
-          await loadSDKModelOptions();
+        // Only load models on first connection or manual check, not every 1-sec tick
+        if (!isQuietPoll || !state.bridgeModelsLoaded) {
+          const connected = await ensureSDKBridgeConnection({ port });
+          if (connected) {
+            await loadSDKModelOptions();
+            state.bridgeModelsLoaded = true;
+          }
         }
         return;
       }
@@ -544,6 +805,7 @@ async function checkBridgeHealth(options = {}) {
       const serviceName = response?.data?.service || 'unknown';
       setBridgeInstallStatus('不是 SidePilot Bridge', `service: ${serviceName}`, 'warning');
       if (toastEnabled) showToast('埠口不是 SidePilot Bridge', 'warning');
+      state.bridgeModelsLoaded = false;
       return;
     }
 
@@ -555,6 +817,7 @@ async function checkBridgeHealth(options = {}) {
         'warning'
       );
       if (toastEnabled) showToast('Bridge 回應 404，請確認啟動目錄', 'warning');
+      state.bridgeModelsLoaded = false;
       return;
     }
 
@@ -565,6 +828,7 @@ async function checkBridgeHealth(options = {}) {
       'error'
     );
     if (toastEnabled) showToast('Bridge 無法連線', 'error');
+    state.bridgeModelsLoaded = false;
   } catch (err) {
     setBridgeInstallStatus(
       '檢查失敗',
@@ -572,11 +836,85 @@ async function checkBridgeHealth(options = {}) {
       'error'
     );
     if (toastEnabled) showToast('Bridge 檢查失敗', 'error');
+    state.bridgeModelsLoaded = false;
   }
 }
 
+// Lightweight bridge health check for SDK status dot (no toast, no side-effects)
+async function pollBridgeHealthQuiet() {
+  const port = SDK_BRIDGE_PORT;
+  const url = getBridgeHealthUrl(port);
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'bridgeHealth', port, timeoutMs: 3000
+    });
+    if (response?.success && response?.isBridge) {
+      const sdkState = response?.data?.sdk || '';
+      // idle = service running, ready = session ready, connected = actively chatting
+      const okStates = ['ready', 'idle', 'connected', ''];
+      return okStates.includes(sdkState) ? 'success' : 'warning';
+    }
+    return 'error';
+  } catch {
+    return 'error';
+  }
+}
+
+function updateSdkStatusDot(status) {
+  if (dom.sdkModeBtn) {
+    if (status) {
+      dom.sdkModeBtn.dataset.status = status;
+    } else {
+      delete dom.sdkModeBtn.dataset.status;
+    }
+  }
+}
+
+function startSdkHealthPolling() {
+  stopSdkHealthPolling();
+  // Immediate check then every 3s
+  pollBridgeHealthQuiet().then(updateSdkStatusDot);
+  state.sdkHealthTimer = setInterval(() => {
+    pollBridgeHealthQuiet().then(updateSdkStatusDot);
+  }, 3000);
+}
+
+function stopSdkHealthPolling() {
+  if (state.sdkHealthTimer) {
+    clearInterval(state.sdkHealthTimer);
+    state.sdkHealthTimer = null;
+  }
+}
+
+function startBridgeSectionPolling() {
+  stopBridgeSectionPolling();
+  checkBridgeHealth({ showToast: false });
+  state.bridgeSectionHealthTimer = setInterval(() => {
+    checkBridgeHealth({ showToast: false });
+  }, 1000);
+}
+
+function stopBridgeSectionPolling() {
+  if (state.bridgeSectionHealthTimer) {
+    clearInterval(state.bridgeSectionHealthTimer);
+    state.bridgeSectionHealthTimer = null;
+  }
+}
+
+let _autoSaveTimer = null;
 function markSettingsDirty() {
-  updateSettingsStatus('設定尚未儲存', 'warning');
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(async () => {
+    _autoSaveTimer = null;
+    try {
+      const nextSettings = collectSettingsFromUI();
+      await persistSettings(nextSettings, { showToast: false });
+      showToast('設定已自動儲存', 'success', 1200);
+    } catch (err) {
+      console.error('[SidePilot] Auto-save failed:', err);
+      showToast('自動儲存失敗', 'error');
+    }
+  }, 600);
 }
 
 async function goCopilotHome() {
@@ -888,12 +1226,23 @@ function searchMemory(query) {
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
   
+  // Build pinned system identity card
+  const identityCard = `
+    <div class="memory-entry memory-entry-pinned" data-id="${SIDEPILOT_SYSTEM_IDENTITY.id}">
+      <div class="memory-entry-header">
+        <span class="memory-entry-title">📌 ${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.title)}</span>
+        <span class="memory-entry-type">system</span>
+      </div>
+      <div class="memory-entry-content">${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.content)}</div>
+    </div>
+  `;
+
   if (!entries || entries.length === 0) {
-    dom.memoryList.innerHTML = '<div class="memory-empty">No entries found.</div>';
+    dom.memoryList.innerHTML = identityCard + '<div class="memory-empty">No entries found.</div>';
     return;
   }
 
-  dom.memoryList.innerHTML = entries.map(entry => `
+  dom.memoryList.innerHTML = identityCard + entries.map(entry => `
     <div class="memory-entry" data-id="${entry.id}">
       <div class="memory-entry-header">
         <span class="memory-entry-title">${escapeHtml(entry.title)}</span>
@@ -1046,9 +1395,30 @@ function sendEntryToVSCode() {
 // 事件監聽器設置
 // ============================================
 
+let _captureHoverTimer = null;
+
 function setupEventListeners() {
   // 底部浮動擷取按鈕
   dom.floatingCaptureBtn?.addEventListener('click', toggleCapturePanel);
+
+  // Hover: expand narrow button to 20px, restore after 1s on leave
+  dom.floatingCaptureBtn?.addEventListener('mouseenter', () => {
+    if (_captureHoverTimer) { clearTimeout(_captureHoverTimer); _captureHoverTimer = null; }
+    const saved = clampCaptureButtonWidth(state.settings?.captureButtonWidth);
+    if (saved < 20) {
+      document.documentElement.style.setProperty('--capture-button-width', '20px');
+      dom.floatingCaptureBtn?.classList.remove('capture-compact');
+    }
+  });
+  dom.floatingCaptureBtn?.addEventListener('mouseleave', () => {
+    const saved = clampCaptureButtonWidth(state.settings?.captureButtonWidth);
+    if (saved < 20) {
+      _captureHoverTimer = setTimeout(() => {
+        applyCaptureButtonWidth(saved);
+        _captureHoverTimer = null;
+      }, 1000);
+    }
+  });
 
   // 擷取面板
   dom.closeCaptureBtn?.addEventListener('click', closeCapturePanel);
@@ -1101,7 +1471,17 @@ function setupEventListeners() {
     }
   });
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
-  dom.sdkIncludeMemory?.addEventListener('change', refreshSDKMemorySummary);
+  dom.sdkIncludeMemory?.addEventListener('change', () => {
+    syncContextChildToggles();
+    refreshSDKMemorySummary();
+  });
+  // Granular context toggles — save state
+  ['sdkIncludeIdentity', 'sdkIncludeMemoryEntries', 'sdkIncludeRules', 'sdkIncludeSystemMsg', 'sdkStructuredOutput'].forEach(key => {
+    dom[key]?.addEventListener('change', () => {
+      localStorage.setItem(`sidepilot_${key}`, String(dom[key].checked));
+      refreshSDKMemorySummary();
+    });
+  });
   dom.sdkAssistantOnly?.addEventListener('change', applySDKAssistantOnlyMode);
   dom.sdkModelSelect?.addEventListener('change', () => {
     const value = dom.sdkModelSelect?.value || '';
@@ -1118,14 +1498,29 @@ function setupEventListeners() {
   dom.clearLogsBtn?.addEventListener('click', clearLogs);
   dom.copyLogsBtn?.addEventListener('click', copyLogsToClipboard);
 
-  // Settings Tab
-  dom.saveSettingsBtn?.addEventListener('click', () => {
-    saveSettings().catch((err) => {
-      console.error('[SidePilot] Failed to save settings:', err);
-      updateSettingsStatus('儲存失敗', 'error');
-      showToast('設定儲存失敗', 'error');
+  // History Log Tab (Bridge)
+  dom.refreshLogBtn?.addEventListener('click', () => loadLogFiles());
+
+  // Settings Tab (auto-save — no manual save button)
+
+  // Collapsible settings sections + bridge section polling
+  document.querySelectorAll('.settings-section-title[data-toggle="section"]').forEach(title => {
+    title.addEventListener('click', () => {
+      const section = title.closest('.settings-section');
+      section.classList.toggle('collapsed');
+
+      // Start/stop bridge section polling when install helper section toggles
+      const isBridgeSection = section.querySelector('#bridgeStatusDot');
+      if (isBridgeSection) {
+        if (section.classList.contains('collapsed')) {
+          stopBridgeSectionPolling();
+        } else {
+          startBridgeSectionPolling();
+        }
+      }
     });
   });
+
   dom.settingCaptureButtonWidth?.addEventListener('input', (e) => {
     const width = clampCaptureButtonWidth(e.target.value);
     updateCaptureWidthLabel(width);
@@ -1136,6 +1531,7 @@ function setupEventListeners() {
   dom.settingPlayIntroEveryOpen?.addEventListener('change', markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener('change', markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener('input', markSettingsDirty);
+  document.getElementById('settingIframeHistoryUrl')?.addEventListener('input', markSettingsDirty);
   dom.openSdkLoginGuideBtn?.addEventListener('click', openSDKLoginPage);
   dom.testSdkBridgeBtn?.addEventListener('click', async () => {
     updateSettingsStatus('測試 Bridge 連線中...', 'warning');
@@ -1179,6 +1575,21 @@ function setupEventListeners() {
       handleSDKLoginModalAction();
     }
   });
+
+  // WP-01: Permission modal buttons
+  dom.permissionApproveBtn?.addEventListener('click', () => resolvePermission('allow'));
+  dom.permissionDenyBtn?.addEventListener('click', () => resolvePermission('deny'));
+  dom.permissionModal?.addEventListener('click', (e) => {
+    if (e.target === dom.permissionModal) resolvePermission('deny');
+  });
+
+  // WP-07: Prompt strategy buttons
+  dom.promptStrategyBtns?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.strategy-btn');
+    if (!btn) return;
+    const strategy = btn.dataset.strategy;
+    if (strategy) setPromptStrategy(strategy);
+  });
   
   setupMemoryListeners();
   refreshSDKMemorySummary();
@@ -1192,8 +1603,10 @@ function setupEventListeners() {
     dom.sdkInput.value = '';
     dom.sdkSendBtn.disabled = true;
     
-    // Add user message
-    addSDKMessage('user', content);
+    // Add user message with image indicator
+    const imgCount = state.pendingChatImages.length;
+    const displayContent = imgCount > 0 ? `${content}\n📎 ${imgCount} 張圖片附加` : content;
+    addSDKMessage('user', displayContent);
     
     // Add typing indicator
     const typingId = addSDKTypingIndicator();
@@ -1204,29 +1617,50 @@ function setupEventListeners() {
 
       if (dom.sdkIncludeMemory?.checked) {
         try {
+          const includeIdentity = !!dom.sdkIncludeIdentity?.checked;
+          const includeMemEntries = !!dom.sdkIncludeMemoryEntries?.checked;
+          const includeRules = !!dom.sdkIncludeRules?.checked;
+          const includeSystemMsg = !!dom.sdkIncludeSystemMsg?.checked;
+          const useStructuredOutput = !!dom.sdkStructuredOutput?.checked;
+
           const [allMemoryEntries, rulesContent] = await Promise.all([
-            listAllMemoryEntries(),
-            loadRulesContent().catch(() => '')
+            includeMemEntries ? listAllMemoryEntries() : Promise.resolve([]),
+            includeRules ? loadRulesContent().catch(() => '') : Promise.resolve('')
           ]);
-          const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent);
+          const identityText = includeIdentity ? SIDEPILOT_SYSTEM_IDENTITY.content : '';
+          const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent, { useStructuredOutput, identityText });
           promptToSend = composed.prompt;
-          sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
-          updateSDKMemorySummary(
-            `Packet v1: ${composed.injectedCount} mem, rules ${composed.rulesInjected ? 'on' : 'off'}`
-          );
+          if (includeSystemMsg) {
+            sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
+          }
+          const parts = [];
+          if (includeIdentity) parts.push('id');
+          if (includeMemEntries) parts.push(`${composed.injectedCount} mem`);
+          if (includeRules) parts.push(`rules ${composed.rulesInjected ? 'on' : 'off'}`);
+          if (includeSystemMsg) parts.push('sys');
+          if (useStructuredOutput) parts.push('struct');
+          updateSDKMemorySummary(`Packet: ${parts.join(', ')}`);
         } catch (memoryErr) {
-          console.warn('[SidePilot] Memory injection failed:', memoryErr);
-          updateSDKMemorySummary('Memory injection unavailable');
-          showToast('Memory 載入失敗，本次僅送出原始訊息', 'warning');
+          console.warn('[SidePilot] Context injection failed:', memoryErr);
+          updateSDKMemorySummary('Context injection unavailable');
+          showToast('Context 載入失敗，本次僅送出原始訊息', 'warning');
         }
       }
 
-      const response = await sendSDKMessageViaBackground({
+      const sendPayload = {
         type: 'chat',
         content: promptToSend,
         systemMessage: sandboxSystemMessage,
         model: getSelectedSDKModel()
-      });
+      };
+      // Attach pending screenshots
+      if (state.pendingChatImages.length > 0) {
+        sendPayload.images = [...state.pendingChatImages];
+        state.pendingChatImages = [];
+        updatePendingImagesBadge();
+      }
+
+      const response = await sendSDKMessageViaBackground(sendPayload);
       
       removeSDKTypingIndicator(typingId);
       
@@ -1496,13 +1930,8 @@ function toggleCapturePanel() {
 }
 
 async function openCapturePanel() {
-  if (state.detectedMode !== 'sdk') {
-    showToast('擷取面板僅在 SDK 模式顯示', 'warning');
-    return;
-  }
   state.isCapturePanelOpen = true;
   dom.capturePanel?.classList.add('visible');
-  dom.floatingCaptureBtn?.classList.add('active');
 
   await loadPageContent();
 }
@@ -1510,13 +1939,10 @@ async function openCapturePanel() {
 function closeCapturePanel() {
   state.isCapturePanelOpen = false;
   dom.capturePanel?.classList.remove('visible');
-  dom.floatingCaptureBtn?.classList.remove('active');
 }
 
 function syncCapturePanelMode() {
-  if (state.detectedMode !== 'sdk' && state.isCapturePanelOpen) {
-    closeCapturePanel();
-  }
+  // Capture button works in both modes; only close panel if switching away from capture context
 }
 
 async function loadPageContent() {
@@ -1603,13 +2029,15 @@ function renderCaptureContent() {
 
   const fullShot = state.currentPageScreenshot;
   const partialShot = state.currentPartialScreenshot;
+  const isFullPage = !!state.currentFullPageScreenshot && state.currentPageScreenshot === state.currentFullPageScreenshot;
 
   const fullThumbAction = fullShot ? 'open-full' : 'refresh-full';
   const partialThumbAction = partialShot ? 'open-partial' : 'capture-partial';
+  const fullThumbLabel = isFullPage ? '整頁截圖' : '可見範圍';
 
   const fullThumbHtml = fullShot
     ? `<img src="${escapeAttr(fullShot)}" alt="頁面截圖">
-       <div class="capture-thumb-label">可見範圍</div>
+       <div class="capture-thumb-label">${fullThumbLabel}</div>
        <div class="capture-thumb-action" data-action="refresh-full">重新擷取</div>`
     : `<div>點擊擷取頁面縮圖</div>`;
 
@@ -1630,7 +2058,7 @@ function renderCaptureContent() {
           ${textBodyHtml}
         </div>
         <div class="capture-card-actions">
-          <button class="btn-soft" data-action="copy-text">複製文字</button>
+          <button class="btn-soft" data-action="copy-text">📋 複製到對話視窗</button>
           <button class="btn-soft" data-action="copy-structured">複製結構化</button>
         </div>
       </div>
@@ -1638,14 +2066,16 @@ function renderCaptureContent() {
       <div class="capture-card">
         <div class="capture-card-header">
           <div class="capture-card-title">B 頁面截圖</div>
-          <div class="capture-card-subtitle">自動擷取可見範圍</div>
+          <div class="capture-card-subtitle">${isFullPage ? '已擷取整頁' : '自動擷取可見範圍'}</div>
         </div>
         <div class="capture-card-body">
           <div class="capture-thumb" data-action="${fullThumbAction}">${fullThumbHtml}</div>
         </div>
         <div class="capture-card-actions">
+          <button class="btn-soft" data-action="fullpage-screenshot">📜 整頁截圖</button>
           <button class="btn-soft" data-action="refresh-full">重新擷取</button>
           <button class="btn-soft" data-action="download-full">下載截圖</button>
+          <button class="btn-soft" data-action="send-full-to-chat">💬 傳送到對話</button>
         </div>
       </div>
 
@@ -1660,6 +2090,7 @@ function renderCaptureContent() {
         <div class="capture-card-actions">
           <button class="btn-soft" data-action="capture-partial">選取範圍</button>
           <button class="btn-soft" data-action="download-partial">下載截圖</button>
+          <button class="btn-soft" data-action="send-partial-to-chat">💬 傳送到對話</button>
         </div>
       </div>
     </div>
@@ -1686,6 +2117,7 @@ function buildTextStats(content) {
   if (content.paragraphs?.length) parts.push(`${content.paragraphs.length} 段`);
   if (content.headings?.length) parts.push(`${content.headings.length} 標題`);
   if (content.codeBlocks?.length) parts.push(`${content.codeBlocks.length} 程式碼`);
+  if (content.extractor === 'defuddle') parts.push('✨ Defuddle');
   return parts.length > 0 ? parts.join(' · ') : '尚無文字';
 }
 
@@ -1713,15 +2145,60 @@ function handleCaptureContentClick(event) {
     case 'download-partial':
       downloadScreenshot(state.currentPartialScreenshot, 'sidepilot-partial.png');
       break;
+    case 'fullpage-screenshot':
+      refreshFullPageScreenshot();
+      break;
     case 'open-full':
       openScreenshotInTab(state.currentPageScreenshot);
       break;
     case 'open-partial':
       openScreenshotInTab(state.currentPartialScreenshot);
       break;
+    case 'send-full-to-chat':
+      attachScreenshotToChat(state.currentPageScreenshot, '頁面截圖');
+      break;
+    case 'send-partial-to-chat':
+      attachScreenshotToChat(state.currentPartialScreenshot, '部分截圖');
+      break;
     default:
       break;
   }
+}
+
+function attachScreenshotToChat(dataUrl, label) {
+  if (!dataUrl) {
+    showToast('沒有可用的截圖', 'warning');
+    return;
+  }
+  // Strip dataURL prefix to get raw base64
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const mimeMatch = dataUrl.match(/^data:(image\/\w+);base64,/);
+  const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+  state.pendingChatImages.push({ mimeType, data: base64 });
+  showToast(`${label} 已附加，將隨下次訊息傳送 (${state.pendingChatImages.length} 張)`);
+  updatePendingImagesBadge();
+}
+
+function updatePendingImagesBadge() {
+  let badge = document.getElementById('pendingImagesBadge');
+  const count = state.pendingChatImages.length;
+  if (count === 0) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.id = 'pendingImagesBadge';
+    badge.className = 'pending-images-badge';
+    badge.title = '點擊清除附加圖片';
+    badge.addEventListener('click', () => {
+      state.pendingChatImages = [];
+      updatePendingImagesBadge();
+      showToast('已清除附加圖片');
+    });
+    dom.sdkSendBtn?.parentElement?.insertBefore(badge, dom.sdkSendBtn);
+  }
+  badge.textContent = `📎 ${count}`;
 }
 
 async function setModeFromUI(mode) {
@@ -1819,6 +2296,31 @@ async function refreshPartialScreenshot() {
     showToast('部分截圖已更新');
   } else if (result?.error) {
     showToast(result.error, 'error');
+  }
+}
+
+function requestFullPageScreenshot() {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: 'captureFullPageScreenshot' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { success: false, error: '無法擷取整頁截圖' });
+    });
+  });
+}
+
+async function refreshFullPageScreenshot() {
+  showToast('整頁截圖擷取中，請稍候...');
+  const result = await requestFullPageScreenshot();
+  if (result?.success && result.dataUrl) {
+    state.currentFullPageScreenshot = result.dataUrl;
+    state.currentPageScreenshot = result.dataUrl;
+    renderCaptureContent();
+    showToast('整頁截圖已完成');
+  } else {
+    showToast(result?.error || '整頁截圖失敗', 'error');
   }
 }
 
@@ -2006,7 +2508,8 @@ function formatMemoryEntryForPrompt(entry) {
   };
 }
 
-function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') {
+function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '', options = {}) {
+  const { useStructuredOutput = true, identityText = '' } = options;
   const selectedEntries = pickMemoryEntriesForPrompt(memoryEntries, userInput);
 
   let usedMemoryLength = 0;
@@ -2029,15 +2532,11 @@ function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') 
   const packet = {
     schema: SIDEPILOT_PACKET_SCHEMA,
     context: {
+      identity: identityText || null,
       rules: rulesInjected ? normalizedRules : null,
-      memory: memoryPacket
+      memory: memoryPacket.length > 0 ? memoryPacket : null
     },
     user_message: userInput,
-    output_contract: {
-      schema: SIDEPILOT_SANDBOX_SCHEMA,
-      packet_tag: 'sidepilot_packet',
-      response_tag: 'assistant_response'
-    },
     instructions: [
       'Use memory and rules only when relevant.',
       'If context conflicts with the latest user message, prioritize the latest user message.',
@@ -2045,6 +2544,14 @@ function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') 
       'Do not reveal chain-of-thought.'
     ]
   };
+
+  if (useStructuredOutput) {
+    packet.output_contract = {
+      schema: SIDEPILOT_SANDBOX_SCHEMA,
+      packet_tag: 'sidepilot_packet',
+      response_tag: 'assistant_response'
+    };
+  }
 
   const lines = [
     '[[SIDEPILOT_TURN_PACKET]]',
@@ -2064,9 +2571,26 @@ function updateSDKMemorySummary(text) {
   dom.sdkMemorySummary.textContent = text;
 }
 
+function syncContextChildToggles() {
+  const masterOn = !!dom.sdkIncludeMemory?.checked;
+  if (dom.contextChildToggles) {
+    dom.contextChildToggles.classList.toggle('disabled', !masterOn);
+  }
+}
+
 function refreshSDKMemorySummary() {
-  const enabled = !!dom.sdkIncludeMemory?.checked;
-  updateSDKMemorySummary(enabled ? 'Memory injection: on' : 'Memory injection: off');
+  const masterOn = !!dom.sdkIncludeMemory?.checked;
+  if (!masterOn) {
+    updateSDKMemorySummary('Context: off');
+    return;
+  }
+  const parts = [];
+  if (dom.sdkIncludeIdentity?.checked) parts.push('id');
+  if (dom.sdkIncludeMemoryEntries?.checked) parts.push('mem');
+  if (dom.sdkIncludeRules?.checked) parts.push('rules');
+  if (dom.sdkIncludeSystemMsg?.checked) parts.push('sys');
+  if (dom.sdkStructuredOutput?.checked) parts.push('struct');
+  updateSDKMemorySummary(parts.length > 0 ? `Context: ${parts.join(', ')}` : 'Context: on (none selected)');
 }
 
 function applySDKAssistantOnlyMode() {
@@ -2094,7 +2618,17 @@ async function copyAllContent() {
   }
 
   const markdown = formatAsMarkdown(state.currentPageContent);
-  await copyToClipboard(markdown, '文字摘要已複製，可貼到 Copilot 對話中');
+
+  // Paste into the active chat input
+  if (state.detectedMode === 'sdk' && dom.sdkInput) {
+    const existing = dom.sdkInput.value;
+    dom.sdkInput.value = existing ? `${existing}\n\n${markdown}` : markdown;
+    dom.sdkInput.focus();
+    showToast('已貼入對話輸入區');
+  } else {
+    // iframe mode: copy to clipboard as fallback
+    await copyToClipboard(markdown, '已複製，可貼到 Copilot 對話中');
+  }
 }
 
 async function copyStructuredContent() {
@@ -2123,7 +2657,17 @@ function formatAsMarkdown(content) {
   if (description) {
     lines.push(`**描述:** ${description}`);
   }
+  if (content.extractor) {
+    lines.push(`**擷取:** ${content.extractor}`);
+  }
   lines.push('');
+
+  // If Defuddle produced markdown, use it directly — it's already clean
+  if (content.markdown && content.extractor === 'defuddle') {
+    lines.push('## 主要內容');
+    lines.push(content.markdown.substring(0, 8000));
+    return lines.join('\n');
+  }
 
   if (content.headings?.length > 0) {
     lines.push('## 頁面結構');
@@ -2280,29 +2824,11 @@ function renderLogs() {
   }
 
   dom.logList.innerHTML = entries.map((entry) => {
-    const timeText = new Date(entry.ts).toLocaleString('zh-TW', {
-      hour12: false,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit'
-    });
-    const detailHtml = entry.detail
-      ? `<pre class="log-detail">${escapeHtml(entry.detail)}</pre>`
-      : '';
-
-    return `
-      <article class="log-entry level-${entry.level}">
-        <div class="log-header">
-          <span class="log-time">${timeText}</span>
-          <span class="log-level">${entry.level.toUpperCase()}</span>
-        </div>
-        <div class="log-message">${escapeHtml(entry.message)}</div>
-        ${detailHtml}
-      </article>
-    `;
+    const t = new Date(entry.ts);
+    const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+    const lvl = entry.level.toUpperCase().padEnd(5);
+    const detail = entry.detail ? `\n  ${escapeHtml(entry.detail)}` : '';
+    return `<div class="log-raw-line"><span class="log-raw-ts">${ts}</span> <span class="log-raw-lvl">${lvl}</span> ${escapeHtml(entry.message)}${detail}</div>`;
   }).join('');
 }
 
@@ -2329,11 +2855,384 @@ async function copyLogsToClipboard() {
   await copyToClipboard(lines.join('\n'), 'Logs 已複製');
 }
 
+// Bridge real-time log SSE
+function connectBridgeLogSSE() {
+  disconnectBridgeLogSSE();
+  try {
+    state.bridgeLogSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/logs/stream`);
+    state.bridgeLogSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        addLog(data.level || 'info', `[Bridge] ${data.message || ''}`, '');
+      } catch { /* ignore parse errors */ }
+    };
+    state.bridgeLogSSE.onerror = () => {
+      // Will auto-reconnect; don't flood logs
+    };
+  } catch {
+    // Bridge not available
+  }
+}
+
+function disconnectBridgeLogSSE() {
+  if (state.bridgeLogSSE) {
+    state.bridgeLogSSE.close();
+    state.bridgeLogSSE = null;
+  }
+}
+
+// ============================================
+// Bridge History Log Tab
+// ============================================
+
+let logFileListEl = null;
+let refreshLogBtn = null;
+
+function updateHistoryTabMode() {
+  const sdkContainer = document.getElementById('logContainerSdk');
+  const iframeContainer = document.getElementById('logContainerIframe');
+  const iframeEl = document.getElementById('logIframeAgents');
+  if (!sdkContainer || !iframeContainer) return;
+
+  if (state.detectedMode === 'sdk') {
+    sdkContainer.classList.remove('hidden');
+    iframeContainer.classList.add('hidden');
+    if (iframeEl) iframeEl.style.display = 'none';
+  } else {
+    sdkContainer.classList.add('hidden');
+    iframeContainer.classList.remove('hidden');
+    if (iframeEl) {
+      iframeEl.src = 'https://github.com/copilot/agents';
+      iframeEl.style.display = 'block';
+    }
+  }
+}
+
+// ── History: parsing & labeling ──
+
+function extractUserMessage(content) {
+  if (typeof content !== 'string') return { text: String(content || ''), tags: [] };
+  const tags = [];
+  const packetMatch = content.match(/\[\[SIDEPILOT_TURN_PACKET\]\]([\s\S]*?)\[\[END_SIDEPILOT_TURN_PACKET\]\]/);
+  if (packetMatch) {
+    tags.push('packet');
+    try {
+      const pkt = JSON.parse(packetMatch[1]);
+      if (pkt.context?.memory?.length > 0) tags.push('mem');
+      if (pkt.context?.rules) tags.push('rules');
+      if (pkt.output_contract) tags.push('struct');
+      return { text: pkt.user_message || content, tags };
+    } catch { /* fall through */ }
+  }
+  return { text: content, tags };
+}
+
+function extractAssistantMessage(content) {
+  if (typeof content !== 'string') return { text: String(content || ''), tags: [] };
+  const tags = [];
+  const respMatch = content.match(/<assistant_response>([\s\S]*?)<\/assistant_response>/);
+  if (respMatch) {
+    tags.push('parsed');
+    return { text: respMatch[1].trim(), tags };
+  }
+  if (content.includes('<sidepilot_packet>')) tags.push('packet');
+  return { text: content, tags };
+}
+
+function groupMessagesBySession(messages) {
+  const sessions = new Map();
+  const orphans = [];
+  for (const msg of messages) {
+    const sid = msg.sessionId;
+    if (!sid) { orphans.push(msg); continue; }
+    if (!sessions.has(sid)) sessions.set(sid, []);
+    sessions.get(sid).push(msg);
+  }
+  const groups = [];
+  for (const [sid, msgs] of sessions) {
+    const models = [...new Set(msgs.filter(m => m.model).map(m => m.model))];
+    const userCount = msgs.filter(m => m.role === 'user').length;
+    const asstCount = msgs.filter(m => m.role === 'assistant').length;
+    const first = msgs[0];
+    const last = msgs[msgs.length - 1];
+    const firstUserMsg = msgs.find(m => m.role === 'user');
+    const preview = firstUserMsg ? extractUserMessage(firstUserMsg.content).text : '';
+    groups.push({
+      sessionId: sid,
+      messages: msgs,
+      models,
+      userCount,
+      assistantCount: asstCount,
+      startTime: first.timestamp,
+      endTime: last.timestamp,
+      preview: preview.length > 60 ? preview.slice(0, 60) + '…' : preview,
+      tags: buildSessionTags(msgs, models)
+    });
+  }
+  if (orphans.length > 0) {
+    groups.push({
+      sessionId: null,
+      messages: orphans,
+      models: [...new Set(orphans.filter(m => m.model).map(m => m.model))],
+      userCount: orphans.filter(m => m.role === 'user').length,
+      assistantCount: orphans.filter(m => m.role === 'assistant').length,
+      startTime: orphans[0]?.timestamp,
+      endTime: orphans[orphans.length - 1]?.timestamp,
+      preview: '',
+      tags: ['orphan']
+    });
+  }
+  return groups;
+}
+
+function buildSessionTags(msgs, models) {
+  const tags = [];
+  if (models.length > 0) tags.push(...models);
+  const hasPacket = msgs.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('SIDEPILOT_TURN_PACKET'));
+  if (hasPacket) tags.push('context');
+  const hasMem = msgs.some(m => {
+    if (m.role !== 'user' || typeof m.content !== 'string') return false;
+    const match = m.content.match(/\[\[SIDEPILOT_TURN_PACKET\]\]([\s\S]*?)\[\[END_SIDEPILOT_TURN_PACKET\]\]/);
+    if (!match) return false;
+    try { const p = JSON.parse(match[1]); return p.context?.memory?.length > 0; } catch { return false; }
+  });
+  if (hasMem) tags.push('memory');
+  return tags;
+}
+
+function renderTagBadges(tags) {
+  if (!tags || tags.length === 0) return '';
+  return tags.map(t => `<span class="hist-tag hist-tag-${tagClass(t)}">${escapeHtml(t)}</span>`).join('');
+}
+
+function tagClass(tag) {
+  if (['gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'gpt-5-mini'].includes(tag)) return 'model-gpt';
+  if (tag.startsWith('gpt-')) return 'model-gpt';
+  if (tag.startsWith('claude-')) return 'model-claude';
+  if (tag.startsWith('gemini-')) return 'model-gemini';
+  if (['context', 'packet', 'struct'].includes(tag)) return 'context';
+  if (['memory', 'mem', 'rules'].includes(tag)) return 'inject';
+  if (tag === 'parsed') return 'parsed';
+  if (tag === 'orphan') return 'orphan';
+  return 'default';
+}
+
+// ── History: file list & rendering ──
+
+async function loadLogFiles() {
+  logFileListEl = logFileListEl || document.getElementById('logFileList');
+  if (!logFileListEl) return;
+
+  logFileListEl.innerHTML = '<div class="log-empty">載入中...</div>';
+
+  try {
+    const resp = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/history`);
+    const data = await resp.json();
+
+    if (!data.success || !data.files || data.files.length === 0) {
+      logFileListEl.innerHTML = '<div class="log-empty">尚無對話歷史紀錄</div>';
+      return;
+    }
+
+    renderLogFiles(data.files);
+    connectLogSSE();
+  } catch (err) {
+    logFileListEl.innerHTML = `<div class="log-empty">無法連線 Bridge：${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderLogFiles(files) {
+  if (!logFileListEl) return;
+  logFileListEl.innerHTML = '';
+
+  files.forEach(file => {
+    const item = document.createElement('div');
+    item.className = 'log-file-item';
+
+    const header = document.createElement('div');
+    header.className = 'log-file-header';
+    const filePath = file.path || '';
+    const pathHtml = filePath
+      ? `<span class="log-file-path" title="${escapeHtml(filePath)}">${escapeHtml(filePath)}</span>`
+      : '';
+    header.innerHTML = `
+      <span class="log-file-date">📅 ${escapeHtml(file.date)}</span>
+      ${pathHtml}
+      <span class="log-file-badge">▸</span>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'log-file-body';
+    body.style.display = 'none';
+
+    header.addEventListener('click', () => {
+      const isExpanded = item.classList.toggle('expanded');
+      body.style.display = isExpanded ? 'block' : 'none';
+      header.querySelector('.log-file-badge').textContent = isExpanded ? '▾' : '▸';
+      if (isExpanded && body.children.length === 0) {
+        loadLogFileContent(file.name, body);
+      }
+    });
+
+    item.appendChild(header);
+    item.appendChild(body);
+    logFileListEl.appendChild(item);
+  });
+}
+
+async function loadLogFileContent(filename, container) {
+  container.innerHTML = '<div class="log-empty">載入中...</div>';
+  try {
+    const resp = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/history/${encodeURIComponent(filename)}`);
+    const data = await resp.json();
+
+    if (!data.success || !data.messages || data.messages.length === 0) {
+      container.innerHTML = '<div class="log-empty">此日誌沒有訊息</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    const groups = groupMessagesBySession(data.messages);
+
+    if (groups.length <= 1 && groups[0]?.sessionId === null) {
+      // No sessions — render flat
+      data.messages.forEach(msg => container.appendChild(createLogMessageEl(msg)));
+      return;
+    }
+
+    groups.forEach(group => {
+      const section = document.createElement('div');
+      section.className = 'hist-session';
+
+      const sHeader = document.createElement('div');
+      sHeader.className = 'hist-session-header';
+      const timeRange = formatTimeRange(group.startTime, group.endTime);
+      const stats = `${group.userCount + group.assistantCount} msgs`;
+      sHeader.innerHTML = `
+        <span class="hist-session-toggle">▸</span>
+        <span class="hist-session-time">${timeRange}</span>
+        <span class="hist-session-stats">${stats}</span>
+        ${renderTagBadges(group.tags)}
+        ${group.preview ? `<span class="hist-session-preview">${escapeHtml(group.preview)}</span>` : ''}
+      `;
+
+      const sBody = document.createElement('div');
+      sBody.className = 'hist-session-body';
+      sBody.style.display = 'none';
+
+      sHeader.addEventListener('click', () => {
+        const open = section.classList.toggle('expanded');
+        sBody.style.display = open ? 'block' : 'none';
+        sHeader.querySelector('.hist-session-toggle').textContent = open ? '▾' : '▸';
+        if (open && sBody.children.length === 0) {
+          group.messages.forEach(msg => sBody.appendChild(createLogMessageEl(msg)));
+        }
+      });
+
+      section.appendChild(sHeader);
+      section.appendChild(sBody);
+      container.appendChild(section);
+    });
+  } catch (err) {
+    container.innerHTML = `<div class="log-empty">讀取失敗：${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function formatTimeRange(startIso, endIso) {
+  const fmt = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  };
+  const s = fmt(startIso);
+  const e = fmt(endIso);
+  return s === e ? s : `${s} – ${e}`;
+}
+
+function createLogMessageEl(msg) {
+  const el = document.createElement('div');
+  const role = msg.role || 'system';
+  el.className = `log-message log-msg-${role}`;
+
+  const roleBadge = role === 'user' ? '👤' : (role === 'assistant' ? '🤖' : '⚙️');
+  const timeStr = msg.timestamp
+    ? new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour12: false })
+    : '';
+
+  // Extract clean content & per-message tags
+  let extracted;
+  if (role === 'user') {
+    extracted = extractUserMessage(msg.content);
+  } else if (role === 'assistant') {
+    extracted = extractAssistantMessage(msg.content);
+  } else {
+    extracted = { text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || ''), tags: [] };
+  }
+
+  const allTags = [...extracted.tags];
+  if (msg.model) allTags.unshift(msg.model);
+
+  el.innerHTML = `
+    <div class="log-message-header">
+      <span class="log-role-badge">${roleBadge} ${escapeHtml(role)}</span>
+      ${renderTagBadges(allTags)}
+      <span class="log-timestamp">${timeStr}</span>
+    </div>
+    <div class="log-message-content collapsed" title="點擊展開">
+      ${escapeHtml(extracted.text)}
+    </div>
+  `;
+
+  const contentDiv = el.querySelector('.log-message-content');
+  contentDiv.addEventListener('click', () => {
+    contentDiv.classList.toggle('collapsed');
+  });
+
+  return el;
+}
+
+function connectLogSSE() {
+  disconnectLogSSE();
+
+  try {
+    state.logSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/history/stream`);
+    state.logSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        appendLiveLogMessage(data);
+      } catch { /* ignore parse errors */ }
+    };
+    state.logSSE.onerror = () => {
+      disconnectLogSSE();
+    };
+  } catch {
+    // SSE not available
+  }
+}
+
+function disconnectLogSSE() {
+  if (state.logSSE) {
+    state.logSSE.close();
+    state.logSSE = null;
+  }
+}
+
+function appendLiveLogMessage(msg) {
+  if (!logFileListEl) return;
+  // Append to the first (most recent) expanded file body, or create a live section
+  const expandedBody = logFileListEl.querySelector('.log-file-item.expanded .log-file-body');
+  if (expandedBody) {
+    expandedBody.appendChild(createLogMessageEl(msg));
+    expandedBody.scrollTop = expandedBody.scrollHeight;
+  }
+}
+
 // ============================================
 // Toast 通知
 // ============================================
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = 3000) {
   if (!dom.toast) return;
 
   dom.toast.textContent = message;
@@ -2342,7 +3241,7 @@ function showToast(message, type = 'success') {
 
   setTimeout(() => {
     dom.toast.classList.remove('visible');
-  }, 3000);
+  }, duration);
 }
 
 // ============================================
@@ -2659,23 +3558,39 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
 
 function addSDKMessage(role, content) {
   if (!dom.sdkMessages) return;
-  
+
   const msgEl = document.createElement('div');
   msgEl.className = `sdk-message ${role}`;
-  
+
+  // Extract clean content & tags
+  let displayText = content;
+  let tags = [];
+  if (role === 'user') {
+    const ex = extractUserMessage(content);
+    displayText = ex.text;
+    tags = ex.tags;
+  }
+
+  if (tags.length > 0) {
+    const tagBar = document.createElement('div');
+    tagBar.className = 'sdk-message-tags';
+    tagBar.innerHTML = renderTagBadges(tags);
+    msgEl.appendChild(tagBar);
+  }
+
   const contentEl = document.createElement('div');
   contentEl.className = 'sdk-message-content';
-  contentEl.textContent = content;
-  
+  contentEl.textContent = displayText;
+
   const timeEl = document.createElement('div');
   timeEl.className = 'sdk-message-time';
   const time = new Date();
   timeEl.textContent = time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-  
+
   msgEl.appendChild(contentEl);
   msgEl.appendChild(timeEl);
   dom.sdkMessages.appendChild(msgEl);
-  
+
   dom.sdkMessages.scrollTop = dom.sdkMessages.scrollHeight;
 }
 
@@ -2706,6 +3621,133 @@ function removeSDKTypingIndicator(id) {
   if (!id) return;
   const el = document.getElementById(id);
   if (el) el.remove();
+}
+
+// ============================================
+// WP-01: Permission SSE & Modal
+// ============================================
+
+function connectPermissionSSE() {
+  disconnectPermissionSSE();
+  try {
+    state.permissionSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/permissions/stream`);
+    state.permissionSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        if (data.id && data.scope) {
+          showPermissionModal(data);
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    state.permissionSSE.onerror = () => {
+      // Will auto-reconnect
+    };
+  } catch {
+    // Bridge not available
+  }
+}
+
+function disconnectPermissionSSE() {
+  if (state.permissionSSE) {
+    state.permissionSSE.close();
+    state.permissionSSE = null;
+  }
+}
+
+let _currentPermissionId = null;
+
+function showPermissionModal(permission) {
+  if (!dom.permissionModal) return;
+  _currentPermissionId = permission.id;
+
+  if (dom.permissionScope) dom.permissionScope.textContent = permission.scope || '';
+  if (dom.permissionReason) dom.permissionReason.textContent = permission.reason || '';
+  if (dom.permissionOptions) dom.permissionOptions.innerHTML = '';
+
+  dom.permissionModal.classList.remove('hidden');
+  startPermissionCountdown(60);
+  addLog('info', `[Permission] 收到權限請求: ${permission.scope}`);
+}
+
+function hidePermissionModal() {
+  if (dom.permissionModal) dom.permissionModal.classList.add('hidden');
+  stopPermissionCountdown();
+  _currentPermissionId = null;
+}
+
+function startPermissionCountdown(seconds) {
+  stopPermissionCountdown();
+  let remaining = seconds;
+  if (dom.permissionCountdown) dom.permissionCountdown.textContent = remaining;
+  state.permissionCountdownTimer = setInterval(() => {
+    remaining--;
+    if (dom.permissionCountdown) dom.permissionCountdown.textContent = remaining;
+    if (remaining <= 0) {
+      resolvePermission('deny');
+    }
+  }, 1000);
+}
+
+function stopPermissionCountdown() {
+  if (state.permissionCountdownTimer) {
+    clearInterval(state.permissionCountdownTimer);
+    state.permissionCountdownTimer = null;
+  }
+}
+
+async function resolvePermission(decision) {
+  const permId = _currentPermissionId;
+  hidePermissionModal();
+  if (!permId) return;
+
+  try {
+    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: permId, decision })
+    });
+    addLog('info', `[Permission] ${decision === 'allow' ? '已允許' : '已拒絕'}: ${permId}`);
+  } catch (err) {
+    addLog('error', `[Permission] 解析失敗: ${err.message}`);
+  }
+}
+
+// ============================================
+// WP-07: Prompt Strategy
+// ============================================
+
+async function setPromptStrategy(strategy) {
+  // Update UI immediately
+  dom.promptStrategyBtns?.querySelectorAll('.strategy-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.strategy === strategy);
+  });
+
+  try {
+    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy })
+    });
+    addLog('info', `[Prompt] 策略已切換: ${strategy}`);
+  } catch (err) {
+    addLog('error', `[Prompt] 策略切換失敗: ${err.message}`);
+    showToast('Prompt 策略切換失敗', 'error');
+  }
+}
+
+async function loadPromptStrategy() {
+  try {
+    const res = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const strategy = data.strategy || 'normal';
+    dom.promptStrategyBtns?.querySelectorAll('.strategy-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.strategy === strategy);
+    });
+  } catch {
+    // Bridge not available, keep default
+  }
 }
 
 // ============================================

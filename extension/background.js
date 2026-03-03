@@ -58,19 +58,23 @@ chrome.action.onClicked.addListener(async (tab) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   switch (message.action) {
     case 'getPageContent':
-      handleGetPageContent(sendResponse);
+      handleGetPageContent(message, sendResponse);
       return true;
 
     case 'getSelectedText':
-      handleGetSelectedText(sendResponse);
+      handleGetSelectedText(message, sendResponse);
       return true;
 
     case 'captureVisibleScreenshot':
-      handleCaptureVisibleScreenshot(sendResponse);
+      handleCaptureVisibleScreenshot(message, sendResponse);
       return true;
 
     case 'capturePartialScreenshot':
-      handleCapturePartialScreenshot(sendResponse);
+      handleCapturePartialScreenshot(message, sendResponse);
+      return true;
+
+    case 'captureFullPageScreenshot':
+      handleCaptureFullPageScreenshot(message, sendResponse);
       return true;
 
     case 'openCopilotWindow':
@@ -266,10 +270,25 @@ async function handleBridgeHealth(message, sendResponse) {
   }
 }
 
+// ============================================
+// Capture Tab Helper
+// ============================================
+
+async function getCaptureTab(message) {
+  let tabs;
+  if (message?.windowId) {
+    tabs = await chrome.tabs.query({ active: true, windowId: message.windowId });
+  }
+  if (!tabs || tabs.length === 0) {
+    tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  }
+  return tabs[0] || null;
+}
+
 // 取得頁面內容
-async function handleGetPageContent(sendResponse) {
+async function handleGetPageContent(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab) {
       sendResponse({ success: false, error: '找不到使用中的分頁' });
@@ -286,6 +305,16 @@ async function handleGetPageContent(sendResponse) {
         pageInfo: { title: tab.title, url: url }
       });
       return;
+    }
+
+    // Inject vendor bundle (Defuddle + Turndown) then extract content
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['js/vendor-content-cleaner.js']
+      });
+    } catch {
+      // Vendor injection may fail on some pages; fall back to basic extraction
     }
 
     const results = await chrome.scripting.executeScript({
@@ -305,9 +334,9 @@ async function handleGetPageContent(sendResponse) {
 }
 
 // 取得選取文字
-async function handleGetSelectedText(sendResponse) {
+async function handleGetSelectedText(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, selectedText: '' });
@@ -329,9 +358,9 @@ async function handleGetSelectedText(sendResponse) {
 }
 
 // 擷取可見範圍截圖
-async function handleCaptureVisibleScreenshot(sendResponse) {
+async function handleCaptureVisibleScreenshot(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
@@ -346,9 +375,9 @@ async function handleCaptureVisibleScreenshot(sendResponse) {
 }
 
 // 擷取部分截圖（選取區域）
-async function handleCapturePartialScreenshot(sendResponse) {
+async function handleCapturePartialScreenshot(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
@@ -369,6 +398,181 @@ async function handleCapturePartialScreenshot(sendResponse) {
     const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
     const croppedUrl = await cropImageDataUrl(dataUrl, region);
     sendResponse({ success: true, dataUrl: croppedUrl });
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// 整頁截圖（scroll-and-stitch）
+async function handleCaptureFullPageScreenshot(message, sendResponse) {
+  const CAPTURE_DELAY = 350;
+  const MAX_STEPS = 50;
+  const FIXED_HIDE_CLASS = '__sidepilot_hide_fixed__';
+
+  try {
+    const tab = await getCaptureTab(message);
+
+    if (!tab || isRestrictedUrl(tab.url)) {
+      sendResponse({ success: false, error: '無法在此頁面擷取整頁截圖' });
+      return;
+    }
+
+    // 1. Get page dimensions, force instant scroll, and hide fixed/sticky elements
+    const dimResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: (hideClass) => {
+        const orig = document.documentElement.style.scrollBehavior;
+        document.documentElement.style.scrollBehavior = 'auto';
+
+        // Inject a style rule to hide position:fixed and position:sticky elements
+        const style = document.createElement('style');
+        style.id = hideClass;
+        style.textContent = `.${hideClass} { visibility: hidden !important; }`;
+        document.head.appendChild(style);
+
+        // Find and mark all fixed/sticky elements
+        const allEls = document.querySelectorAll('*');
+        let hiddenCount = 0;
+        for (const el of allEls) {
+          const cs = window.getComputedStyle(el);
+          if (cs.position === 'fixed' || cs.position === 'sticky') {
+            el.classList.add(hideClass);
+            hiddenCount++;
+          }
+        }
+
+        return {
+          fullHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
+          scrollY: window.scrollY,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          origScrollBehavior: orig || '',
+          hiddenCount
+        };
+      },
+      args: [FIXED_HIDE_CLASS]
+    });
+
+    const dims = dimResults?.[0]?.result;
+    if (!dims) {
+      sendResponse({ success: false, error: '無法取得頁面尺寸' });
+      return;
+    }
+
+    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr } = dims;
+
+    if (fullHeight <= viewportHeight) {
+      // Page fits in one viewport — restore and capture once
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: (hideClass) => {
+          document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+          document.getElementById(hideClass)?.remove();
+        },
+        args: [FIXED_HIDE_CLASS]
+      });
+      const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+      sendResponse({ success: true, dataUrl });
+      return;
+    }
+
+    // 2. Calculate scroll positions — sequential, non-overlapping except last strip
+    const maxScrollY = fullHeight - viewportHeight;
+    const scrollPositions = [];
+    for (let y = 0; y < maxScrollY; y += viewportHeight) {
+      scrollPositions.push(y);
+    }
+    scrollPositions.push(maxScrollY);
+
+    if (scrollPositions.length > MAX_STEPS) {
+      scrollPositions.length = MAX_STEPS;
+    }
+
+    // 3. Scroll-and-capture loop (fixed/sticky elements are already hidden)
+    const captures = [];
+    for (let i = 0; i < scrollPositions.length; i++) {
+      const targetY = scrollPositions[i];
+
+      const scrollResults = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: (y) => {
+          window.scrollTo({ top: y, behavior: 'instant' });
+          return window.scrollY;
+        },
+        args: [targetY]
+      });
+
+      const actualScrollY = scrollResults?.[0]?.result ?? targetY;
+      await new Promise(r => setTimeout(r, CAPTURE_DELAY));
+
+      const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+      captures.push({ dataUrl, scrollY: actualScrollY, index: i });
+    }
+
+    // 4. Restore: unhide fixed/sticky elements, scroll position, scroll behavior
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: (y, origBehavior, hideClass) => {
+        document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+        document.getElementById(hideClass)?.remove();
+        window.scrollTo({ top: y, behavior: 'instant' });
+        document.documentElement.style.scrollBehavior = origBehavior;
+      },
+      args: [origScrollY, dims.origScrollBehavior, FIXED_HIDE_CLASS]
+    });
+
+    // 5. Deduplicate by rounded scrollY, keep order
+    const uniqueCaptures = [];
+    const seenY = new Set();
+    for (const cap of captures) {
+      const key = Math.round(cap.scrollY);
+      if (!seenY.has(key)) {
+        seenY.add(key);
+        uniqueCaptures.push(cap);
+      }
+    }
+
+    uniqueCaptures.sort((a, b) => a.scrollY - b.scrollY);
+
+    // 6. Stitch on OffscreenCanvas
+    const canvasW = Math.round(dims.viewportWidth * dpr);
+    const canvasH = Math.round(fullHeight * dpr);
+    const canvas = new OffscreenCanvas(canvasW, canvasH);
+    const ctx = canvas.getContext('2d');
+
+    for (let i = 0; i < uniqueCaptures.length; i++) {
+      const resp = await fetch(uniqueCaptures[i].dataUrl);
+      const blob = await resp.blob();
+      const bitmap = await createImageBitmap(blob);
+
+      const drawY = Math.round(uniqueCaptures[i].scrollY * dpr);
+      const nextDrawY = (i < uniqueCaptures.length - 1)
+        ? Math.round(uniqueCaptures[i + 1].scrollY * dpr)
+        : canvasH;
+
+      const stripH = Math.min(bitmap.height, nextDrawY - drawY);
+
+      if (i === uniqueCaptures.length - 1) {
+        // Last strip: align bottom of bitmap to bottom of canvas
+        const remaining = canvasH - drawY;
+        if (remaining > 0 && remaining < bitmap.height) {
+          const srcY = bitmap.height - remaining;
+          ctx.drawImage(bitmap, 0, srcY, bitmap.width, remaining, 0, drawY, bitmap.width, remaining);
+        } else {
+          ctx.drawImage(bitmap, 0, drawY);
+        }
+      } else if (stripH > 0) {
+        ctx.drawImage(bitmap, 0, 0, bitmap.width, stripH, 0, drawY, bitmap.width, stripH);
+      }
+
+      bitmap.close();
+    }
+
+    const stitchedBlob = await canvas.convertToBlob({ type: 'image/png' });
+    const buffer = await stitchedBlob.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    sendResponse({ success: true, dataUrl: `data:image/png;base64,${base64}` });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
   }
@@ -601,16 +805,99 @@ function extractPageContent() {
     title: document.title || '',
     url: window.location.href,
     text: '',
+    markdown: '',
     paragraphs: [],
     wordCount: 0,
     charCount: 0,
     headings: [],
     codeBlocks: [],
-    meta: {}
+    meta: {},
+    extractor: 'basic'
   };
 
   try {
-    // 主要內容選擇器
+    // Try Defuddle + Turndown for high-quality extraction
+    if (typeof __SidePilotVendor !== 'undefined' && __SidePilotVendor.Defuddle) {
+      try {
+        const Defuddle = __SidePilotVendor.Defuddle;
+        const TurndownService = __SidePilotVendor.TurndownService;
+
+        const defuddled = new Defuddle(document).parse();
+
+        content.title = defuddled.title || content.title;
+        content.extractor = 'defuddle';
+
+        if (defuddled.author) content.meta.author = defuddled.author;
+        if (defuddled.description) content.meta.description = defuddled.description;
+        if (defuddled.site) content.meta.site = defuddled.site;
+        if (defuddled.published) content.meta.published = defuddled.published;
+        if (defuddled.wordCount) content.wordCount = defuddled.wordCount;
+
+        // Convert cleaned HTML to Markdown
+        if (defuddled.content && TurndownService) {
+          const td = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+            bulletListMarker: '-',
+          });
+          // Skip images to save tokens
+          td.addRule('skipImages', {
+            filter: 'img',
+            replacement: () => ''
+          });
+          const md = td.turndown(defuddled.content);
+          content.markdown = md.substring(0, 15000);
+          content.text = md.substring(0, 12000);
+        } else if (defuddled.content) {
+          // Turndown unavailable — strip HTML tags for plain text
+          const div = document.createElement('div');
+          div.innerHTML = defuddled.content;
+          content.text = (div.innerText || '').replace(/[\t ]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().substring(0, 12000);
+        }
+
+        content.charCount = content.text ? content.text.replace(/\s+/g, '').length : 0;
+        if (!content.wordCount) {
+          content.wordCount = content.text ? content.text.split(/\s+/).length : 0;
+        }
+
+        // Extract paragraphs from markdown
+        if (content.markdown) {
+          content.paragraphs = content.markdown.split(/\n{2,}/).filter(p => p.trim().length > 20).slice(0, 120);
+        }
+
+        // Extract headings from markdown
+        const headingRe = /^(#{1,4})\s+(.+)$/gm;
+        let hMatch;
+        while ((hMatch = headingRe.exec(content.markdown)) !== null && content.headings.length < 20) {
+          content.headings.push({ level: `H${hMatch[1].length}`, text: hMatch[2].trim() });
+        }
+
+        // Extract code blocks from markdown
+        const codeRe = /```(\w*)\n([\s\S]*?)```/g;
+        let cMatch;
+        while ((cMatch = codeRe.exec(content.markdown)) !== null && content.codeBlocks.length < 5) {
+          if (cMatch[2].trim().length > 10) {
+            content.codeBlocks.push({ language: cMatch[1] || 'plaintext', code: cMatch[2].trim() });
+          }
+        }
+
+        // Fill remaining meta from document
+        document.querySelectorAll('meta[name], meta[property]').forEach(meta => {
+          const name = meta.getAttribute('name') || meta.getAttribute('property');
+          const value = meta.getAttribute('content');
+          if (name && value && ['description', 'keywords', 'og:title', 'og:description'].includes(name) && !content.meta[name]) {
+            content.meta[name] = value.substring(0, 300);
+          }
+        });
+
+        return content;
+      } catch (defuddleErr) {
+        console.warn('[SidePilot] Defuddle extraction failed, falling back:', defuddleErr);
+        content.extractor = 'basic-fallback';
+      }
+    }
+
+    // Fallback: basic extraction (original logic)
     const mainSelectors = [
       'main', 'article', '[role="main"]',
       '.content', '#content', '.main',
@@ -625,7 +912,6 @@ function extractPageContent() {
     }
     mainContent = mainContent || document.body;
 
-    // 複製並清理內容
     const clone = mainContent.cloneNode(true);
     const removeSelectors = [
       'script', 'style', 'nav', 'footer', 'header',
@@ -698,7 +984,6 @@ function extractPageContent() {
       if (text && text.length > 10 && text.length < 5000 && !seenCode.has(text)) {
         seenCode.add(text);
 
-        // 偵測語言
         const classNames = (code.className || '') + ' ' + (code.parentElement?.className || '');
         const langMatch = classNames.match(/language-(\w+)|lang-(\w+)/);
         const language = langMatch?.[1] || langMatch?.[2] || 'plaintext';
