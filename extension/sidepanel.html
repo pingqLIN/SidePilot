@@ -126,7 +126,13 @@
             <div class="sdk-chat-messages" id="sdkMessages">
               <!-- Messages will be appended here -->
             </div>
-            <div class="sdk-chat-input-container">
+            <div
+              class="sdk-chat-resizer"
+              id="sdkInputResizer"
+              title="拖曳調整輸入區高度"
+              aria-label="拖曳調整輸入區高度"
+            ></div>
+            <div class="sdk-chat-input-container" id="sdkInputContainer">
               <div class="sdk-chat-tools">
                 <label class="sdk-model-picker" for="sdkModelSelect">
                   Model
@@ -228,6 +234,10 @@
                 />
               </svg>
             </button>
+          </div>
+          <div class="rules-origin-row">
+            <span class="rules-origin-badge" id="rulesOriginBadge" data-origin="user">使用者自建</span>
+            <span class="rules-origin-detail" id="rulesOriginDetail">來源：使用者編輯/匯入</span>
           </div>
           <div class="identity-module-chips" id="rulesModuleChips"></div>
           <textarea
@@ -497,6 +507,28 @@
                   </div>
                 </div>
                 <input type="checkbox" id="settingAutoSdkLogin" checked />
+              </label>
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title settings-item-title-row">
+                    <span>啟用自我疊代開發保護</span>
+                    <span
+                      class="seal-status-badge"
+                      id="selfIterationSealBadge"
+                      data-status="off"
+                    >
+                      未封印
+                    </span>
+                  </div>
+                  <div class="settings-item-desc">
+                    僅在啟用後套用 BASW 啟動檢測；第一次啟用會自動執行一次
+                    SEAL
+                  </div>
+                  <div class="settings-item-sub" id="selfIterationSealDetail">
+                    功能未啟用；開啟後才會套用啟動鎖與封印檢測
+                  </div>
+                </div>
+                <input type="checkbox" id="settingSelfIterationEnabled" />
               </label>
               <div class="settings-inline-actions">
                 <button

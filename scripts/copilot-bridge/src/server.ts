@@ -6,7 +6,12 @@
 // ============================================
 
 import express from 'express';
+import type { Request, Response } from 'express';
 import cors from 'cors';
+import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { SessionManager } from './session-manager.js';
 import type { PendingPermission } from './session-manager.js';
 import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } from './ipc-types.js';
@@ -27,6 +32,112 @@ app.use(express.json({ limit: '20mb' }));
 
 // --- Session Manager (singleton) ---
 const sessionManager = new SessionManager();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const BRIDGE_ROOT = resolve(__dirname, '..');
+const PROJECT_ROOT = resolve(BRIDGE_ROOT, '..', '..');
+const SEAL_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'seal-integrity.mjs');
+const VERIFY_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'verify-integrity.mjs');
+
+function ensureExtensionOrigin(req: Request, res: Response): boolean {
+  const origin = String(req.headers.origin || '');
+  if (!origin.startsWith('chrome-extension://')) {
+    res.status(403).json({
+      success: false,
+      error: 'forbidden origin',
+      origin
+    });
+    return false;
+  }
+  return true;
+}
+
+function runNodeScript(
+  scriptPath: string,
+  options: { args?: string[]; timeoutMs?: number } = {}
+): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}> {
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 30_000;
+  const args = [scriptPath, ...(options.args || [])];
+
+  return new Promise((resolveRun, rejectRun) => {
+    if (!existsSync(scriptPath)) {
+      rejectRun(new Error(`script not found: ${scriptPath}`));
+      return;
+    }
+
+    const startedAt = Date.now();
+    const child = spawn(process.execPath, args, {
+      cwd: PROJECT_ROOT,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: false
+    });
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const hardTimeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { child.kill(); } catch { /* ignore */ }
+      rejectRun(new Error(`process timeout after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk: Buffer) => {
+      if (stdout.length < 16_000) stdout += chunk.toString();
+    });
+
+    child.stderr.on('data', (chunk: Buffer) => {
+      if (stderr.length < 16_000) stderr += chunk.toString();
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimeout);
+      rejectRun(err);
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(hardTimeout);
+      resolveRun({
+        code: code ?? 1,
+        stdout: stdout.trim(),
+        stderr: stderr.trim(),
+        durationMs: Date.now() - startedAt
+      });
+    });
+  });
+}
+
+function runSealIntegrityScript(options: { dryRun?: boolean; timeoutMs?: number } = {}): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}> {
+  const dryRun = !!options.dryRun;
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 30_000;
+  const args = dryRun ? ['--dry'] : [];
+  return runNodeScript(SEAL_SCRIPT_PATH, { args, timeoutMs });
+}
+
+function runVerifyIntegrityScript(options: { timeoutMs?: number } = {}): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+  durationMs: number;
+}> {
+  const timeoutMs = Number.isFinite(options.timeoutMs) ? Number(options.timeoutMs) : 30_000;
+  return runNodeScript(VERIFY_SCRIPT_PATH, { timeoutMs });
+}
 
 // ============================================
 // Routes
@@ -239,6 +350,66 @@ app.post('/api/prompt/strategy', (req, res) => {
 });
 
 /**
+ * POST /api/integrity/auto-seal
+ * 受限用途：自我疊代模式首次啟用時，由本機 Bridge 代執行 seal 腳本
+ * Body: { dryRun?: boolean, timeoutMs?: number }
+ */
+app.post('/api/integrity/auto-seal', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+  const dryRun = !!req.body?.dryRun;
+  const timeoutMs = Number(req.body?.timeoutMs) || 30_000;
+
+  try {
+    const result = await runSealIntegrityScript({ dryRun, timeoutMs });
+    if (result.code !== 0) {
+      res.status(500).json({
+        success: false,
+        error: `seal script exited with code ${result.code}`,
+        ...result
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      dryRun,
+      ...result
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err?.message || String(err)
+    });
+  }
+});
+
+/**
+ * POST /api/integrity/verify
+ * 受限用途：提供 background/sidepanel 外部完整性驗證（不暴露演算法到 extension）
+ * Body: { timeoutMs?: number }
+ */
+app.post('/api/integrity/verify', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+  const timeoutMs = Number(req.body?.timeoutMs) || 30_000;
+
+  try {
+    const result = await runVerifyIntegrityScript({ timeoutMs });
+    const success = result.code === 0;
+
+    res.status(success ? 200 : 409).json({
+      success,
+      error: success ? null : `verify script exited with code ${result.code}`,
+      ...result
+    });
+  } catch (err: any) {
+    res.status(500).json({
+      success: false,
+      error: err?.message || String(err)
+    });
+  }
+});
+
+/**
  * POST /api/chat
  * 傳送訊息並以 SSE 串流回應
  * Body: { sessionId?: string, prompt: string, model?: string }
@@ -390,9 +561,7 @@ app.get('/api/logs/stream', (req, res) => {
 // ============================================
 
 import { readdir, readFile, appendFile, mkdir } from 'node:fs/promises';
-import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { existsSync } from 'node:fs';
 
 const HISTORY_DIR = process.env.SIDEPILOT_HISTORY_DIR || join(homedir(), 'copilot', 'history');
 const historySSEClients = new Set<import('express').Response>();

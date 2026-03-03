@@ -11,39 +11,268 @@ import * as VSCodeConnector from './js/vscode-connector.js';
 // ============================================
 
 const COPILOT_URL = 'https://github.com/copilot';
+const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{8}$/i;
+const SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
+const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
+const INTEGRITY_VERIFY_ENDPOINT = 'http://localhost:31031/api/integrity/verify';
+
+const startupGuard = {
+  ready: false,
+  locked: false,
+  enabled: false,
+  reasons: [],
+  checkedAt: 0
+};
+
+const CORE_MODULES = [
+  ['ModeManager', () => ModeManager.init()],
+  ['SDKClient', () => SDKClient.init()],
+  ['RulesManager', () => RulesManager.init()],
+  ['MemoryBank', () => MemoryBank.init()],
+  ['VSCodeConnector', () => VSCodeConnector.init()]
+];
+
+function addStartupGuardFailure(message) {
+  startupGuard.reasons.push(String(message || 'unknown failure'));
+}
+
+function getStartupGuardStatus() {
+  return {
+    ready: startupGuard.ready,
+    locked: startupGuard.locked,
+    enabled: startupGuard.enabled,
+    reasons: [...startupGuard.reasons],
+    checkedAt: startupGuard.checkedAt
+  };
+}
+
+function normalizeSelfIterationSettings(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const digest = typeof source.selfIterationLastSealDigest === 'string'
+    ? source.selfIterationLastSealDigest.trim().toLowerCase()
+    : '';
+
+  return {
+    selfIterationEnabled: source.selfIterationEnabled === true,
+    selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
+    selfIterationLastSealDigest: SEAL_DIGEST_PATTERN.test(digest) ? digest : ''
+  };
+}
+
+async function readSelfIterationSettings() {
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  return normalizeSelfIterationSettings(result?.[SETTINGS_STORAGE_KEY]);
+}
+
+function getManifestSealDigest() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const seal = String(manifest?.version_name || '');
+    const matched = seal.match(SEAL_PATTERN);
+    if (!matched) {
+      return { valid: false, versionName: seal, digest: '' };
+    }
+    const digest = seal.split('+')[1].toLowerCase();
+    return { valid: true, versionName: seal, digest };
+  } catch {
+    return { valid: false, versionName: '', digest: '' };
+  }
+}
+
+async function verifyIntegrityViaBridge(timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(INTEGRITY_VERIFY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeoutMs }),
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success) {
+      return {
+        success: false,
+        error: payload?.error || `HTTP ${response.status}`
+      };
+    }
+    return { success: true };
+  } catch (err) {
+    const error = err?.name === 'AbortError'
+      ? `verify timeout after ${timeoutMs}ms`
+      : (err?.message || String(err));
+    return { success: false, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function applyPanelStartupPolicy() {
+  const openPanelOnActionClick = startupGuard.ready && !startupGuard.locked;
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick });
+  } catch (err) {
+    console.error('Failed to set panel behavior:', err);
+  }
+}
+
+async function initializeCoreModules(strictMode) {
+  for (const [name, initFn] of CORE_MODULES) {
+    try {
+      await initFn();
+    } catch (err) {
+      const message = `${name}.init failed: ${err?.message || err}`;
+      console.error(`[SidePilot] Failed to initialize ${name}:`, err);
+      if (strictMode) {
+        addStartupGuardFailure(message);
+      }
+    }
+  }
+}
+
+async function runStartupGuardChecks() {
+  startupGuard.ready = false;
+  startupGuard.locked = false;
+  startupGuard.enabled = false;
+  startupGuard.reasons = [];
+  startupGuard.checkedAt = Date.now();
+
+  let settings;
+  try {
+    settings = await readSelfIterationSettings();
+  } catch (err) {
+    addStartupGuardFailure(`Cannot read self-iteration settings: ${err?.message || err}`);
+    startupGuard.enabled = true;
+    startupGuard.locked = true;
+    startupGuard.ready = true;
+    startupGuard.checkedAt = Date.now();
+    await applyPanelStartupPolicy();
+    return;
+  }
+
+  const guardEnabled = settings.selfIterationEnabled;
+  startupGuard.enabled = guardEnabled;
+
+  // Core modules should always be initialized; strict failure lock only applies
+  // when self-iteration mode is enabled.
+  await initializeCoreModules(guardEnabled);
+
+  // Self-iteration mode not enabled -> startup guard bypassed (no lock enforcement)
+  if (!guardEnabled) {
+    startupGuard.ready = true;
+    startupGuard.locked = false;
+    startupGuard.checkedAt = Date.now();
+    console.log('[SidePilot] Startup guard BYPASS (self-iteration disabled)');
+    await applyPanelStartupPolicy();
+    return;
+  }
+
+  // Check 1: Manifest seal format
+  const manifestSeal = getManifestSealDigest();
+  if (!manifestSeal.valid) {
+    addStartupGuardFailure(
+      `Manifest version_name seal missing or invalid: "${manifestSeal.versionName || '(empty)'}"`
+    );
+  }
+
+  // Check 2: self-iteration must complete first seal
+  if (!settings.selfIterationFirstSealDone) {
+    addStartupGuardFailure('selfIterationFirstSealDone must be true when self-iteration is enabled');
+  }
+
+  if (!settings.selfIterationLastSealDigest) {
+    addStartupGuardFailure('selfIterationLastSealDigest missing when self-iteration is enabled');
+  }
+
+  // Check 3: persisted digest should match current manifest digest
+  if (
+    settings.selfIterationLastSealDigest &&
+    manifestSeal.digest &&
+    settings.selfIterationLastSealDigest !== manifestSeal.digest
+  ) {
+    addStartupGuardFailure(
+      `Seal digest mismatch: settings=${settings.selfIterationLastSealDigest}, manifest=${manifestSeal.digest}`
+    );
+  }
+
+  // Check 4: external integrity verifier (bridge script)
+  const verifyResult = await verifyIntegrityViaBridge();
+  if (!verifyResult.success) {
+    addStartupGuardFailure(`External integrity verify failed: ${verifyResult.error}`);
+  }
+
+  startupGuard.locked = startupGuard.reasons.length > 0;
+  startupGuard.ready = true;
+
+  if (startupGuard.locked) {
+    console.error('[SidePilot] Startup guard LOCKED', startupGuard.reasons);
+  } else {
+    console.log('[SidePilot] Startup guard PASS');
+  }
+
+  await applyPanelStartupPolicy();
+}
 
 // ============================================
-// Initialize Modules
+// Startup Guard
 // ============================================
 
-ModeManager.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize ModeManager:', err)
-);
+runStartupGuardChecks().catch(async (err) => {
+  addStartupGuardFailure(`startup guard unexpected error: ${err?.message || err}`);
+  startupGuard.locked = true;
+  startupGuard.ready = true;
+  startupGuard.enabled = true;
+  startupGuard.checkedAt = Date.now();
+  console.error('[SidePilot] Startup guard crashed:', err);
+  await applyPanelStartupPolicy();
+});
 
-SDKClient.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize SDKClient:', err)
-);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  const settingsChange = changes?.[SETTINGS_STORAGE_KEY];
+  if (!settingsChange) return;
 
-RulesManager.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize RulesManager:', err)
-);
+  const oldSettings = normalizeSelfIterationSettings(settingsChange.oldValue);
+  const newSettings = normalizeSelfIterationSettings(settingsChange.newValue);
+  const enabledChanged = oldSettings.selfIterationEnabled !== newSettings.selfIterationEnabled;
+  const sealStateChanged =
+    oldSettings.selfIterationFirstSealDone !== newSettings.selfIterationFirstSealDone ||
+    oldSettings.selfIterationLastSealDigest !== newSettings.selfIterationLastSealDigest;
 
-MemoryBank.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize MemoryBank:', err)
-);
+  if (!enabledChanged && !(newSettings.selfIterationEnabled && sealStateChanged)) {
+    return;
+  }
 
-VSCodeConnector.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize VSCodeConnector:', err)
-);
+  runStartupGuardChecks().catch(async (err) => {
+    addStartupGuardFailure(`startup guard refresh error: ${err?.message || err}`);
+    startupGuard.locked = true;
+    startupGuard.ready = true;
+    startupGuard.enabled = true;
+    startupGuard.checkedAt = Date.now();
+    console.error('[SidePilot] Startup guard refresh crashed:', err);
+    await applyPanelStartupPolicy();
+  });
+});
 
 // ============================================
 // Side Panel 控制
 // ============================================
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+// Default deny until startup guard completes
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
   .catch(err => console.error('Failed to set panel behavior:', err));
 
 chrome.action.onClicked.addListener(async (tab) => {
+  if (!startupGuard.ready) {
+    console.warn('[SidePilot] Startup guard is still running. Panel open blocked.');
+    return;
+  }
+  if (startupGuard.locked) {
+    console.error('[SidePilot] Startup guard locked. Panel open blocked.');
+    return;
+  }
+
   try {
     await chrome.sidePanel.open({ tabId: tab.id });
   } catch (err) {
@@ -56,7 +285,50 @@ chrome.action.onClicked.addListener(async (tab) => {
 // ============================================
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
+  const action = message?.action;
+
+  if (action === 'startupGuardStatus') {
+    sendResponse({
+      success: !startupGuard.locked,
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  if (action === 'startupGuardRefresh') {
+    runStartupGuardChecks()
+      .then(() => {
+        sendResponse({ success: !startupGuard.locked, guard: getStartupGuardStatus() });
+      })
+      .catch((err) => {
+        sendResponse({
+          success: false,
+          error: err?.message || String(err),
+          guard: getStartupGuardStatus()
+        });
+      });
+    return true;
+  }
+
+  if (!startupGuard.ready) {
+    sendResponse({
+      success: false,
+      error: 'STARTUP_GUARD_PENDING',
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  if (startupGuard.locked) {
+    sendResponse({
+      success: false,
+      error: 'STARTUP_GUARD_LOCKED',
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  switch (action) {
     case 'getPageContent':
       handleGetPageContent(message, sendResponse);
       return true;

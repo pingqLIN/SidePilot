@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
 
 const ENTRY_TYPES = ['task', 'note', 'context', 'reference'];
 const STATUS_VALUES = ['pending', 'in_progress', 'done'];
+const ENTRY_SOURCES = ['user', 'system_baseline'];
 
 // ============================================
 // Module State
@@ -43,8 +44,22 @@ async function loadFromStorage() {
       STORAGE_KEYS.ENTRIES,
       STORAGE_KEYS.INDEX
     ]);
-    entriesCache = result[STORAGE_KEYS.ENTRIES] || {};
+    const rawEntries = result[STORAGE_KEYS.ENTRIES] || {};
+    let changed = false;
+    entriesCache = Object.fromEntries(
+      Object.entries(rawEntries).map(([id, rawEntry]) => {
+        const normalized = normalizeStoredEntry(id, rawEntry);
+        if (rawEntry?.source !== normalized.source || rawEntry?.id !== normalized.id) {
+          changed = true;
+        }
+        return [id, normalized];
+      })
+    );
     indexCache = result[STORAGE_KEYS.INDEX] || { byStatus: { pending: [], in_progress: [], done: [] } };
+
+    if (changed) {
+      await saveToStorage();
+    }
   } catch (err) {
     console.error('[MemoryBank] Failed to load from storage:', err);
     entriesCache = {};
@@ -108,6 +123,19 @@ function isValidStatus(status) {
   return STATUS_VALUES.includes(status);
 }
 
+function normalizeEntrySource(source) {
+  return ENTRY_SOURCES.includes(source) ? source : 'user';
+}
+
+function normalizeStoredEntry(id, rawEntry = {}) {
+  const entry = rawEntry && typeof rawEntry === 'object' ? rawEntry : {};
+  return {
+    ...entry,
+    id: entry.id || id,
+    source: normalizeEntrySource(entry.source)
+  };
+}
+
 // ============================================
 // Exported Functions
 // ============================================
@@ -161,6 +189,7 @@ function getStatus() {
  * @param {string} [entry.content] - Entry content
  * @param {string[]} [entry.tags] - Entry tags
  * @param {string} [entry.status] - Status for task type only
+ * @param {string} [entry.source] - Entry source: user, system_baseline
  * @returns {Promise<Object>} - The created entry with generated ID
  */
 async function createEntry(entry) {
@@ -179,6 +208,7 @@ async function createEntry(entry) {
     title: entry.title,
     content: entry.content || '',
     tags: Array.isArray(entry.tags) ? entry.tags : [],
+    source: normalizeEntrySource(entry.source),
     createdAt: now,
     updatedAt: now
   };
@@ -219,6 +249,8 @@ async function updateEntry(id, data) {
   if (!entry) {
     return null;
   }
+
+  entry.source = normalizeEntrySource(entry.source);
 
   const oldStatus = entry.status || null;
 

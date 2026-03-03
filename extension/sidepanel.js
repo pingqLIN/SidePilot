@@ -9,6 +9,7 @@ const STORAGE_KEY_DECLINED = 'copilot_sidepanel_declined';
 const STORAGE_KEY_SDK_ASSISTANT_ONLY = 'sidepilot_sdk_assistant_only';
 const STORAGE_KEY_SDK_MODEL = 'sidepilot_sdk_model';
 const STORAGE_KEY_SDK_LOGIN_GUIDE_SHOWN = 'sidepilot_sdk_login_guide_shown';
+const STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT = 'sidepilot_sdk_input_container_height';
 const FRAME_LOAD_TIMEOUT = 15000;
 const MEMORY_PROMPT_MAX_ENTRIES = 5;
 const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
@@ -24,6 +25,10 @@ const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
 const LOG_STORAGE_KEY = 'sidepilot.logs.v1';
 const LOG_MAX_ENTRIES = 300;
+const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
+const SDK_INPUT_CONTAINER_MIN_HEIGHT = 120;
+const SDK_INPUT_CONTAINER_DEFAULT_SCALE = 1.5;
+const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
 
 // ── SidePilot 自述 (System Identity) ──
 const SIDEPILOT_SYSTEM_IDENTITY = {
@@ -114,6 +119,11 @@ const MEMORY_TYPE_WEIGHT = {
 
 const DEFAULT_SETTINGS = {
   autoSDKLoginGuide: true,
+  selfIterationEnabled: false,
+  selfIterationFirstSealDone: false,
+  selfIterationLastError: '',
+  selfIterationLastSealAt: 0,
+  selfIterationLastSealDigest: '',
   playIntroEveryOpen: false,
   showWarningOverlay: true,
   captureButtonWidth: DEFAULT_CAPTURE_BUTTON_WIDTH,
@@ -123,6 +133,22 @@ const DEFAULT_SETTINGS = {
     'https://github.com/features/copilot*'
   ]
 };
+
+const SELF_ITERATION_BASELINE_MEMORY_ENTRY = {
+  type: 'context',
+  title: 'Self-Iteration Baseline',
+  content: [
+    '自我疊代模式下：',
+    '1) 高風險變更前先確認封印/啟動鎖狀態。',
+    '2) 未經明確同意不執行不可逆操作。',
+    '3) 每次修改後要回報可驗證結果（PASS/FAIL）。'
+  ].join('\n'),
+  source: 'system_baseline',
+  tags: ['sidepilot', 'baseline', 'self-iteration']
+};
+
+const RULES_SOURCE_SYSTEM_BASELINE = 'system_baseline';
+const RULES_SOURCE_USER = 'user';
 
 const state = {
   currentPageContent: null,
@@ -142,7 +168,12 @@ const state = {
   permissionSSE: null,
   permissionCountdownTimer: null,
   sdkHealthTimer: null,
-  bridgeSectionHealthTimer: null
+  bridgeSectionHealthTimer: null,
+  startupLocked: false,
+  sdkInputResizeInitialized: false,
+  sdkInputResizeDragging: false,
+  sdkInputResizeStartY: 0,
+  sdkInputResizeStartHeight: 0
 };
 
 // ============================================
@@ -155,7 +186,72 @@ const dom = {};
 // 初始化
 // ============================================
 
-function init() {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForStartupGuardReady(timeoutMs = 5000, intervalMs = 150) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const response = await chrome.runtime.sendMessage({ action: 'startupGuardStatus' });
+    if (response?.guard?.ready) return response;
+    await sleep(intervalMs);
+  }
+
+  return chrome.runtime.sendMessage({ action: 'startupGuardStatus' });
+}
+
+function lockSidePanelByStartupGuard(guard, errorMessage = '') {
+  state.startupLocked = true;
+  document.body.classList.add('startup-locked');
+
+  if (state.loadTimeout) {
+    clearTimeout(state.loadTimeout);
+    state.loadTimeout = null;
+  }
+
+  dom.loadingOverlay?.classList.add('hidden');
+  dom.copilotFrame?.classList.add('hidden');
+  dom.sdkChat?.classList.add('hidden');
+  dom.errorOverlay?.classList.remove('hidden');
+
+  const reasons = Array.isArray(guard?.reasons) ? guard.reasons : [];
+  const details = reasons.length > 0
+    ? reasons.join(' | ')
+    : (errorMessage || 'unknown startup guard failure');
+
+  if (dom.errorMessage) {
+    dom.errorMessage.textContent = `啟動安全檢測未通過，擴充已鎖定。原因：${details}`;
+  }
+
+  if (dom.retryBtn) dom.retryBtn.disabled = true;
+  if (dom.openWindowBtn) dom.openWindowBtn.disabled = true;
+
+  console.error('[SidePilot] Startup guard lock:', details);
+}
+
+async function ensureStartupGuardPasses() {
+  try {
+    const response = await waitForStartupGuardReady();
+    const guard = response?.guard;
+
+    if (!guard?.ready) {
+      lockSidePanelByStartupGuard(guard, 'startup guard timeout');
+      return false;
+    }
+    if (guard.locked) {
+      lockSidePanelByStartupGuard(guard, response?.error || '');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    lockSidePanelByStartupGuard(null, err?.message || String(err));
+    return false;
+  }
+}
+
+async function init() {
   // 取得所有 DOM 元素
   dom.copilotFrame = document.getElementById('copilotFrame');
   dom.loadingOverlay = document.getElementById('loadingOverlay');
@@ -193,6 +289,8 @@ function init() {
   // SDK Chat elements
   dom.sdkChat = document.getElementById('sdkChat');
   dom.sdkMessages = document.getElementById('sdkMessages');
+  dom.sdkInputContainer = document.getElementById('sdkInputContainer');
+  dom.sdkInputResizer = document.getElementById('sdkInputResizer');
   dom.sdkInput = document.getElementById('sdkInput');
   dom.sdkSendBtn = document.getElementById('sdkSendBtn');
   dom.sdkIncludeMemory = document.getElementById('sdkIncludeMemory');
@@ -236,6 +334,8 @@ function init() {
   dom.rulesFileInput = document.getElementById('rulesFileInput');
   dom.templateSelect = document.getElementById('templateSelect');
   dom.rulesStatus = document.getElementById('rulesStatus');
+  dom.rulesOriginBadge = document.getElementById('rulesOriginBadge');
+  dom.rulesOriginDetail = document.getElementById('rulesOriginDetail');
 
   // Memory tab
   dom.memoryList = document.getElementById('memoryList');
@@ -269,6 +369,9 @@ function init() {
   dom.saveSettingsBtn = document.getElementById('saveSettingsBtn');
   dom.settingsStatus = document.getElementById('settingsStatus');
   dom.settingAutoSdkLogin = document.getElementById('settingAutoSdkLogin');
+  dom.settingSelfIterationEnabled = document.getElementById('settingSelfIterationEnabled');
+  dom.selfIterationSealBadge = document.getElementById('selfIterationSealBadge');
+  dom.selfIterationSealDetail = document.getElementById('selfIterationSealDetail');
   dom.settingPlayIntroEveryOpen = document.getElementById('settingPlayIntroEveryOpen');
   dom.settingShowWarningOverlay = document.getElementById('settingShowWarningOverlay');
   dom.settingCaptureButtonWidth = document.getElementById('settingCaptureButtonWidth');
@@ -309,6 +412,11 @@ function init() {
       console.error(`Missing required element: ${key}`);
       return;
     }
+  }
+
+  const guardPass = await ensureStartupGuardPasses();
+  if (!guardPass) {
+    return;
   }
 
   setupEventListeners();
@@ -398,8 +506,10 @@ function updateModeBadge() {
   if (mode === 'sdk') {
     dom.copilotFrame?.classList.add('hidden');
     dom.sdkChat?.classList.remove('hidden');
+    ensureSDKInputContainerReady();
     startSdkHealthPolling();
   } else {
+    stopSDKInputResizeDrag();
     dom.copilotFrame?.classList.remove('hidden');
     dom.sdkChat?.classList.add('hidden');
     stopSdkHealthPolling();
@@ -436,6 +546,11 @@ function switchTab(tabId) {
   if (dom.copilotFrame) {
     dom.copilotFrame.style.display = (tabId === 'copilot') ? '' : 'none';
   }
+  if (tabId === 'copilot' && state.detectedMode === 'sdk') {
+    requestAnimationFrame(() => {
+      ensureSDKInputContainerReady();
+    });
+  }
 
   // Load content if needed
   if (tabId === 'rules') {
@@ -471,13 +586,158 @@ function switchTab(tabId) {
 // Settings Management
 // ============================================
 
+function isSDKInputContainerVisible() {
+  if (!dom.sdkInputContainer || !dom.sdkChat) return false;
+  if (dom.sdkChat.classList.contains('hidden')) return false;
+  return dom.sdkInputContainer.offsetParent !== null;
+}
+
+function getSDKInputContainerMaxHeight() {
+  const chatHeight = Number(dom.sdkChat?.clientHeight || 0);
+  if (!Number.isFinite(chatHeight) || chatHeight <= 0) {
+    return SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT;
+  }
+  const ratioCap = Math.floor(chatHeight * 0.72);
+  const messageSafetyCap = Math.floor(chatHeight - 180);
+  const cap = Math.min(ratioCap, messageSafetyCap);
+  return Math.max(SDK_INPUT_CONTAINER_MIN_HEIGHT, cap);
+}
+
+function clampSDKInputContainerHeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return SDK_INPUT_CONTAINER_MIN_HEIGHT;
+  }
+  return Math.min(
+    getSDKInputContainerMaxHeight(),
+    Math.max(SDK_INPUT_CONTAINER_MIN_HEIGHT, Math.round(numeric))
+  );
+}
+
+function setSDKInputContainerHeight(height, { persist = false } = {}) {
+  if (!dom.sdkInputContainer) return null;
+  const clamped = clampSDKInputContainerHeight(height);
+  dom.sdkInputContainer.style.height = `${clamped}px`;
+  if (persist) {
+    localStorage.setItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT, String(clamped));
+  }
+  return clamped;
+}
+
+function restoreOrInitSDKInputContainerHeight() {
+  if (!dom.sdkInputContainer) return;
+
+  const storedHeight = Number(localStorage.getItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT));
+  if (Number.isFinite(storedHeight) && storedHeight > 0) {
+    setSDKInputContainerHeight(storedHeight, { persist: false });
+    state.sdkInputResizeInitialized = true;
+    return;
+  }
+
+  if (!isSDKInputContainerVisible()) return;
+
+  const measured = Math.round(dom.sdkInputContainer.getBoundingClientRect().height);
+  if (!Number.isFinite(measured) || measured <= 0) return;
+
+  const defaultHeight = Math.round(measured * SDK_INPUT_CONTAINER_DEFAULT_SCALE);
+  setSDKInputContainerHeight(defaultHeight, { persist: true });
+  state.sdkInputResizeInitialized = true;
+}
+
+function ensureSDKInputContainerReady() {
+  if (!dom.sdkInputContainer) return;
+
+  if (!state.sdkInputResizeInitialized) {
+    restoreOrInitSDKInputContainerHeight();
+    return;
+  }
+
+  const inlineHeight = Number.parseInt(dom.sdkInputContainer.style.height, 10);
+  if (Number.isFinite(inlineHeight) && inlineHeight > 0) {
+    setSDKInputContainerHeight(inlineHeight, { persist: false });
+    return;
+  }
+
+  const storedHeight = Number(localStorage.getItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT));
+  if (Number.isFinite(storedHeight) && storedHeight > 0) {
+    setSDKInputContainerHeight(storedHeight, { persist: false });
+  }
+}
+
+function startSDKInputResizeDrag(event) {
+  if (event.button !== 0) return;
+  if (!dom.sdkInputContainer) return;
+
+  ensureSDKInputContainerReady();
+  const currentHeight = Math.round(dom.sdkInputContainer.getBoundingClientRect().height);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+
+  state.sdkInputResizeDragging = true;
+  state.sdkInputResizeStartY = event.clientY;
+  state.sdkInputResizeStartHeight = currentHeight;
+
+  document.body.classList.add('sdk-input-resizing');
+  document.addEventListener('mousemove', handleSDKInputResizeDrag);
+  document.addEventListener('mouseup', stopSDKInputResizeDrag);
+  window.addEventListener('blur', stopSDKInputResizeDrag, { once: true });
+  event.preventDefault();
+}
+
+function handleSDKInputResizeDrag(event) {
+  if (!state.sdkInputResizeDragging) return;
+  const delta = state.sdkInputResizeStartY - event.clientY;
+  const nextHeight = state.sdkInputResizeStartHeight + delta;
+  setSDKInputContainerHeight(nextHeight, { persist: false });
+}
+
+function stopSDKInputResizeDrag() {
+  document.body.classList.remove('sdk-input-resizing');
+  document.removeEventListener('mousemove', handleSDKInputResizeDrag);
+  document.removeEventListener('mouseup', stopSDKInputResizeDrag);
+  window.removeEventListener('blur', stopSDKInputResizeDrag);
+  if (!state.sdkInputResizeDragging) return;
+
+  state.sdkInputResizeDragging = false;
+
+  const currentHeight = Number.parseInt(dom.sdkInputContainer?.style?.height || '', 10);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+  const persisted = clampSDKInputContainerHeight(currentHeight);
+  dom.sdkInputContainer.style.height = `${persisted}px`;
+  localStorage.setItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT, String(persisted));
+}
+
+function handleSDKInputViewportResize() {
+  if (!state.sdkInputResizeInitialized || !dom.sdkInputContainer) return;
+  const currentHeight = Number.parseInt(dom.sdkInputContainer.style.height, 10);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+  setSDKInputContainerHeight(currentHeight, { persist: true });
+}
+
 function normalizeSettings(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const captureWidth = clampCaptureButtonWidth(source.captureButtonWidth);
   const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist);
+  const rawLastError = typeof source.selfIterationLastError === 'string'
+    ? source.selfIterationLastError.trim()
+    : '';
+  const selfIterationLastError = rawLastError.slice(0, 400);
+  const selfIterationLastSealAt = Number.isFinite(Number(source.selfIterationLastSealAt))
+    ? Number(source.selfIterationLastSealAt)
+    : 0;
+  const digestCandidate = typeof source.selfIterationLastSealDigest === 'string'
+    ? source.selfIterationLastSealDigest.trim().toLowerCase()
+    : '';
+  const selfIterationLastSealDigest = /^[0-9a-f]{8}$/.test(digestCandidate)
+    ? digestCandidate
+    : '';
 
   return {
     autoSDKLoginGuide: source.autoSDKLoginGuide !== false,
+    selfIterationEnabled: source.selfIterationEnabled === true,
+    selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
+    selfIterationLastError,
+    selfIterationLastSealAt,
+    selfIterationLastSealDigest,
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
     captureButtonWidth: captureWidth,
@@ -518,6 +778,93 @@ function formatAllowlistForTextarea(list) {
   return normalized.join('\n');
 }
 
+function getManifestSealInfo() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const versionName = String(manifest?.version_name || '');
+    const matched = versionName.match(MANIFEST_SEAL_PATTERN);
+    if (!matched) {
+      return {
+        valid: false,
+        versionName,
+        digest: ''
+      };
+    }
+    return {
+      valid: true,
+      versionName,
+      digest: matched[2].toLowerCase()
+    };
+  } catch {
+    return {
+      valid: false,
+      versionName: '',
+      digest: ''
+    };
+  }
+}
+
+function formatLocalDateTime(timestampMs) {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return '';
+  try {
+    return new Date(timestampMs).toLocaleString('zh-TW', { hour12: false });
+  } catch {
+    return '';
+  }
+}
+
+function updateSelfIterationSealBadge() {
+  if (!dom.selfIterationSealBadge || !dom.selfIterationSealDetail) return;
+
+  const settings = normalizeSettings(state.settings);
+  const sealInfo = getManifestSealInfo();
+
+  let badgeText = '未封印';
+  let badgeStatus = 'off';
+  let detailText = '功能未啟用；開啟後才會套用啟動鎖與封印檢測';
+
+  if (settings.selfIterationEnabled) {
+    if (sealInfo.valid && settings.selfIterationFirstSealDone) {
+      badgeText = '已封印';
+      badgeStatus = 'sealed';
+      const parts = [];
+      if (settings.selfIterationLastSealDigest) {
+        parts.push(`Digest ${settings.selfIterationLastSealDigest}`);
+      } else if (sealInfo.digest) {
+        parts.push(`Digest ${sealInfo.digest}`);
+      }
+      const atText = formatLocalDateTime(settings.selfIterationLastSealAt);
+      if (atText) parts.push(`時間 ${atText}`);
+      detailText = parts.length > 0 ? parts.join(' · ') : '封印格式有效';
+    } else {
+      badgeText = '未封印';
+      badgeStatus = 'unsealed';
+      detailText = '啟用中，但尚未完成有效封印';
+    }
+  }
+
+  if (settings.selfIterationLastError) {
+    const shortError = settings.selfIterationLastError.length > 180
+      ? `${settings.selfIterationLastError.slice(0, 180)}...`
+      : settings.selfIterationLastError;
+    badgeText = '未封印';
+    detailText = settings.selfIterationEnabled
+      ? `上次失敗原因：${shortError}`
+      : `目前未啟用；上次失敗原因：${shortError}`;
+    if (settings.selfIterationEnabled) {
+      badgeStatus = 'error';
+    }
+  }
+
+  dom.selfIterationSealBadge.textContent = badgeText;
+  dom.selfIterationSealBadge.dataset.status = badgeStatus;
+  dom.selfIterationSealDetail.textContent = detailText;
+  dom.selfIterationSealDetail.title = detailText;
+  dom.selfIterationSealBadge.title = sealInfo.versionName
+    ? `manifest.version_name = ${sealInfo.versionName}`
+    : 'manifest.version_name 未設定';
+}
+
 async function loadSettings() {
   const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
   state.settings = normalizeSettings(result?.[SETTINGS_STORAGE_KEY]);
@@ -527,10 +874,136 @@ async function loadSettings() {
   return state.settings;
 }
 
+async function requestAutoSealFromBridge() {
+  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/auto-seal`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun: false })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || `HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function requestVerifyIntegrityFromBridge() {
+  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/verify`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeoutMs: 12_000 })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || `HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+function createMemoryEntryViaBackground(entry) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'memory.create', entry }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!response?.success) {
+        reject(new Error(response?.error || 'memory.create failed'));
+        return;
+      }
+      resolve(response.entry || null);
+    });
+  });
+}
+
+async function ensureSelfIterationBaselineMemory() {
+  const entries = await listAllMemoryEntries();
+  if (Array.isArray(entries) && entries.length > 0) {
+    return false;
+  }
+
+  await createMemoryEntryViaBackground({ ...SELF_ITERATION_BASELINE_MEMORY_ENTRY });
+  return true;
+}
+
+async function refreshStartupGuardInBackground() {
+  try {
+    await chrome.runtime.sendMessage({ action: 'startupGuardRefresh' });
+  } catch (err) {
+    console.warn('[SidePilot] Failed to refresh startup guard:', err?.message || err);
+  }
+}
+
 async function persistSettings(settings, options = {}) {
-  const normalized = normalizeSettings(settings);
+  const previous = normalizeSettings(state.settings);
+  let normalized = normalizeSettings(settings);
+  let statusText = options.statusText || '設定已儲存';
+  let statusType = 'success';
+  let shouldReloadForSeal = false;
+  let selfIterationToggled = false;
+
+  const enablingSelfIterationFirstTime =
+    !previous.selfIterationEnabled &&
+    normalized.selfIterationEnabled &&
+    previous.selfIterationFirstSealDone !== true;
+
+  if (enablingSelfIterationFirstTime) {
+    updateSettingsStatus('自我疊代啟用中，正在首次自動執行 SEAL...', 'warning');
+    try {
+      const sealResult = await requestAutoSealFromBridge();
+      const digestMatch = String(sealResult?.stdout || '').match(/Digest:\s*([0-9a-f]{8,64})/i);
+      const sealDigest = digestMatch ? digestMatch[1].slice(0, 8).toLowerCase() : '';
+      if (!sealDigest) {
+        throw new Error('auto-seal completed but digest not found in output');
+      }
+      await requestVerifyIntegrityFromBridge();
+      try {
+        const seeded = await ensureSelfIterationBaselineMemory();
+        if (seeded) {
+          addLog('info', '[BASW] 已建立自我疊代 baseline 記憶條目');
+        }
+      } catch (seedErr) {
+        addLog('warning', `[BASW] baseline 記憶補植失敗：${seedErr?.message || seedErr}`);
+      }
+      normalized = normalizeSettings({
+        ...normalized,
+        selfIterationFirstSealDone: true,
+        selfIterationLastError: '',
+        selfIterationLastSealAt: Date.now(),
+        selfIterationLastSealDigest: sealDigest
+      });
+      addLog('info', `[BASW] 首次自動 SEAL 完成 (${sealResult?.durationMs ?? '-'}ms)`);
+      showToast('首次 SEAL 完成，自我疊代保護已啟用', 'success');
+      shouldReloadForSeal = true;
+    } catch (err) {
+      const errorMessage = (err?.message || String(err)).slice(0, 380);
+      normalized = normalizeSettings({
+        ...normalized,
+        selfIterationEnabled: false,
+        selfIterationFirstSealDone: false,
+        selfIterationLastError: errorMessage,
+        selfIterationLastSealAt: 0,
+        selfIterationLastSealDigest: ''
+      });
+      if (dom.settingSelfIterationEnabled) {
+        dom.settingSelfIterationEnabled.checked = false;
+      }
+      statusText = '首次 SEAL 失敗，已取消啟用自我疊代';
+      statusType = 'error';
+      addLog('error', `[BASW] 首次自動 SEAL 失敗: ${errorMessage}`);
+      showToast(`首次 SEAL 失敗：${errorMessage}`, 'error');
+    }
+  }
+
   await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: normalized });
   state.settings = normalized;
+  selfIterationToggled = previous.selfIterationEnabled !== normalized.selfIterationEnabled;
 
   if (normalized.playIntroEveryOpen) {
     localStorage.removeItem('intro_played');
@@ -549,8 +1022,21 @@ async function persistSettings(settings, options = {}) {
     showToast('設定已儲存');
   }
 
-  const statusText = options.statusText || '設定已儲存';
-  updateSettingsStatus(statusText, 'success');
+  if (shouldReloadForSeal) {
+    statusText = '首次 SEAL 已完成，正在重新載入擴充套件';
+    statusType = 'warning';
+    updateSettingsStatus(statusText, statusType);
+    setTimeout(() => {
+      chrome.runtime.reload();
+    }, 1200);
+    return normalized;
+  }
+
+  if (selfIterationToggled) {
+    await refreshStartupGuardInBackground();
+  }
+
+  updateSettingsStatus(statusText, statusType);
   return normalized;
 }
 
@@ -560,6 +1046,9 @@ function applySettingsToUI() {
 
   if (dom.settingAutoSdkLogin) {
     dom.settingAutoSdkLogin.checked = settings.autoSDKLoginGuide;
+  }
+  if (dom.settingSelfIterationEnabled) {
+    dom.settingSelfIterationEnabled.checked = settings.selfIterationEnabled === true;
   }
   if (dom.settingPlayIntroEveryOpen) {
     dom.settingPlayIntroEveryOpen.checked = settings.playIntroEveryOpen;
@@ -574,6 +1063,7 @@ function applySettingsToUI() {
     dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist);
   }
   updateCaptureWidthLabel(settings.captureButtonWidth);
+  updateSelfIterationSealBadge();
 
   // Conversation records
   const sdkHistoryPath = document.getElementById('settingSdkHistoryPath');
@@ -594,6 +1084,11 @@ function applySettingsToUI() {
 function collectSettingsFromUI() {
   return normalizeSettings({
     autoSDKLoginGuide: !!dom.settingAutoSdkLogin?.checked,
+    selfIterationEnabled: !!dom.settingSelfIterationEnabled?.checked,
+    selfIterationFirstSealDone: state.settings?.selfIterationFirstSealDone === true,
+    selfIterationLastError: state.settings?.selfIterationLastError || '',
+    selfIterationLastSealAt: state.settings?.selfIterationLastSealAt || 0,
+    selfIterationLastSealDigest: state.settings?.selfIterationLastSealDigest || '',
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
     captureButtonWidth: dom.settingCaptureButtonWidth?.value,
@@ -929,9 +1424,17 @@ function markSettingsDirty() {
   _autoSaveTimer = setTimeout(async () => {
     _autoSaveTimer = null;
     try {
-      const nextSettings = collectSettingsFromUI();
-      await persistSettings(nextSettings, { showToast: false });
-      showToast('設定已自動儲存', 'success', 1200);
+      const requestedSettings = collectSettingsFromUI();
+      const savedSettings = await persistSettings(requestedSettings, { showToast: false });
+      const currentStatus = dom.settingsStatus?.textContent || '';
+      if (currentStatus.includes('重新載入擴充套件')) {
+        return;
+      }
+      if (requestedSettings.selfIterationEnabled && !savedSettings.selfIterationEnabled) {
+        showToast('首次 SEAL 失敗，設定已回退', 'warning', 1800);
+      } else {
+        showToast('設定已自動儲存', 'success', 1200);
+      }
     } catch (err) {
       console.error('[SidePilot] Auto-save failed:', err);
       showToast('自動儲存失敗', 'error');
@@ -1110,13 +1613,46 @@ function buildSDK404HelpMessage(errorMessage = '') {
 // Rules Management
 // ============================================
 
-async function loadRules() {
+function updateRulesOriginBadge(meta = {}) {
+  if (!dom.rulesOriginBadge || !dom.rulesOriginDetail) return;
+
+  const source = meta?.source === RULES_SOURCE_SYSTEM_BASELINE
+    ? RULES_SOURCE_SYSTEM_BASELINE
+    : RULES_SOURCE_USER;
+  const templateId = typeof meta?.templateId === 'string' ? meta.templateId.trim() : '';
+  const version = Number(meta?.version) || 0;
+
+  if (source === RULES_SOURCE_SYSTEM_BASELINE) {
+    dom.rulesOriginBadge.textContent = '系統 baseline';
+    dom.rulesOriginBadge.dataset.origin = 'baseline';
+    dom.rulesOriginDetail.textContent = `來源：預設樣板${templateId ? ` (${templateId})` : ''} · version ${version || '-'}`;
+    return;
+  }
+
+  dom.rulesOriginBadge.textContent = '使用者自建';
+  dom.rulesOriginBadge.dataset.origin = 'user';
+  if (templateId && templateId !== 'custom') {
+    dom.rulesOriginDetail.textContent = `來源：使用者套用樣板 (${templateId}) · version ${version || '-'}`;
+  } else {
+    dom.rulesOriginDetail.textContent = `來源：使用者編輯/匯入 · version ${version || '-'}`;
+  }
+}
+
+async function loadRules(options = {}) {
+  const silentStatus = options?.silentStatus === true;
+
   chrome.runtime.sendMessage({ action: 'rules.load' }, (response) => {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
-      updateRulesStatus('已載入', 'success');
+      updateRulesOriginBadge(response);
+      if (!silentStatus) {
+        updateRulesStatus('已載入', 'success');
+      }
     } else {
-      updateRulesStatus('載入失敗', 'error');
+      if (!silentStatus) {
+        updateRulesStatus('載入失敗', 'error');
+      }
+      updateRulesOriginBadge({ source: RULES_SOURCE_USER, templateId: 'custom' });
     }
   });
 }
@@ -1130,6 +1666,7 @@ async function saveRules() {
   chrome.runtime.sendMessage({ action: 'rules.save', content }, (response) => {
     if (response?.success) {
       updateRulesStatus('已儲存', 'success');
+      loadRules({ silentStatus: true });
       showToast('規則已儲存');
     } else {
       updateRulesStatus('儲存失敗', 'error');
@@ -1195,6 +1732,7 @@ function applyTemplate(templateId) {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
       updateRulesStatus('已套用樣板', 'success');
+      loadRules({ silentStatus: true });
       showToast('樣板已套用');
     } else {
       showToast('套用樣板失敗', 'error');
@@ -1244,6 +1782,23 @@ function searchMemory(query) {
   });
 }
 
+function normalizeEntrySource(entry) {
+  if (entry?.source === 'system_baseline') return 'system_baseline';
+  return 'user';
+}
+
+function getMemoryOriginLabel(entry) {
+  return normalizeEntrySource(entry) === 'system_baseline'
+    ? '系統 baseline'
+    : '使用者自建';
+}
+
+function getMemoryOriginClass(entry) {
+  return normalizeEntrySource(entry) === 'system_baseline'
+    ? 'baseline'
+    : 'user';
+}
+
 // Render memory entries list with proper event delegation
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
@@ -1271,7 +1826,10 @@ function renderMemoryList(entries) {
     <div class="memory-entry" data-id="${entry.id}">
       <div class="memory-entry-header">
         <span class="memory-entry-title">${escapeHtml(entry.title)}</span>
-        <span class="memory-entry-type">${entry.type}</span>
+        <div class="memory-entry-meta">
+          <span class="memory-entry-type">${entry.type}</span>
+          <span class="memory-entry-origin memory-entry-origin-${getMemoryOriginClass(entry)}">${getMemoryOriginLabel(entry)}</span>
+        </div>
       </div>
       <div class="memory-entry-content">${escapeHtml(entry.content)}</div>
       <div class="memory-entry-footer">
@@ -1574,6 +2132,7 @@ function setupEventListeners() {
     markSettingsDirty();
   });
   dom.settingAutoSdkLogin?.addEventListener('change', markSettingsDirty);
+  dom.settingSelfIterationEnabled?.addEventListener('change', markSettingsDirty);
   dom.settingPlayIntroEveryOpen?.addEventListener('change', markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener('change', markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener('input', markSettingsDirty);
@@ -1749,6 +2308,9 @@ function setupEventListeners() {
       dom.sdkSendBtn?.click();
     }
   });
+
+  dom.sdkInputResizer?.addEventListener('mousedown', startSDKInputResizeDrag);
+  window.addEventListener('resize', handleSDKInputViewportResize);
 }
 
 // ============================================
@@ -2470,6 +3032,7 @@ function normalizeMemoryEntries(entries) {
       type: entry.type || 'note',
       title: typeof entry.title === 'string' ? entry.title.trim() : '',
       content: typeof entry.content === 'string' ? entry.content.trim() : '',
+      source: normalizeEntrySource(entry),
       status: entry.status,
       updatedAt: Number(entry.updatedAt) || Number(entry.createdAt) || 0
     }))
@@ -3826,7 +4389,13 @@ async function loadPromptStrategy() {
 // ============================================
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    init().catch((err) => {
+      console.error('[SidePilot] init failed:', err);
+    });
+  });
 } else {
-  init();
+  init().catch((err) => {
+    console.error('[SidePilot] init failed:', err);
+  });
 }

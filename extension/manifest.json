@@ -67,5 +67,6 @@
         "path": "rules.json"
       }
     ]
-  }
+  },
+  "version_name": "0.5.0+b80481db"
 }
