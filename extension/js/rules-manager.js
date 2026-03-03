@@ -43,6 +43,24 @@ const TEMPLATES = {
     name: 'React',
     description: 'React component guidelines',
     path: 'templates/react-rules.md'
+  },
+  'self-iteration': {
+    id: 'self-iteration',
+    name: '🔄 自我疊代',
+    description: 'AI 主動建議記憶與規則更新',
+    path: 'templates/self-iteration-rules.md'
+  },
+  'extension-dev': {
+    id: 'extension-dev',
+    name: '🧩 擴充開發',
+    description: 'SidePilot 擴充端開發慣例',
+    path: 'templates/extension-dev-rules.md'
+  },
+  safety: {
+    id: 'safety',
+    name: '🛡️ 絕對安全',
+    description: '最嚴格的安全與變更控制',
+    path: 'templates/safety-rules.md'
   }
 };
 
