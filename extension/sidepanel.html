@@ -212,21 +212,23 @@
         <div class="rules-container">
           <div class="rules-toolbar">
             <select id="templateSelect" class="rules-select">
-              <option value="">Select template...</option>
+              <option value="">選擇樣板...</option>
             </select>
-            <button class="btn btn-icon" id="importRulesBtn" title="Import">
+            <button class="btn btn-icon" id="importRulesBtn" title="匯入規則檔案">
               <svg viewBox="0 0 16 16" fill="currentColor">
                 <path
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Zm-.54-7.47a.75.75 0 0 1 1.06 0L7 10.94V1.75a.75.75 0 0 1 1.5 0v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 0-1.06Z"
                 />
               </svg>
+              匯入
             </button>
-            <button class="btn btn-icon" id="exportRulesBtn" title="Export">
+            <button class="btn btn-icon" id="exportRulesBtn" title="匯出規則為檔案">
               <svg viewBox="0 0 16 16" fill="currentColor">
                 <path
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14ZM8.75 1v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 1.06-1.06L7 10.19V1a.75.75 0 0 1 1.5 0Z"
                 />
               </svg>
+              匯出
             </button>
           </div>
           <div class="identity-module-chips" id="rulesModuleChips"></div>
@@ -236,9 +238,9 @@
             placeholder="# Project Instructions&#10;&#10;Enter your Copilot instructions here..."
           ></textarea>
           <div class="rules-footer">
-            <span class="rules-status" id="rulesStatus">Ready</span>
+            <span class="rules-status" id="rulesStatus">就緒</span>
             <button class="btn btn-primary" id="saveRulesBtn">
-              Save Rules
+              儲存規則
             </button>
           </div>
         </div>
@@ -268,12 +270,12 @@
               <option value="reference">Reference</option>
             </select>
             <button class="btn btn-primary btn-sm" id="addMemoryBtn">
-              + Add
+              + 新增
             </button>
           </div>
           <div id="memoryList" class="memory-list">
             <div class="memory-empty">
-              No entries yet. Click "Add" to create one.
+              尚無條目，點擊「+ 新增」建立。
             </div>
           </div>
         </div>
@@ -282,7 +284,7 @@
         <div class="modal hidden" id="memoryModal">
           <div class="modal-content">
             <div class="modal-header">
-              <h3 id="memoryModalTitle">New Entry</h3>
+              <h3 id="memoryModalTitle">新增條目</h3>
               <button class="btn-icon btn-close" id="closeMemoryModal">
                 &times;
               </button>
@@ -331,9 +333,9 @@
                 VS Code
               </button>
               <button class="btn btn-secondary" id="cancelMemoryBtn">
-                Cancel
+                取消
               </button>
-              <button class="btn btn-primary" id="saveMemoryBtn">Save</button>
+              <button class="btn btn-primary" id="saveMemoryBtn">儲存</button>
             </div>
           </div>
         </div>
@@ -356,10 +358,10 @@
               <option value="info">Info</option>
             </select>
             <button class="btn btn-secondary btn-sm" id="copyLogsBtn">
-              Copy
+              複製
             </button>
             <button class="btn btn-secondary btn-sm" id="clearLogsBtn">
-              Clear
+              清除
             </button>
           </div>
           <div id="logList" class="log-list">

@@ -1114,9 +1114,9 @@ async function loadRules() {
   chrome.runtime.sendMessage({ action: 'rules.load' }, (response) => {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
-      updateRulesStatus('Loaded', 'success');
+      updateRulesStatus('已載入', 'success');
     } else {
-      updateRulesStatus('Failed to load', 'error');
+      updateRulesStatus('載入失敗', 'error');
     }
   });
 }
@@ -1124,16 +1124,16 @@ async function loadRules() {
 async function saveRules() {
   if (!dom.rulesEditor) return;
   
-  updateRulesStatus('Saving...', 'pending');
+  updateRulesStatus('儲存中...', 'pending');
   const content = dom.rulesEditor.value;
   
   chrome.runtime.sendMessage({ action: 'rules.save', content }, (response) => {
     if (response?.success) {
-      updateRulesStatus('Saved', 'success');
-      showToast('Rules saved successfully');
+      updateRulesStatus('已儲存', 'success');
+      showToast('規則已儲存');
     } else {
-      updateRulesStatus('Save failed', 'error');
-      showToast('Failed to save rules', 'error');
+      updateRulesStatus('儲存失敗', 'error');
+      showToast('規則儲存失敗', 'error');
     }
   });
 }
@@ -1194,10 +1194,10 @@ function applyTemplate(templateId) {
   chrome.runtime.sendMessage({ action: 'rules.applyTemplate', templateId }, (response) => {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
-      updateRulesStatus('Template applied', 'success');
-      showToast('Template applied');
+      updateRulesStatus('已套用樣板', 'success');
+      showToast('樣板已套用');
     } else {
-      showToast('Failed to apply template', 'error');
+      showToast('套用樣板失敗', 'error');
     }
     if (dom.templateSelect) dom.templateSelect.value = '';
   });
@@ -1319,7 +1319,7 @@ function setupMemoryListeners() {
 function openMemoryModal(entry = null) {
   currentEditingId = entry ? entry.id : null;
   
-  if (dom.memoryModalTitle) dom.memoryModalTitle.textContent = entry ? 'Edit Entry' : 'New Entry';
+  if (dom.memoryModalTitle) dom.memoryModalTitle.textContent = entry ? '編輯條目' : '新增條目';
   if (dom.entryType) dom.entryType.value = entry ? entry.type : 'task';
   if (dom.entryTitle) dom.entryTitle.value = entry ? entry.title : '';
   if (dom.entryContent) dom.entryContent.value = entry ? entry.content : '';
@@ -1376,9 +1376,9 @@ function saveMemoryEntry() {
       if (response?.success) {
         closeMemoryModal();
         loadMemoryEntries();
-        showToast('Entry updated');
+        showToast('條目已更新');
       } else {
-        showToast('Failed to update: ' + response.error, 'error');
+        showToast('更新失敗: ' + response.error, 'error');
       }
     });
   } else {
@@ -1386,24 +1386,24 @@ function saveMemoryEntry() {
       if (response?.success) {
         closeMemoryModal();
         loadMemoryEntries();
-        showToast('Entry created');
+        showToast('條目已建立');
       } else {
-        showToast('Failed to create: ' + response.error, 'error');
+        showToast('建立失敗: ' + response.error, 'error');
       }
     });
   }
 }
 
 function deleteMemoryEntry(id) {
-  if (!confirm('Are you sure you want to delete this entry?')) return;
+  if (!confirm('確定要刪除此條目嗎？')) return;
   
   chrome.runtime.sendMessage({ action: 'memory.delete', id }, (response) => {
     if (response?.success) {
       closeMemoryModal();
       loadMemoryEntries();
-      showToast('Entry deleted');
+      showToast('條目已刪除');
     } else {
-      showToast('Failed to delete', 'error');
+      showToast('刪除失敗', 'error');
     }
   });
 }
