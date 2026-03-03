@@ -304,6 +304,11 @@ app.post('/api/chat', async (req, res) => {
     sendEvent('message', { content: result.content || '' });
     sendEvent('done', {});
     res.end();
+
+    // Auto-record to history
+    const sid = result.sessionId || sessionId || 'unknown';
+    appendToHistory({ role: 'user', content: prompt, sessionId: sid });
+    appendToHistory({ role: 'assistant', content: result.content || '', sessionId: sid });
   } catch (err: any) {
     sendEvent('error', { message: err.message });
     res.end();
@@ -328,6 +333,11 @@ app.post('/api/chat/sync', async (req, res) => {
     // WP-02: 傳遞 timeout
     const timeout = req.body.timeout ? parseInt(req.body.timeout, 10) : undefined;
     const response = await sessionManager.sendPrompt(session.sessionId, prompt, undefined, images, timeout);
+
+    // Auto-record to history
+    const sid = response.sessionId || sessionId || 'unknown';
+    appendToHistory({ role: 'user', content: prompt, sessionId: sid });
+    appendToHistory({ role: 'assistant', content: response?.content ?? '', sessionId: sid });
 
     res.json({
       success: true,
@@ -384,7 +394,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { existsSync } from 'node:fs';
 
-const HISTORY_DIR = join(homedir(), 'copilot', 'history');
+const HISTORY_DIR = process.env.SIDEPILOT_HISTORY_DIR || join(homedir(), 'copilot', 'history');
 const historySSEClients = new Set<import('express').Response>();
 
 function getHistoryFilePath(): string {
