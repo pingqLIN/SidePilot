@@ -1131,7 +1131,7 @@ body {
   padding: 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 12px;
@@ -1338,7 +1338,7 @@ body {
   line-height: 1.5;
   font-family: var(--font-mono);
   color: var(--text-primary);
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-sm);
   padding: 8px;
@@ -1359,6 +1359,10 @@ body {
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
 }
 .identity-chip {
   font-size: 10px;
@@ -1842,7 +1846,7 @@ body {
   padding: 8px 10px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
+  background: var(--bg-tertiary);
   color: var(--text-primary);
   font-family: inherit;
   font-size: 12px;
