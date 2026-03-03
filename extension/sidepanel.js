@@ -1316,11 +1316,24 @@ function setupMemoryListeners() {
   }
 }
 
+const ENTRY_TYPE_HINTS = {
+  task: '為此對話標記一個待辦事項或行動項目',
+  note: '記錄觀察到的現象、想法或學習心得',
+  context: '保存專案架構、技術決策等背景資訊，供 AI 參考',
+  reference: '保存外部連結、文件路徑或參考資料'
+};
+
+function updateEntryTypeHint(type) {
+  const hint = document.getElementById('entryTypeHint');
+  if (hint) hint.textContent = ENTRY_TYPE_HINTS[type] || '';
+}
+
 function openMemoryModal(entry = null) {
   currentEditingId = entry ? entry.id : null;
   
   if (dom.memoryModalTitle) dom.memoryModalTitle.textContent = entry ? '編輯條目' : '新增條目';
   if (dom.entryType) dom.entryType.value = entry ? entry.type : 'task';
+  updateEntryTypeHint(entry ? entry.type : 'task');
   if (dom.entryTitle) dom.entryTitle.value = entry ? entry.title : '';
   if (dom.entryContent) dom.entryContent.value = entry ? entry.content : '';
   if (dom.entryStatus) {
@@ -1501,6 +1514,7 @@ function setupEventListeners() {
     if (dom.entryStatus) {
       dom.entryStatus.style.display = e.target.value === 'task' ? 'block' : 'none';
     }
+    updateEntryTypeHint(e.target.value);
   });
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
   dom.sdkIncludeMemory?.addEventListener('change', () => {

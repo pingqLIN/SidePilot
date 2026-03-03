@@ -220,7 +220,6 @@
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Zm-.54-7.47a.75.75 0 0 1 1.06 0L7 10.94V1.75a.75.75 0 0 1 1.5 0v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 0-1.06Z"
                 />
               </svg>
-              匯入
             </button>
             <button class="btn btn-icon" id="exportRulesBtn" title="匯出規則為檔案">
               <svg viewBox="0 0 16 16" fill="currentColor">
@@ -228,7 +227,6 @@
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14ZM8.75 1v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 1.06-1.06L7 10.19V1a.75.75 0 0 1 1.5 0Z"
                 />
               </svg>
-              匯出
             </button>
           </div>
           <div class="identity-module-chips" id="rulesModuleChips"></div>
@@ -291,27 +289,28 @@
             </div>
             <div class="modal-body">
               <select id="entryType" class="form-select">
-                <option value="task">Task</option>
-                <option value="note">Note</option>
-                <option value="context">Context</option>
-                <option value="reference">Reference</option>
+                <option value="task">📌 任務 — 待辦事項與行動項目</option>
+                <option value="note">📝 筆記 — 觀察、想法與發現</option>
+                <option value="context">🧩 上下文 — 專案技術背景資訊</option>
+                <option value="reference">📎 參考 — 外部連結與參考資料</option>
               </select>
+              <div class="entry-type-hint" id="entryTypeHint">為此對話標記一個待辦事項或行動項目</div>
               <input
                 type="text"
                 id="entryTitle"
                 class="form-input"
-                placeholder="Title"
+                placeholder="標題"
               />
               <div class="identity-module-chips" id="memoryModuleChips"></div>
               <textarea
                 id="entryContent"
                 class="form-textarea"
-                placeholder="Content"
+                placeholder="內容"
               ></textarea>
               <select id="entryStatus" class="form-select">
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="done">Done</option>
+                <option value="pending">⏳ 待處理</option>
+                <option value="in_progress">🔄 進行中</option>
+                <option value="done">✅ 已完成</option>
               </select>
             </div>
             <div class="modal-footer">
