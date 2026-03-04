@@ -29,6 +29,146 @@ const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
 const SDK_INPUT_CONTAINER_MIN_HEIGHT = 120;
 const SDK_INPUT_CONTAINER_DEFAULT_SCALE = 1.5;
 const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
+const UI_LANGUAGE_ZH_TW = 'zh-TW';
+const UI_LANGUAGE_EN = 'en';
+const UI_LANGUAGE_FALLBACK = UI_LANGUAGE_ZH_TW;
+const BRIDGE_AUTO_START_PROTOCOL_URL = 'sidepilot://start-bridge?source=sidepilot-extension&v=1';
+const BRIDGE_AUTO_START_TIMEOUT_MS = 12000;
+const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
+const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
+const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
+const BRIDGE_AUTO_START_COOLDOWN_MAX_MS = 300000;
+// Settings-page i18n scaffold (phase-1): key-based now, full coverage later.
+const SETTINGS_I18N = {
+  [UI_LANGUAGE_ZH_TW]: {
+    'settings.section.language': '語言',
+    'settings.language.title': '介面語言',
+    'settings.language.desc': '僅影響設定分頁顯示文字（i18n 後續擴充）',
+    'settings.language.option.zh-TW': '繁體中文',
+    'settings.language.option.en': 'English',
+    'settings.section.install': '安裝助手',
+    'settings.bridge.status.title': 'Bridge 狀態',
+    'settings.bridge.autostart.title': '自動啟動 Bridge（MVP）',
+    'settings.bridge.autostart.desc': '進入 SDK 模式時，若偵測不到 Bridge，會嘗試喚起 sidepilot:// 啟動器',
+    'settings.bridge.step.launch': '0. 啟動 Bridge',
+    'settings.bridge.step.check': '1. 檢查狀態',
+    'settings.bridge.step.copyStart': '2. 複製啟動指令',
+    'settings.bridge.step.verify': '3. 驗證連線',
+    'settings.section.startup': '啟動畫面',
+    'settings.startup.playIntro.title': '每次開啟都播放動畫',
+    'settings.startup.playIntro.desc': '關閉後只在首次開啟播放 Intro 影片',
+    'settings.startup.showWarning.title': '顯示風險提示視窗',
+    'settings.startup.showWarning.desc': '每次開啟顯示歡迎與風險聲明',
+    'settings.section.sdk': 'SDK 模式',
+    'settings.sdk.autoLogin.title': '首次切換 SDK 自動帶出登入引導',
+    'settings.sdk.autoLogin.desc': '第一次點選 SDK 時自動跳出登入提示',
+    'settings.selfIteration.title': '啟用自我疊代開發保護',
+    'settings.selfIteration.desc': '僅在啟用後套用 BASW 啟動檢測；第一次啟用會自動執行一次 SEAL',
+    'settings.selfIteration.detail.disabled': '功能未啟用；開啟後才會套用啟動鎖與封印檢測',
+    'settings.sdk.actions.openLogin': '立即開啟 GitHub 登入頁',
+    'settings.sdk.actions.testBridge': '測試 Bridge 連線',
+    'settings.sdk.subsection.api': 'API 端點',
+    'settings.sdk.endpoint.strategy.title': 'Chat Endpoint 策略',
+    'settings.sdk.endpoint.strategy.desc': '優先使用 <code>/api/chat/sync</code>，若回傳 404 則自動 fallback 到 <code>/api/chat</code>（SSE 串流，向後相容）',
+    'settings.sdk.subsection.conversation': '對話格式',
+    'settings.sdk.subsection.prompt': 'Prompt 策略',
+    'settings.sdk.prompt.concise.title': '輸出精簡模式',
+    'settings.sdk.prompt.concise.desc': '控制 AI 回覆的詳細程度',
+    'settings.section.iframe': 'iframe 模式',
+    'settings.iframe.allowlist.title': '允許留在 Sidecar 的連結前綴',
+    'settings.iframe.allowlist.desc': '每行一個 URL 前綴，支援結尾萬用字元 `*`',
+    'settings.iframe.allowlist.placeholder': 'https://github.com/copilot/*\nhttps://github.com/settings/copilot*',
+    'settings.section.capture': '擷取按鍵',
+    'settings.capture.width.title': '按鍵寬度',
+    'settings.section.history': '對話紀錄',
+    'settings.history.sdk': 'SDK 模式',
+    'settings.history.sdk.path.title': '聊天紀錄儲存路徑',
+    'settings.history.sdk.path.desc': 'Bridge 將對話記錄存放於此資料夾',
+    'settings.history.iframe': 'iframe 模式',
+    'settings.history.iframe.url.title': '顯示網頁位置',
+    'settings.history.iframe.url.desc': 'iframe 模式下預設頁面 URL',
+    'settings.section.identity': '📌 擴充自述 (System Identity)',
+    'settings.identity.modules.desc': '點擊模塊標籤快速插入系統變數，儲存時自動替換為實際值',
+    'settings.identity.save': '💾 儲存',
+    'settings.identity.reset': '↩️ 還原預設',
+    'settings.identity.preview': '<strong>已解析預覽：</strong>',
+    'settings.seal.badge.unsealed': '未封印',
+    'settings.seal.badge.sealed': '已封印',
+    'settings.seal.detail.disabled': '功能未啟用；開啟後才會套用啟動鎖與封印檢測',
+    'settings.seal.detail.enabledNotSealed': '啟用中，但尚未完成有效封印',
+    'settings.seal.detail.valid': '封印格式有效',
+    'settings.seal.label.digest': 'Digest',
+    'settings.seal.label.time': '時間',
+    'settings.seal.lastError.enabled': '上次失敗原因：',
+    'settings.seal.lastError.disabled': '目前未啟用；上次失敗原因：',
+    'settings.seal.manifest.withVersion': 'manifest.version_name = {version}',
+    'settings.seal.manifest.withoutVersion': 'manifest.version_name 未設定'
+  },
+  [UI_LANGUAGE_EN]: {
+    'settings.section.language': 'Language',
+    'settings.language.title': 'UI Language',
+    'settings.language.desc': 'Currently affects text in Settings tab only (i18n expansion planned).',
+    'settings.language.option.zh-TW': 'Chinese (Traditional)',
+    'settings.language.option.en': 'English',
+    'settings.section.install': 'Install Helper',
+    'settings.bridge.status.title': 'Bridge Status',
+    'settings.bridge.autostart.title': 'Auto-start Bridge (MVP)',
+    'settings.bridge.autostart.desc': 'When entering SDK mode, if Bridge is unavailable, SidePilot will try to invoke sidepilot:// launcher.',
+    'settings.bridge.step.launch': '0. Launch Bridge',
+    'settings.bridge.step.check': '1. Check Status',
+    'settings.bridge.step.copyStart': '2. Copy Start Command',
+    'settings.bridge.step.verify': '3. Verify Connection',
+    'settings.section.startup': 'Startup',
+    'settings.startup.playIntro.title': 'Play intro every time',
+    'settings.startup.playIntro.desc': 'If disabled, intro plays only on first launch.',
+    'settings.startup.showWarning.title': 'Show risk warning dialog',
+    'settings.startup.showWarning.desc': 'Show welcome and risk notice on each launch.',
+    'settings.section.sdk': 'SDK Mode',
+    'settings.sdk.autoLogin.title': 'Auto-show login guide on first SDK switch',
+    'settings.sdk.autoLogin.desc': 'When entering SDK mode first time, show login prompt automatically.',
+    'settings.selfIteration.title': 'Enable self-iteration development guard',
+    'settings.selfIteration.desc': 'Apply BASW startup checks only when enabled; first enable triggers one automatic SEAL run.',
+    'settings.selfIteration.detail.disabled': 'Feature is disabled; startup lock and seal checks apply only after enabling.',
+    'settings.sdk.actions.openLogin': 'Open GitHub Login Page',
+    'settings.sdk.actions.testBridge': 'Test Bridge Connection',
+    'settings.sdk.subsection.api': 'API Endpoints',
+    'settings.sdk.endpoint.strategy.title': 'Chat Endpoint Strategy',
+    'settings.sdk.endpoint.strategy.desc': 'Prefer <code>/api/chat/sync</code>; if 404, fallback to <code>/api/chat</code> (SSE stream, backward compatible).',
+    'settings.sdk.subsection.conversation': 'Conversation Format',
+    'settings.sdk.subsection.prompt': 'Prompt Strategy',
+    'settings.sdk.prompt.concise.title': 'Response Conciseness',
+    'settings.sdk.prompt.concise.desc': 'Controls how detailed AI responses should be.',
+    'settings.section.iframe': 'iframe Mode',
+    'settings.iframe.allowlist.title': 'Allowed link prefixes inside Sidecar',
+    'settings.iframe.allowlist.desc': 'One URL prefix per line; supports trailing wildcard `*`.',
+    'settings.iframe.allowlist.placeholder': 'https://github.com/copilot/*\nhttps://github.com/settings/copilot*',
+    'settings.section.capture': 'Capture Button',
+    'settings.capture.width.title': 'Button Width',
+    'settings.section.history': 'Conversation History',
+    'settings.history.sdk': 'SDK Mode',
+    'settings.history.sdk.path.title': 'Chat history path',
+    'settings.history.sdk.path.desc': 'Bridge stores conversation logs in this folder.',
+    'settings.history.iframe': 'iframe Mode',
+    'settings.history.iframe.url.title': 'Displayed page URL',
+    'settings.history.iframe.url.desc': 'Default page URL in iframe mode.',
+    'settings.section.identity': '📌 System Identity (Extension Self-Description)',
+    'settings.identity.modules.desc': 'Click a module chip to insert a system variable token; it is resolved when saving.',
+    'settings.identity.save': '💾 Save',
+    'settings.identity.reset': '↩️ Reset Default',
+    'settings.identity.preview': '<strong>Resolved Preview:</strong>',
+    'settings.seal.badge.unsealed': 'Unsealed',
+    'settings.seal.badge.sealed': 'Sealed',
+    'settings.seal.detail.disabled': 'Feature is disabled; startup lock and seal checks apply only after enabling.',
+    'settings.seal.detail.enabledNotSealed': 'Enabled, but valid seal has not been completed yet.',
+    'settings.seal.detail.valid': 'Seal format is valid.',
+    'settings.seal.label.digest': 'Digest',
+    'settings.seal.label.time': 'Time',
+    'settings.seal.lastError.enabled': 'Last failure reason: ',
+    'settings.seal.lastError.disabled': 'Currently disabled; last failure reason: ',
+    'settings.seal.manifest.withVersion': 'manifest.version_name = {version}',
+    'settings.seal.manifest.withoutVersion': 'manifest.version_name is not set'
+  }
+};
 
 // ── SidePilot 自述 (System Identity) ──
 const SIDEPILOT_SYSTEM_IDENTITY = {
@@ -96,6 +236,72 @@ function resolveIdentityTokens(template) {
   return result;
 }
 
+function normalizeUiLanguage(value) {
+  const raw = String(value || '').trim().toLowerCase();
+  if (raw === 'en' || raw.startsWith('en-')) return UI_LANGUAGE_EN;
+  if (raw === 'zh' || raw.startsWith('zh-')) return UI_LANGUAGE_ZH_TW;
+  return UI_LANGUAGE_FALLBACK;
+}
+
+function getCurrentUiLanguage(languageOverride) {
+  if (languageOverride) {
+    return normalizeUiLanguage(languageOverride);
+  }
+  const fromState = state?.settings?.uiLanguage;
+  if (fromState) {
+    return normalizeUiLanguage(fromState);
+  }
+  return normalizeUiLanguage(navigator.language || UI_LANGUAGE_FALLBACK);
+}
+
+function translateSettingsKey(key, languageOverride) {
+  const language = getCurrentUiLanguage(languageOverride);
+  const localeTable = SETTINGS_I18N[language] || SETTINGS_I18N[UI_LANGUAGE_FALLBACK];
+  const fallbackTable = SETTINGS_I18N[UI_LANGUAGE_FALLBACK] || {};
+  return localeTable?.[key] ?? fallbackTable?.[key] ?? key;
+}
+
+function translateSettingsTemplate(key, replacements = {}, languageOverride) {
+  let value = translateSettingsKey(key, languageOverride);
+  for (const [name, replacement] of Object.entries(replacements)) {
+    value = value.replaceAll(`{${name}}`, String(replacement));
+  }
+  return value;
+}
+
+function applySettingsI18n(languageOverride) {
+  const settingsRoot = dom.settingsTab || document.getElementById('settings-tab');
+  if (!settingsRoot) return;
+
+  const language = getCurrentUiLanguage(languageOverride);
+  settingsRoot.querySelectorAll('[data-i18n]').forEach((node) => {
+    const key = node.dataset.i18n;
+    if (!key) return;
+    node.textContent = translateSettingsKey(key, language);
+  });
+  settingsRoot.querySelectorAll('[data-i18n-placeholder]').forEach((node) => {
+    const key = node.dataset.i18nPlaceholder;
+    if (!key) return;
+    node.setAttribute('placeholder', translateSettingsKey(key, language));
+  });
+  settingsRoot.querySelectorAll('[data-i18n-html]').forEach((node) => {
+    const key = node.dataset.i18nHtml;
+    if (!key) return;
+    node.innerHTML = translateSettingsKey(key, language);
+  });
+
+  if (dom.settingUiLanguage) {
+    const zhOption = dom.settingUiLanguage.querySelector('option[value="zh-TW"]');
+    const enOption = dom.settingUiLanguage.querySelector('option[value="en"]');
+    if (zhOption) {
+      zhOption.textContent = translateSettingsKey('settings.language.option.zh-TW', language);
+    }
+    if (enOption) {
+      enOption.textContent = translateSettingsKey('settings.language.option.en', language);
+    }
+  }
+}
+
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
   `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
   'For each response, output exactly 2 XML blocks in this order:',
@@ -118,6 +324,12 @@ const MEMORY_TYPE_WEIGHT = {
 };
 
 const DEFAULT_SETTINGS = {
+  uiLanguage: UI_LANGUAGE_ZH_TW,
+  autoStartBridgeEnabled: true,
+  autoStartBridgeCooldownMs: BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS,
+  autoStartBridgeLastAttemptAt: 0,
+  autoStartBridgeLastResult: 'idle',
+  autoStartBridgeLastError: '',
   autoSDKLoginGuide: true,
   selfIterationEnabled: false,
   selfIterationFirstSealDone: false,
@@ -169,6 +381,7 @@ const state = {
   permissionCountdownTimer: null,
   sdkHealthTimer: null,
   bridgeSectionHealthTimer: null,
+  bridgeAutoStartInFlight: null,
   startupLocked: false,
   sdkInputResizeInitialized: false,
   sdkInputResizeDragging: false,
@@ -366,8 +579,11 @@ async function init() {
   dom.refreshLogBtn = document.getElementById('refreshLogBtn');
 
   // Settings tab
+  dom.settingsTab = document.getElementById('settings-tab');
   dom.saveSettingsBtn = document.getElementById('saveSettingsBtn');
   dom.settingsStatus = document.getElementById('settingsStatus');
+  dom.settingUiLanguage = document.getElementById('settingUiLanguage');
+  dom.settingAutoStartBridge = document.getElementById('settingAutoStartBridge');
   dom.settingAutoSdkLogin = document.getElementById('settingAutoSdkLogin');
   dom.settingSelfIterationEnabled = document.getElementById('settingSelfIterationEnabled');
   dom.selfIterationSealBadge = document.getElementById('selfIterationSealBadge');
@@ -382,6 +598,7 @@ async function init() {
   dom.bridgeInstallStatus = document.getElementById('bridgeInstallStatus');
   dom.bridgeInstallDetail = document.getElementById('bridgeInstallDetail');
   dom.bridgeCheckBtn = document.getElementById('bridgeCheckBtn');
+  dom.bridgeLaunchBtn = document.getElementById('bridgeLaunchBtn');
   dom.bridgeCopyCmdBtn = document.getElementById('bridgeCopyCmdBtn');
   dom.bridgeCopyCheckBtn = document.getElementById('bridgeCopyCheckBtn');
   dom.bridgeStatusDot = document.getElementById('bridgeStatusDot');
@@ -476,7 +693,11 @@ async function detectModeOnStartup() {
     updateModeBadge();
 
     if (state.detectedMode === 'sdk') {
-      const bridgeReady = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+      const bridgeResult = await ensureSDKBridgeReadyWithAutoStart({
+        source: 'startup-sdk-mode',
+        showToast: false
+      });
+      const bridgeReady = !!bridgeResult?.success;
       if (bridgeReady) {
         await loadSDKModelOptions();
         connectPermissionSSE();
@@ -713,8 +934,27 @@ function handleSDKInputViewportResize() {
   setSDKInputContainerHeight(currentHeight, { persist: true });
 }
 
+function clampBridgeAutoStartCooldownMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS;
+  }
+  return Math.min(BRIDGE_AUTO_START_COOLDOWN_MAX_MS, Math.max(BRIDGE_AUTO_START_COOLDOWN_MIN_MS, Math.round(parsed)));
+}
+
 function normalizeSettings(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
+  const uiLanguage = normalizeUiLanguage(source.uiLanguage || DEFAULT_SETTINGS.uiLanguage);
+  const autoStartBridgeCooldownMs = clampBridgeAutoStartCooldownMs(source.autoStartBridgeCooldownMs);
+  const autoStartBridgeLastAttemptAt = Number.isFinite(Number(source.autoStartBridgeLastAttemptAt))
+    ? Number(source.autoStartBridgeLastAttemptAt)
+    : 0;
+  const autoStartBridgeLastResult = typeof source.autoStartBridgeLastResult === 'string'
+    ? source.autoStartBridgeLastResult
+    : 'idle';
+  const autoStartBridgeLastError = typeof source.autoStartBridgeLastError === 'string'
+    ? source.autoStartBridgeLastError.slice(0, 240)
+    : '';
   const captureWidth = clampCaptureButtonWidth(source.captureButtonWidth);
   const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist);
   const rawLastError = typeof source.selfIterationLastError === 'string'
@@ -732,6 +972,12 @@ function normalizeSettings(raw = {}) {
     : '';
 
   return {
+    uiLanguage,
+    autoStartBridgeEnabled: source.autoStartBridgeEnabled !== false,
+    autoStartBridgeCooldownMs,
+    autoStartBridgeLastAttemptAt,
+    autoStartBridgeLastResult,
+    autoStartBridgeLastError,
     autoSDKLoginGuide: source.autoSDKLoginGuide !== false,
     selfIterationEnabled: source.selfIterationEnabled === true,
     selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
@@ -804,42 +1050,44 @@ function getManifestSealInfo() {
   }
 }
 
-function formatLocalDateTime(timestampMs) {
+function formatLocalDateTime(timestampMs, languageOverride) {
   if (!Number.isFinite(timestampMs) || timestampMs <= 0) return '';
+  const locale = getCurrentUiLanguage(languageOverride) === UI_LANGUAGE_EN ? 'en-US' : 'zh-TW';
   try {
-    return new Date(timestampMs).toLocaleString('zh-TW', { hour12: false });
+    return new Date(timestampMs).toLocaleString(locale, { hour12: false });
   } catch {
     return '';
   }
 }
 
-function updateSelfIterationSealBadge() {
+function updateSelfIterationSealBadge(languageOverride) {
   if (!dom.selfIterationSealBadge || !dom.selfIterationSealDetail) return;
 
   const settings = normalizeSettings(state.settings);
+  const language = getCurrentUiLanguage(languageOverride || settings.uiLanguage);
   const sealInfo = getManifestSealInfo();
 
-  let badgeText = '未封印';
+  let badgeText = translateSettingsKey('settings.seal.badge.unsealed', language);
   let badgeStatus = 'off';
-  let detailText = '功能未啟用；開啟後才會套用啟動鎖與封印檢測';
+  let detailText = translateSettingsKey('settings.seal.detail.disabled', language);
 
   if (settings.selfIterationEnabled) {
     if (sealInfo.valid && settings.selfIterationFirstSealDone) {
-      badgeText = '已封印';
+      badgeText = translateSettingsKey('settings.seal.badge.sealed', language);
       badgeStatus = 'sealed';
       const parts = [];
       if (settings.selfIterationLastSealDigest) {
-        parts.push(`Digest ${settings.selfIterationLastSealDigest}`);
+        parts.push(`${translateSettingsKey('settings.seal.label.digest', language)} ${settings.selfIterationLastSealDigest}`);
       } else if (sealInfo.digest) {
-        parts.push(`Digest ${sealInfo.digest}`);
+        parts.push(`${translateSettingsKey('settings.seal.label.digest', language)} ${sealInfo.digest}`);
       }
-      const atText = formatLocalDateTime(settings.selfIterationLastSealAt);
-      if (atText) parts.push(`時間 ${atText}`);
-      detailText = parts.length > 0 ? parts.join(' · ') : '封印格式有效';
+      const atText = formatLocalDateTime(settings.selfIterationLastSealAt, language);
+      if (atText) parts.push(`${translateSettingsKey('settings.seal.label.time', language)} ${atText}`);
+      detailText = parts.length > 0 ? parts.join(' · ') : translateSettingsKey('settings.seal.detail.valid', language);
     } else {
-      badgeText = '未封印';
+      badgeText = translateSettingsKey('settings.seal.badge.unsealed', language);
       badgeStatus = 'unsealed';
-      detailText = '啟用中，但尚未完成有效封印';
+      detailText = translateSettingsKey('settings.seal.detail.enabledNotSealed', language);
     }
   }
 
@@ -847,10 +1095,10 @@ function updateSelfIterationSealBadge() {
     const shortError = settings.selfIterationLastError.length > 180
       ? `${settings.selfIterationLastError.slice(0, 180)}...`
       : settings.selfIterationLastError;
-    badgeText = '未封印';
+    badgeText = translateSettingsKey('settings.seal.badge.unsealed', language);
     detailText = settings.selfIterationEnabled
-      ? `上次失敗原因：${shortError}`
-      : `目前未啟用；上次失敗原因：${shortError}`;
+      ? `${translateSettingsKey('settings.seal.lastError.enabled', language)}${shortError}`
+      : `${translateSettingsKey('settings.seal.lastError.disabled', language)}${shortError}`;
     if (settings.selfIterationEnabled) {
       badgeStatus = 'error';
     }
@@ -861,8 +1109,8 @@ function updateSelfIterationSealBadge() {
   dom.selfIterationSealDetail.textContent = detailText;
   dom.selfIterationSealDetail.title = detailText;
   dom.selfIterationSealBadge.title = sealInfo.versionName
-    ? `manifest.version_name = ${sealInfo.versionName}`
-    : 'manifest.version_name 未設定';
+    ? translateSettingsTemplate('settings.seal.manifest.withVersion', { version: sealInfo.versionName }, language)
+    : translateSettingsKey('settings.seal.manifest.withoutVersion', language);
 }
 
 async function loadSettings() {
@@ -1044,6 +1292,12 @@ function applySettingsToUI() {
   const settings = normalizeSettings(state.settings);
   state.settings = settings;
 
+  if (dom.settingUiLanguage) {
+    dom.settingUiLanguage.value = settings.uiLanguage;
+  }
+  if (dom.settingAutoStartBridge) {
+    dom.settingAutoStartBridge.checked = settings.autoStartBridgeEnabled !== false;
+  }
   if (dom.settingAutoSdkLogin) {
     dom.settingAutoSdkLogin.checked = settings.autoSDKLoginGuide;
   }
@@ -1062,8 +1316,9 @@ function applySettingsToUI() {
   if (dom.settingLinkAllowlist) {
     dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist);
   }
+  applySettingsI18n(settings.uiLanguage);
   updateCaptureWidthLabel(settings.captureButtonWidth);
-  updateSelfIterationSealBadge();
+  updateSelfIterationSealBadge(settings.uiLanguage);
 
   // Conversation records
   const sdkHistoryPath = document.getElementById('settingSdkHistoryPath');
@@ -1083,6 +1338,12 @@ function applySettingsToUI() {
 
 function collectSettingsFromUI() {
   return normalizeSettings({
+    uiLanguage: normalizeUiLanguage(dom.settingUiLanguage?.value || state.settings?.uiLanguage),
+    autoStartBridgeEnabled: !!dom.settingAutoStartBridge?.checked,
+    autoStartBridgeCooldownMs: state.settings?.autoStartBridgeCooldownMs || BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS,
+    autoStartBridgeLastAttemptAt: state.settings?.autoStartBridgeLastAttemptAt || 0,
+    autoStartBridgeLastResult: state.settings?.autoStartBridgeLastResult || 'idle',
+    autoStartBridgeLastError: state.settings?.autoStartBridgeLastError || '',
     autoSDKLoginGuide: !!dom.settingAutoSdkLogin?.checked,
     selfIterationEnabled: !!dom.settingSelfIterationEnabled?.checked,
     selfIterationFirstSealDone: state.settings?.selfIterationFirstSealDone === true,
@@ -1226,6 +1487,16 @@ function updateSettingsStatus(text, type = 'info') {
   dom.settingsStatus.className = `settings-status ${type}`;
 }
 
+async function persistSettingsPatch(partial = {}) {
+  const next = normalizeSettings({
+    ...state.settings,
+    ...partial
+  });
+  await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: next });
+  state.settings = next;
+  return next;
+}
+
 function getBridgeHealthUrl(port = SDK_BRIDGE_PORT) {
   return `http://localhost:${port}/health`;
 }
@@ -1242,6 +1513,150 @@ function buildBridgeStartCommands() {
 function buildBridgeCheckCommand(port = SDK_BRIDGE_PORT) {
   const url = getBridgeHealthUrl(port);
   return `powershell -Command "Invoke-RestMethod ${url}"`;
+}
+
+function isBridgeAutoStartCoolingDown(settings = state.settings) {
+  const normalized = normalizeSettings(settings);
+  const lastAttemptAt = Number(normalized.autoStartBridgeLastAttemptAt) || 0;
+  if (lastAttemptAt <= 0) {
+    return { coolingDown: false, remainingMs: 0 };
+  }
+  const elapsed = Date.now() - lastAttemptAt;
+  const remainingMs = normalized.autoStartBridgeCooldownMs - elapsed;
+  if (remainingMs > 0) {
+    return { coolingDown: true, remainingMs };
+  }
+  return { coolingDown: false, remainingMs: 0 };
+}
+
+async function triggerBridgeLauncherProtocol(options = {}) {
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'openExternalLink',
+      url: BRIDGE_AUTO_START_PROTOCOL_URL
+    });
+    if (!response?.success) {
+      throw new Error(response?.error || 'openExternalLink failed');
+    }
+    if (options.showToast) {
+      showToast('已嘗試喚起 Bridge 啟動器', 'success', 1800);
+    }
+    return { success: true, code: '' };
+  } catch (err) {
+    const error = err?.message || String(err);
+    return { success: false, code: 'BRG-AUTO-001', error };
+  }
+}
+
+async function waitBridgeReadyAfterLaunch(timeoutMs = BRIDGE_AUTO_START_TIMEOUT_MS) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await chrome.runtime.sendMessage({
+        action: 'bridgeHealth',
+        port: SDK_BRIDGE_PORT,
+        timeoutMs: 2500
+      });
+      const sdkState = response?.data?.sdk || '';
+      const okStates = ['ready', 'idle', 'connected', ''];
+      if (response?.success && response?.isBridge && okStates.includes(sdkState)) {
+        return true;
+      }
+    } catch {
+      // keep polling
+    }
+    await sleep(BRIDGE_AUTO_START_POLL_INTERVAL_MS);
+  }
+  return false;
+}
+
+async function runBridgeAutoStartAttempt(options = {}) {
+  const toastEnabled = options.showToast === true;
+  const bypassCooldown = options.bypassCooldown === true;
+  const source = options.source || 'auto';
+  const normalized = normalizeSettings(state.settings);
+  if (normalized.autoStartBridgeEnabled !== true && !options.force) {
+    return { success: false, code: 'BRG-AUTO-DISABLED' };
+  }
+
+  if (!bypassCooldown) {
+    const cool = isBridgeAutoStartCoolingDown(normalized);
+    if (cool.coolingDown) {
+      const remainSec = Math.max(1, Math.ceil(cool.remainingMs / 1000));
+      const detail = `BRG-AUTO-003 | cooldown ${remainSec}s`;
+      setBridgeInstallStatus('自動啟動冷卻中', detail, 'warning');
+      if (toastEnabled) {
+        showToast(`自動啟動冷卻中（${remainSec}s）`, 'warning');
+      }
+      return { success: false, code: 'BRG-AUTO-003', detail };
+    }
+  }
+
+  const attemptAt = Date.now();
+  await persistSettingsPatch({
+    autoStartBridgeLastAttemptAt: attemptAt,
+    autoStartBridgeLastResult: 'launching',
+    autoStartBridgeLastError: ''
+  });
+
+  setBridgeInstallStatus('嘗試喚起 Bridge 啟動器...', `source: ${source}`, 'warning');
+
+  const launchResult = await triggerBridgeLauncherProtocol({ showToast: false });
+  if (!launchResult.success) {
+    const detail = `${launchResult.code} | ${launchResult.error || 'launcher blocked'}`;
+    await persistSettingsPatch({
+      autoStartBridgeLastResult: 'failed',
+      autoStartBridgeLastError: detail
+    });
+    setBridgeInstallStatus('自動啟動失敗', detail, 'error');
+    if (toastEnabled) {
+      showToast('自動啟動 Bridge 失敗，請手動點擊「啟動 Bridge」', 'error');
+    }
+    return { success: false, code: launchResult.code, detail };
+  }
+
+  const ready = await waitBridgeReadyAfterLaunch();
+  if (!ready) {
+    const detail = `BRG-AUTO-002 | timeout ${Math.round(BRIDGE_AUTO_START_TIMEOUT_MS / 1000)}s`;
+    await persistSettingsPatch({
+      autoStartBridgeLastResult: 'failed',
+      autoStartBridgeLastError: detail
+    });
+    setBridgeInstallStatus('Bridge 啟動逾時', detail, 'error');
+    if (toastEnabled) {
+      showToast('Bridge 啟動逾時，請改用手動啟動', 'warning');
+    }
+    return { success: false, code: 'BRG-AUTO-002', detail };
+  }
+
+  await persistSettingsPatch({
+    autoStartBridgeLastResult: 'ready',
+    autoStartBridgeLastError: ''
+  });
+  setBridgeInstallStatus('Bridge 已自動啟動', getBridgeHealthUrl(SDK_BRIDGE_PORT), 'success');
+  checkBridgeHealth({ showToast: false }).catch(() => {});
+  if (toastEnabled) {
+    showToast('Bridge 已就緒', 'success', 1800);
+  }
+  return { success: true, code: '' };
+}
+
+async function ensureSDKBridgeReadyWithAutoStart(options = {}) {
+  const directReady = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+  if (directReady) {
+    return { success: true, autoStarted: false };
+  }
+
+  if (state.bridgeAutoStartInFlight) {
+    return state.bridgeAutoStartInFlight;
+  }
+
+  const task = runBridgeAutoStartAttempt(options)
+    .finally(() => {
+      state.bridgeAutoStartInFlight = null;
+    });
+  state.bridgeAutoStartInFlight = task;
+  return task;
 }
 
 // Cache last bridge status to avoid unnecessary DOM updates
@@ -1577,6 +1992,8 @@ async function ensureSDKBridgeConnection(options = {}) {
 function buildSDKUnavailableHelpMessage(errorMessage = '') {
   const lines = [
     '❌ SDK 連線失敗：Bridge server not available',
+    '',
+    '可先到「設定 > 安裝助手」點擊「0. 啟動 Bridge」。',
     '',
     '請先在本機啟動 Bridge：',
     '1. cd scripts/copilot-bridge',
@@ -2131,6 +2548,17 @@ function setupEventListeners() {
     applyCaptureButtonWidth(width);
     markSettingsDirty();
   });
+  dom.settingUiLanguage?.addEventListener('change', (e) => {
+    const nextLanguage = normalizeUiLanguage(e.target.value);
+    state.settings = normalizeSettings({
+      ...state.settings,
+      uiLanguage: nextLanguage
+    });
+    applySettingsI18n(nextLanguage);
+    updateSelfIterationSealBadge(nextLanguage);
+    markSettingsDirty();
+  });
+  dom.settingAutoStartBridge?.addEventListener('change', markSettingsDirty);
   dom.settingAutoSdkLogin?.addEventListener('change', markSettingsDirty);
   dom.settingSelfIterationEnabled?.addEventListener('change', markSettingsDirty);
   dom.settingPlayIntroEveryOpen?.addEventListener('change', markSettingsDirty);
@@ -2154,6 +2582,23 @@ function setupEventListeners() {
       updateSettingsStatus('Bridge 連線失敗', 'error');
       showToast(`Bridge 測試失敗：${err.message}`, 'error');
     }
+  });
+  dom.bridgeLaunchBtn?.addEventListener('click', async () => {
+    const result = await ensureSDKBridgeReadyWithAutoStart({
+      source: 'manual-button',
+      bypassCooldown: true,
+      force: true,
+      showToast: true
+    });
+    if (result?.success) {
+      const connected = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+      if (connected) {
+        await loadSDKModelOptions();
+      }
+      return;
+    }
+    const detail = result?.detail || result?.code || 'BRG-AUTO-001';
+    updateSettingsStatus(`Bridge 啟動失敗：${detail}`, 'error');
   });
   dom.bridgeCheckBtn?.addEventListener('click', () => {
     checkBridgeHealth({ showToast: true });
@@ -2205,8 +2650,21 @@ function setupEventListeners() {
     const content = dom.sdkInput?.value?.trim();
     if (!content) return;
     
-    dom.sdkInput.value = '';
     dom.sdkSendBtn.disabled = true;
+
+    const bridgeReady = await ensureSDKBridgeReadyWithAutoStart({
+      source: 'sdk-send',
+      showToast: true
+    });
+    if (!bridgeReady?.success) {
+      const detail = bridgeReady?.detail || bridgeReady?.code || 'bridge unavailable';
+      addSDKMessage('assistant', buildSDKUnavailableHelpMessage(detail));
+      dom.sdkSendBtn.disabled = false;
+      dom.sdkInput?.focus();
+      return;
+    }
+    
+    dom.sdkInput.value = '';
     
     // Add user message with image indicator
     const imgCount = state.pendingChatImages.length;
@@ -2828,10 +3286,14 @@ async function setModeFromUI(mode) {
     showToast(`已切換為 ${state.detectedMode.toUpperCase()} 模式`);
 
     if (state.detectedMode === 'sdk') {
-      const bridgeReady = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
-      if (!bridgeReady) {
+      const bridgeResult = await ensureSDKBridgeReadyWithAutoStart({
+        source: 'mode-switch',
+        showToast: true
+      });
+      if (!bridgeResult?.success) {
+        const detail = bridgeResult?.detail || bridgeResult?.code || 'bridge unavailable';
         showToast('SDK Bridge 未連線，請先啟動本機 bridge server', 'warning');
-        addSDKMessage('assistant', buildSDKUnavailableHelpMessage('Bridge server not available'));
+        addSDKMessage('assistant', buildSDKUnavailableHelpMessage(detail));
       } else {
         await loadSDKModelOptions();
       }

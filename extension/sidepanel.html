@@ -417,15 +417,37 @@
       <!-- Settings Tab -->
       <div class="tab-content" id="settings-tab">
         <div class="settings-container">
+          <div class="settings-section">
+            <div class="settings-section-title" data-i18n="settings.section.language">
+              語言
+            </div>
+            <div class="settings-section-body">
+              <div class="settings-item settings-item-vertical">
+                <div class="settings-item-text">
+                  <div class="settings-item-title" data-i18n="settings.language.title">
+                    介面語言
+                  </div>
+                  <div class="settings-item-desc" data-i18n="settings.language.desc">
+                    僅影響設定分頁顯示文字（i18n 後續擴充）
+                  </div>
+                </div>
+                <select id="settingUiLanguage" class="settings-text-input">
+                  <option value="zh-TW">繁體中文</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div class="settings-section" id="settingsSectionInstall">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.install">
               安裝助手
             </div>
             <div class="settings-section-body">
               <div class="settings-item settings-install-card">
                 <div class="settings-item-text">
                   <div class="settings-item-title">
-                    Bridge 狀態
+                    <span data-i18n="settings.bridge.status.title">Bridge 狀態</span>
                     <span
                       class="status-dot"
                       id="bridgeStatusDot"
@@ -439,18 +461,34 @@
                     -
                   </div>
                 </div>
+                <label class="settings-item settings-toggle">
+                  <div class="settings-item-text">
+                    <div class="settings-item-title" data-i18n="settings.bridge.autostart.title">
+                      自動啟動 Bridge（MVP）
+                    </div>
+                    <div class="settings-item-desc" data-i18n="settings.bridge.autostart.desc">
+                      進入 SDK 模式時，若偵測不到 Bridge，會嘗試喚起 sidepilot:// 啟動器
+                    </div>
+                  </div>
+                  <input type="checkbox" id="settingAutoStartBridge" checked />
+                </label>
                 <p class="settings-install-guide">
                   首次使用 SDK 模式需啟動本機 Bridge 服務：檢查狀態 →
                   複製指令到終端機啟動 → 驗證連線
                 </p>
                 <div class="settings-install-steps">
-                  <button class="btn btn-secondary btn-sm" id="bridgeCheckBtn">
+                  <button class="btn btn-secondary btn-sm" id="bridgeLaunchBtn" data-i18n="settings.bridge.step.launch">
+                    0. 啟動 Bridge
+                  </button>
+                  <span class="step-arrow" aria-hidden="true">→</span>
+                  <button class="btn btn-secondary btn-sm" id="bridgeCheckBtn" data-i18n="settings.bridge.step.check">
                     1. 檢查狀態
                   </button>
                   <span class="step-arrow" aria-hidden="true">→</span>
                   <button
                     class="btn btn-secondary btn-sm"
                     id="bridgeCopyCmdBtn"
+                    data-i18n="settings.bridge.step.copyStart"
                   >
                     2. 複製啟動指令
                   </button>
@@ -458,6 +496,7 @@
                   <button
                     class="btn btn-secondary btn-sm"
                     id="bridgeCopyCheckBtn"
+                    data-i18n="settings.bridge.step.verify"
                   >
                     3. 驗證連線
                   </button>
@@ -467,14 +506,14 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.startup">
               啟動畫面
             </div>
             <div class="settings-section-body">
               <label class="settings-item settings-toggle">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">每次開啟都播放動畫</div>
-                  <div class="settings-item-desc">
+                  <div class="settings-item-title" data-i18n="settings.startup.playIntro.title">每次開啟都播放動畫</div>
+                  <div class="settings-item-desc" data-i18n="settings.startup.playIntro.desc">
                     關閉後只在首次開啟播放 Intro 影片
                   </div>
                 </div>
@@ -482,8 +521,8 @@
               </label>
               <label class="settings-item settings-toggle">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">顯示風險提示視窗</div>
-                  <div class="settings-item-desc">
+                  <div class="settings-item-title" data-i18n="settings.startup.showWarning.title">顯示風險提示視窗</div>
+                  <div class="settings-item-desc" data-i18n="settings.startup.showWarning.desc">
                     每次開啟顯示歡迎與風險聲明
                   </div>
                 </div>
@@ -493,16 +532,16 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.sdk">
               SDK 模式
             </div>
             <div class="settings-section-body">
               <label class="settings-item settings-toggle">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">
+                  <div class="settings-item-title" data-i18n="settings.sdk.autoLogin.title">
                     首次切換 SDK 自動帶出登入引導
                   </div>
-                  <div class="settings-item-desc">
+                  <div class="settings-item-desc" data-i18n="settings.sdk.autoLogin.desc">
                     第一次點選 SDK 時自動跳出登入提示
                   </div>
                 </div>
@@ -511,7 +550,7 @@
               <label class="settings-item settings-toggle">
                 <div class="settings-item-text">
                   <div class="settings-item-title settings-item-title-row">
-                    <span>啟用自我疊代開發保護</span>
+                    <span data-i18n="settings.selfIteration.title">啟用自我疊代開發保護</span>
                     <span
                       class="seal-status-badge"
                       id="selfIterationSealBadge"
@@ -520,11 +559,11 @@
                       未封印
                     </span>
                   </div>
-                  <div class="settings-item-desc">
+                  <div class="settings-item-desc" data-i18n="settings.selfIteration.desc">
                     僅在啟用後套用 BASW 啟動檢測；第一次啟用會自動執行一次
                     SEAL
                   </div>
-                  <div class="settings-item-sub" id="selfIterationSealDetail">
+                  <div class="settings-item-sub" id="selfIterationSealDetail" data-i18n="settings.selfIteration.detail.disabled">
                     功能未啟用；開啟後才會套用啟動鎖與封印檢測
                   </div>
                 </div>
@@ -534,22 +573,24 @@
                 <button
                   class="btn btn-secondary settings-inline-btn"
                   id="openSdkLoginGuideBtn"
+                  data-i18n="settings.sdk.actions.openLogin"
                 >
                   立即開啟 GitHub 登入頁
                 </button>
                 <button
                   class="btn btn-secondary settings-inline-btn"
                   id="testSdkBridgeBtn"
+                  data-i18n="settings.sdk.actions.testBridge"
                 >
                   測試 Bridge 連線
                 </button>
               </div>
               <div class="settings-subsection">
-                <div class="settings-subsection-title">API 端點</div>
+                <div class="settings-subsection-title" data-i18n="settings.sdk.subsection.api">API 端點</div>
                 <div class="settings-item settings-item-vertical">
                   <div class="settings-item-text">
-                    <div class="settings-item-title">Chat Endpoint 策略</div>
-                    <div class="settings-item-desc">
+                    <div class="settings-item-title" data-i18n="settings.sdk.endpoint.strategy.title">Chat Endpoint 策略</div>
+                    <div class="settings-item-desc" data-i18n-html="settings.sdk.endpoint.strategy.desc">
                       優先使用 <code>/api/chat/sync</code>，若回傳 404 則自動
                       fallback 到 <code>/api/chat</code>（SSE 串流，向後相容）
                     </div>
@@ -566,7 +607,7 @@
                 </div>
               </div>
               <div class="settings-subsection">
-                <div class="settings-subsection-title">對話格式</div>
+                <div class="settings-subsection-title" data-i18n="settings.sdk.subsection.conversation">對話格式</div>
                 <label class="settings-item settings-toggle">
                   <div class="settings-item-text">
                     <div class="settings-item-title">Include Context</div>
@@ -644,11 +685,11 @@
                 </label>
               </div>
               <div class="settings-subsection">
-                <div class="settings-subsection-title">Prompt 策略</div>
+                <div class="settings-subsection-title" data-i18n="settings.sdk.subsection.prompt">Prompt 策略</div>
                 <div class="settings-item settings-item-vertical">
                   <div class="settings-item-text">
-                    <div class="settings-item-title">輸出精簡模式</div>
-                    <div class="settings-item-desc">控制 AI 回覆的詳細程度</div>
+                    <div class="settings-item-title" data-i18n="settings.sdk.prompt.concise.title">輸出精簡模式</div>
+                    <div class="settings-item-desc" data-i18n="settings.sdk.prompt.concise.desc">控制 AI 回覆的詳細程度</div>
                   </div>
                   <div class="settings-strategy-btns" id="promptStrategyBtns">
                     <button
@@ -676,16 +717,16 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.iframe">
               iframe 模式
             </div>
             <div class="settings-section-body">
               <div class="settings-item settings-textarea-wrap">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">
+                  <div class="settings-item-title" data-i18n="settings.iframe.allowlist.title">
                     允許留在 Sidecar 的連結前綴
                   </div>
-                  <div class="settings-item-desc">
+                  <div class="settings-item-desc" data-i18n="settings.iframe.allowlist.desc">
                     每行一個 URL 前綴，支援結尾萬用字元 `*`
                   </div>
                 </div>
@@ -693,6 +734,7 @@
                   id="settingLinkAllowlist"
                   class="settings-textarea"
                   rows="5"
+                  data-i18n-placeholder="settings.iframe.allowlist.placeholder"
                   placeholder="https://github.com/copilot/*&#10;https://github.com/settings/copilot*"
                 ></textarea>
               </div>
@@ -700,13 +742,13 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.capture">
               擷取按鍵
             </div>
             <div class="settings-section-body">
               <label class="settings-item settings-range">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">按鍵寬度</div>
+                  <div class="settings-item-title" data-i18n="settings.capture.width.title">按鍵寬度</div>
                   <div class="settings-item-desc">
                     寬度小於 20px 時按鍵僅顯示色塊（目前：<span
                       id="captureBtnWidthValue"
@@ -727,16 +769,16 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.history">
               對話紀錄
             </div>
             <div class="settings-section-body">
               <div class="settings-subsection">
-                <div class="settings-subsection-title">SDK 模式</div>
+                <div class="settings-subsection-title" data-i18n="settings.history.sdk">SDK 模式</div>
                 <div class="settings-item settings-item-vertical">
                   <div class="settings-item-text">
-                    <div class="settings-item-title">聊天紀錄儲存路徑</div>
-                    <div class="settings-item-desc">
+                    <div class="settings-item-title" data-i18n="settings.history.sdk.path.title">聊天紀錄儲存路徑</div>
+                    <div class="settings-item-desc" data-i18n="settings.history.sdk.path.desc">
                       Bridge 將對話記錄存放於此資料夾
                     </div>
                   </div>
@@ -750,11 +792,11 @@
                 </div>
               </div>
               <div class="settings-subsection">
-                <div class="settings-subsection-title">iframe 模式</div>
+                <div class="settings-subsection-title" data-i18n="settings.history.iframe">iframe 模式</div>
                 <div class="settings-item settings-item-vertical">
                   <div class="settings-item-text">
-                    <div class="settings-item-title">顯示網頁位置</div>
-                    <div class="settings-item-desc">
+                    <div class="settings-item-title" data-i18n="settings.history.iframe.url.title">顯示網頁位置</div>
+                    <div class="settings-item-desc" data-i18n="settings.history.iframe.url.desc">
                       iframe 模式下預設頁面 URL
                     </div>
                   </div>
@@ -771,12 +813,12 @@
           </div>
 
           <div class="settings-section collapsed">
-            <div class="settings-section-title" data-toggle="section">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.identity">
               📌 擴充自述 (System Identity)
             </div>
             <div class="settings-section-body">
               <div class="settings-identity-modules">
-                <div class="settings-item-desc" style="margin-bottom: 6px">
+                <div class="settings-item-desc" style="margin-bottom: 6px" data-i18n="settings.identity.modules.desc">
                   點擊模塊標籤快速插入系統變數，儲存時自動替換為實際值
                 </div>
                 <div
@@ -791,14 +833,14 @@
                 spellcheck="false"
               ></textarea>
               <div class="identity-editor-actions">
-                <button class="btn btn-primary btn-sm" id="identitySaveBtn">
+                <button class="btn btn-primary btn-sm" id="identitySaveBtn" data-i18n="settings.identity.save">
                   💾 儲存
                 </button>
-                <button class="btn btn-secondary btn-sm" id="identityResetBtn">
+                <button class="btn btn-secondary btn-sm" id="identityResetBtn" data-i18n="settings.identity.reset">
                   ↩️ 還原預設
                 </button>
               </div>
-              <div class="settings-item-desc" style="margin-top: 6px">
+              <div class="settings-item-desc" style="margin-top: 6px" data-i18n-html="settings.identity.preview">
                 <strong>已解析預覽：</strong>
               </div>
               <div

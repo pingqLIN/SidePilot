@@ -12,7 +12,10 @@
     "integrity:seal": "node scripts/seal-integrity.mjs",
     "integrity:verify": "node scripts/verify-integrity.mjs",
     "control:verify": "node scripts/verify-control-plane.mjs",
-    "basw:verify": "npm run integrity:verify && npm run control:verify"
+    "basw:verify": "npm run integrity:verify && npm run control:verify",
+    "bridge-launcher:install:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bridge-launcher/windows/install-launcher.ps1",
+    "bridge-launcher:uninstall:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bridge-launcher/windows/uninstall-launcher.ps1",
+    "bridge-launcher:test:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/bridge-launcher/windows/test-launcher.ps1"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.252",

@@ -130,3 +130,5 @@ npm run basw:verify
 
 1. 文件由 `basw.md` 更名為 `wwnd.md`。
 2. 規格改為擴充最小邊界版本，進階治理需求改列 `Deferred`。
+3. 新增 Bridge 自動啟動 MVP 設計：`docs/BRIDGE_AUTO_START_DESIGN.md`（採協定啟動器方案）。
+4. 新增 Windows 啟動器規格：`docs/BRIDGE_LAUNCHER_SPEC_WINDOWS.md`（安裝/註冊/安全限制/故障排除）。
