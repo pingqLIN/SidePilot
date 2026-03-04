@@ -486,7 +486,7 @@ app.use(cors({
     }
   },
   methods: ['GET', 'POST', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'X-Bridge-Secret'],
 }));
 ```
 
