@@ -4,9 +4,9 @@
   "type": "module",
   "description": "SidePilot - Chrome extension with GitHub Copilot integration",
   "scripts": {
-    "test": "jest --no-coverage",
-    "test:watch": "jest --watch --no-coverage",
-    "test:coverage": "jest --coverage",
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --no-coverage",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch --no-coverage",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage",
     "build:vendor": "node scripts/build-vendor.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "integrity:seal": "node scripts/seal-integrity.mjs",
