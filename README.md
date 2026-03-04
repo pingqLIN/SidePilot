@@ -443,7 +443,7 @@ Returns `{ success: true, content: "..." }` after the full response completes.
 
 Before running the bridge server in any shared or CI environment, confirm the following:
 
-- [ ] Bridge server binding is restricted as intended (for local-only use, explicitly bind `app.listen()` to `127.0.0.1`; note that `app.listen(PORT)` without a hostname binds to all interfaces)
+- [ ] Bridge server is bound to `127.0.0.1` (loopback) by default — confirm you have not changed `app.listen()` to `0.0.0.0` or removed the hostname argument in any fork
 - [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
 - [ ] No GitHub tokens or credentials are committed to source control
 - [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
@@ -463,9 +463,9 @@ The bridge server (`scripts/copilot-bridge`) is explicitly bound to `127.0.0.1` 
 
 #### CORS Policy
 
-The bridge uses `origin: '*'` because Chrome extensions send a `chrome-extension://` origin that varies per installation and cannot be hard-coded in the server. **This is intentional for the local development use case**, but you should understand the trade-off:
+The bridge uses `origin: '*'` because Chrome extensions send a `chrome-extension://` origin that varies per installation and cannot be hard-coded in the server. **This is intentional for the local development use case**, but the risk is real:
 
-> Any web page a user visits can issue requests to `http://localhost:31031` and, with no authentication in place, read responses or trigger actions. This is an inherent risk whenever a localhost server uses open CORS.
+> **Important:** Any web page a user visits can issue requests to `http://localhost:31031`. With no authentication in place, a malicious page could call endpoints like `GET /api/sessions` or `POST /api/chat`, potentially hijacking or exfiltrating Copilot sessions that contain sensitive code or secrets. If you extend the bridge for non-extension use cases, make an origin allowlist and a shared secret header **mandatory**.
 
 If you extend the bridge for non-extension use cases (e.g. a local web UI), add an explicit allowlist and consider adding a shared secret header:
 

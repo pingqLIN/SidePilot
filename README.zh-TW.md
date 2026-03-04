@@ -443,7 +443,7 @@ Content-Type: application/json
 
 在任何共用或 CI 環境中執行 Bridge 伺服器前，請確認以下事項：
 
-- [ ] 瞭解 Bridge 伺服器預設會綁定至所有網路介面；在共用環境中請主動將 `app.listen()` 改為綁定 `127.0.0.1`（例如 `app.listen(PORT, '127.0.0.1')`），或以防火牆 / VPN 限制僅能本機存取
+- [ ] Bridge 伺服器預設已綁定至 `127.0.0.1`（loopback）— 確認你的 Fork 中沒有將 `app.listen()` 改為 `0.0.0.0` 或移除 hostname 參數
 - [ ] 連接埠 `31031` 無法從機器外部存取（防火牆 / VPN）
 - [ ] 未將 GitHub Token 或憑證提交至原始碼控管
 - [ ] `COPILOT_CONFIG_PATH` 環境變數（若有設定）指向非公開目錄
@@ -457,9 +457,9 @@ Content-Type: application/json
 
 #### 網路綁定
 
-Bridge 伺服器（`scripts/copilot-bridge`）預期僅供本機使用，預設監聽 `http://localhost:31031`；實際綁定位址則取決於程式碼中 `app.listen()` 設定的 hostname。
+Bridge 伺服器（`scripts/copilot-bridge`）預期僅供本機使用，目前實作中已明確綁定在 loopback 位址 `127.0.0.1`，預設監聽 `http://127.0.0.1:31031`。只有在你 fork 專案並修改程式碼中的 `app.listen()`（例如更改 hostname 或移除該參數）時，才會影響實際綁定位址與對外暴露範圍。
 
-> **警告：** 除非你已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將 `app.listen()` 的 hostname 改為 `0.0.0.0` 或移除 hostname 參數。
+> **警告：** 若你在自己的 Fork／客製版本中修改 `app.listen()`，除非已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將 hostname 改為 `0.0.0.0` 或移除 hostname 參數，避免將 Bridge 直接暴露在公網上。
 
 #### CORS 政策
 
@@ -523,22 +523,14 @@ COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
 <details>
 <summary><b>權限系統（檔案存取）</b></summary>
 
-SDK 模式包含一個權限系統，用於管控 Copilot 代理發起的檔案系統操作。當代理請求檔案系統動作時，Bridge 會呼叫 `requestPermission`，並依照結果決定是否執行操作。
-
-#### 允許清單操作
-
-目前預設情況下，Bridge 中的檔案系統能力是**關閉的**（例如 `readTextFile: false`、`writeTextFile: false`），因此：
-- 不會主動執行任何檔案讀寫操作。
-- 也沒有任何「無需提示即可執行」的允許清單操作。
-
-若你在 ACP 客戶端中啟用了 fs 功能，可以自行在程式碼中實作允許清單邏輯（例如只允許特定型別或路徑的操作），但預設專案並未啟用任何此類操作。
+目前在 Bridge 實作中，`scripts/copilot-bridge/src/session-manager.ts` 中的檔案系統能力是**關閉的**（`readTextFile: false`、`writeTextFile: false`），且 `scripts/copilot-bridge/src/server.ts` 沒有 `/api/permission/*` 路由。因此，目前沒有執行期 fs 允許清單，也沒有 REST 權限解析 API 可供設定。
 
 #### 權限解析方式
 
-當 Copilot 代理請求不在允許清單上的操作時，Bridge 會呼叫 `resolvePermission()`。預設選取 SDK 回傳的**第一個選項**（通常為「核准一次」）。你可以修改 `scripts/copilot-bridge/src/session-manager.ts` 中的 `selectPermissionOutcome` 來實作更嚴格的政策：
+若代理發起需要授權的操作，ACP 的 `requestPermission` callback（定義於 `session-manager.ts`）會呼叫 `selectPermissionOutcome()`，預設選取 SDK 回傳的**第一個選項**。你可以修改 `selectPermissionOutcome` 來實作更嚴格的政策：
 
 ```typescript
-// 範例：拒絕所有不在允許清單上的操作
+// 範例：拒絕所有操作
 function selectPermissionOutcome(options: any[] = []): any {
   return { outcome: { outcome: 'cancelled' } };
 }
