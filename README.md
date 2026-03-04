@@ -468,7 +468,19 @@ The bridge is configured with a permissive CORS policy (`origin: '*'`) because C
 ```typescript
 // scripts/copilot-bridge/src/server.ts
 app.use(cors({
-  origin: 'http://localhost:YOUR_PORT', // replace * with a specific origin
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'chrome-extension://YOUR_EXTENSION_ID', // your extension origin
+      'http://localhost:YOUR_PORT',          // optional: local web UI, if you have one
+    ];
+
+    // Allow requests with no origin (e.g. some CLI tools) or from whitelisted origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: ['GET', 'POST', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type'],
 }));
