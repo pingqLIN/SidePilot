@@ -18,6 +18,7 @@ if ([string]::IsNullOrWhiteSpace($LauncherRoot)) {
 $sourceLauncherPs1 = Join-Path $scriptDir 'sidepilot-bridge-launcher.ps1'
 $targetLauncherPs1 = Join-Path $LauncherRoot 'sidepilot-bridge-launcher.ps1'
 $targetLauncherCmd = Join-Path $LauncherRoot 'sidepilot-bridge-launcher.cmd'
+$targetConfigJson = Join-Path $LauncherRoot 'launcher-config.json'
 $bridgeDir = Join-Path $ProjectRoot 'scripts\copilot-bridge'
 
 $registryBase = 'HKCU:\Software\Classes\sidepilot'
@@ -37,6 +38,7 @@ if ($DryRun) {
   Write-Step "Would create launcher root: $LauncherRoot"
   Write-Step "Would copy launcher script to: $targetLauncherPs1"
   Write-Step "Would write wrapper cmd: $targetLauncherCmd"
+  Write-Step "Would write config: $targetConfigJson"
   Write-Step "Would register protocol key: $registryBase"
   return
 }
@@ -49,6 +51,13 @@ $cmdContent = @(
   ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}" -Uri "%~1" -BridgeDir "{1}"' -f $targetLauncherPs1, $bridgeDir)
 )
 Set-Content -Path $targetLauncherCmd -Value $cmdContent -Encoding ASCII
+
+$configObject = [ordered]@{
+  BridgeDir = $bridgeDir
+  Port = 31031
+  InstalledAt = (Get-Date).ToString('o')
+}
+$configObject | ConvertTo-Json | Set-Content -Path $targetConfigJson -Encoding UTF8
 
 New-Item -Path $registryBase -Force | Out-Null
 Set-Item -Path $registryBase -Value 'URL:SidePilot Protocol'
