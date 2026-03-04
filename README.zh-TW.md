@@ -545,17 +545,6 @@ function selectPermissionOutcome(options: any[] = []): any {
 }
 ```
 
-#### REST 權限端點
-
-擴充功能也可透過 Bridge API 互動式解析權限：
-
-```bash
-POST /api/permission/resolve
-Content-Type: application/json
-
-{ "id": "<permissionId>", "approved": true, "optionId": "<optionId>" }
-```
-
 </details>
 
 <details>
