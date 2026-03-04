@@ -260,6 +260,7 @@ export class SessionManager {
   /** 設定最大歷史輪數 (clamps to 1–1000; ignores non-finite values) */
   setMaxHistoryTurns(turns: number): void {
     if (!Number.isFinite(turns)) {
+      this.pushLog('warn', `[SessionManager] setMaxHistoryTurns: invalid value ignored: ${turns}`);
       console.warn('[SessionManager] setMaxHistoryTurns: invalid value ignored:', turns);
       return;
     }
