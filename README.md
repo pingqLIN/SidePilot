@@ -524,11 +524,10 @@ The following operations are **always allowed** without a prompt:
 
 In the current bridge implementation, file system capabilities are disabled in `scripts/copilot-bridge/src/session-manager.ts`, and there are no `/api/permission/*` routes exposed by `scripts/copilot-bridge/src/server.ts`. As a result, there is no runtime allowlist for fs operations and no REST-based permission resolution API to configure.
 
-If you wish to introduce such a system, you would need to:
+If you wish to introduce a runtime allowlist or a REST-based permission API, you would need to:
 - Enable the relevant fs capabilities in the ACP client within `scripts/copilot-bridge/src/session-manager.ts`, and
 - Implement corresponding `/api/permission/*` routes in `scripts/copilot-bridge/src/server.ts`.
 
-This README section previously documented an example of that behavior, but it has been removed to match the current codebase.
 </details>
 
 <details>

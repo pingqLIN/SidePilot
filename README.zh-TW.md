@@ -545,6 +545,10 @@ function selectPermissionOutcome(options: any[] = []): any {
 }
 ```
 
+若你想引入執行期允許清單或 REST 權限 API，需要：
+- 在 `scripts/copilot-bridge/src/session-manager.ts` 的 ACP 客戶端中啟用相關 fs 功能，並
+- 在 `scripts/copilot-bridge/src/server.ts` 中實作對應的 `/api/permission/*` 路由。
+
 </details>
 
 <details>
