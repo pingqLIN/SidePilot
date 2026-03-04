@@ -513,17 +513,9 @@ COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
 <details>
 <summary><b>Permission System (File Access)</b></summary>
 
-SDK mode includes a permission system that gates filesystem operations initiated by the Copilot agent. When the agent requests a filesystem action, the bridge calls `requestPermission` and the outcome determines whether the operation proceeds.
+SDK mode includes a permission system that can gate filesystem operations initiated by the Copilot agent. In a configuration where filesystem capabilities are enabled, the bridge would call `requestPermission` when the agent requests a filesystem action, and the outcome would determine whether the operation proceeds.
 
-#### Allowlisted Operations
-
-The following operations are **always allowed** without a prompt:
-
-| Operation | Description |
-|-----------|-------------|
-| `readTextFile` | Read a file as plain text |
-| `listDirectory` | List the contents of a directory |
-
+In the **current bridge implementation**, however, filesystem capabilities are disabled, so there are no file operations that are always allowed and no prompts are issued for file access.
 #### How Permissions Are Resolved
 
 In the current bridge implementation, file system capabilities are disabled in `scripts/copilot-bridge/src/session-manager.ts`, and there are no `/api/permission/*` routes exposed by `scripts/copilot-bridge/src/server.ts`. As a result, there is no runtime allowlist for fs operations and no REST-based permission resolution API to configure.
