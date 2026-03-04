@@ -340,7 +340,7 @@ export class SessionManager {
    */
   private async requestPermissionAsync(sessionId: string, params: any): Promise<any> {
     const options = params?.options || [];
-    const scope = params?.scope || params?.title || params?.resource?.uri || 'unknown';
+    const scope = String(params?.scope ?? params?.title ?? params?.resource?.uri ?? 'unknown').trim();
     const reason = params?.message || params?.reason || '';
 
     this.pushLog('info', `[Permission] Incoming request — scope: ${scope}, options: ${options.length}, params keys: ${Object.keys(params || {}).join(',')}`);
