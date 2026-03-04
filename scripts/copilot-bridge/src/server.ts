@@ -342,11 +342,16 @@ app.post('/api/prompt/strategy', (req, res) => {
   }
   sessionManager.setPromptStrategy(strategy);
   if (typeof maxHistoryTurns === 'number') {
-    if (!Number.isFinite(maxHistoryTurns) || maxHistoryTurns < 1 || maxHistoryTurns > 1000) {
-      res.status(400).json({ success: false, error: 'maxHistoryTurns must be a finite number between 1 and 1000' });
+    if (
+      !Number.isFinite(maxHistoryTurns) ||
+      !Number.isInteger(maxHistoryTurns) ||
+      maxHistoryTurns < 1 ||
+      maxHistoryTurns > 1000
+    ) {
+      res.status(400).json({ success: false, error: 'maxHistoryTurns must be an integer between 1 and 1000' });
       return;
     }
-    sessionManager.setMaxHistoryTurns(Math.round(maxHistoryTurns));
+    sessionManager.setMaxHistoryTurns(maxHistoryTurns);
   }
   res.json({
     success: true,
