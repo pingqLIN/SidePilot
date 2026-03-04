@@ -23,8 +23,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const EXT = join(ROOT, 'extension');
 
-// ── 機密參數（必須與 seal-integrity.mjs 完全一致）──
+// ── 固定參數（必須與 seal-integrity.mjs 完全一致，均為公開來源，非機密）──
 
+// 固定前綴／鹽值（SALT）：與檔案內容混合，使摘要與專案綁定；為公開、非機密值，不提供對原始碼可存取者的防護
 const SALT = 'SP::integrity::v1::7f3a9c2e';
 
 const CRITICAL_FILES = [
