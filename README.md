@@ -522,26 +522,13 @@ The following operations are **always allowed** without a prompt:
 
 #### How Permissions Are Resolved
 
-When the Copilot agent requests an operation outside the allowlist, the bridge calls `resolvePermission()`. By default it selects the **first available option** returned by the SDK (usually "Approve once"). You can modify `selectPermissionOutcome` in `scripts/copilot-bridge/src/session-manager.ts` to implement a stricter policy:
+In the current bridge implementation, file system capabilities are disabled in `scripts/copilot-bridge/src/session-manager.ts`, and there are no `/api/permission/*` routes exposed by `scripts/copilot-bridge/src/server.ts`. As a result, there is no runtime allowlist for fs operations and no REST-based permission resolution API to configure.
 
-```typescript
-// Example: always deny operations not on the allowlist
-function selectPermissionOutcome(options: any[] = []): any {
-  return { outcome: { outcome: 'cancelled' } };
-}
-```
+If you wish to introduce such a system, you would need to:
+- Enable the relevant fs capabilities in the ACP client within `scripts/copilot-bridge/src/session-manager.ts`, and
+- Implement corresponding `/api/permission/*` routes in `scripts/copilot-bridge/src/server.ts`.
 
-#### REST Permission Endpoint
-
-The extension can also resolve permissions interactively via the bridge API:
-
-```bash
-POST /api/permission/resolve
-Content-Type: application/json
-
-{ "id": "<permissionId>", "approved": true, "optionId": "<optionId>" }
-```
-
+This README section previously documented an example of that behavior, but it has been removed to match the current codebase.
 </details>
 
 <details>
