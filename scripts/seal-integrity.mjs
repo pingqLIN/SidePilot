@@ -10,9 +10,9 @@
  *   node scripts/seal-integrity.mjs --dry    → 僅顯示，不寫入
  *
  * 設計原則：
- *   - 演算法、鹽值、檔案清單僅存在於此腳本與 verify 腳本
+ *   - 演算法、鹽值、檔案清單存在於此腳本與 verify 腳本（均為公開來源）
  *   - 只封印關鍵程式內容，不把 version_name 本身納入摘要
- *   - 即使攻擊者讀取擴充所有檔案，也難以在不修改外部腳本下偽造封印
+ *   - 目的是偵測意外或本地修改，而非對擁有原始碼存取權的攻擊者提供防護
  */
 
 import { createHash } from 'crypto';
@@ -24,9 +24,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const EXT = join(ROOT, 'extension');
 
-// ── 機密參數（僅存在於此腳本與 verify 腳本）──
+// ── 固定參數（存在於此腳本與 verify 腳本，原始碼可見）──
 
-// 鹽值：與檔案內容混合，防止彩虹表攻擊
+// 固定前綴：與檔案內容混合，使摘要與專案綁定；非機密值，不提供對原始碼可存取者的防護
 const SALT = 'SP::integrity::v1::7f3a9c2e';
 
 // 關鍵檔案清單（順序固定，影響雜湊結果）
