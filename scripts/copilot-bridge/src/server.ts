@@ -628,7 +628,7 @@ app.get('/api/history/stream', (req, res) => {
 app.get('/api/history/:filename', async (req, res) => {
   try {
     const filename = req.params.filename;
-    if (!filename.startsWith('history_') || !filename.endsWith('.jsonl')) {
+    if (!/^history_\d{4}-\d{2}-\d{2}\.jsonl$/.test(filename)) {
       res.status(400).json({ success: false, error: 'Invalid filename' });
       return;
     }
