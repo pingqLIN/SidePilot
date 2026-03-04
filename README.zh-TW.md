@@ -457,7 +457,7 @@ Content-Type: application/json
 
 #### 網路綁定
 
-Bridge 伺服器（`scripts/copilot-bridge`）已明確綁定至 `127.0.0.1`（迴路介面），因此**無法從機器外部存取**。
+Bridge 伺服器（`scripts/copilot-bridge`）預期僅供本機使用，預設監聽 `http://localhost:31031`；實際綁定位址則取決於程式碼中 `app.listen()` 設定的 hostname。
 
 > **警告：** 除非你已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將 `app.listen()` 的 hostname 改為 `0.0.0.0` 或移除 hostname 參數。
 
