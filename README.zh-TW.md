@@ -443,7 +443,7 @@ Content-Type: application/json
 
 在任何共用或 CI 環境中執行 Bridge 伺服器前，請確認以下事項：
 
-- [ ] Bridge 伺服器已綁定至 `127.0.0.1`（迴路介面）— 切勿在共用環境中從 `app.listen()` 移除 hostname 參數
+- [ ] 瞭解 Bridge 伺服器預設會綁定至所有網路介面；在共用環境中請主動將 `app.listen()` 改為綁定 `127.0.0.1`（例如 `app.listen(PORT, '127.0.0.1')`），或以防火牆 / VPN 限制僅能本機存取
 - [ ] 連接埠 `31031` 無法從機器外部存取（防火牆 / VPN）
 - [ ] 未將 GitHub Token 或憑證提交至原始碼控管
 - [ ] `COPILOT_CONFIG_PATH` 環境變數（若有設定）指向非公開目錄
