@@ -443,7 +443,7 @@ Returns `{ success: true, content: "..." }` after the full response completes.
 
 Before running the bridge server in any shared or CI environment, confirm the following:
 
-- [ ] Bridge server is bound to `127.0.0.1` (loopback) — do not remove the hostname from `app.listen()` in shared environments
+- [ ] Bridge server binding is restricted as intended (for local-only use, explicitly bind `app.listen()` to `127.0.0.1`; note that `app.listen(PORT)` without a hostname binds to all interfaces)
 - [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
 - [ ] No GitHub tokens or credentials are committed to source control
 - [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
