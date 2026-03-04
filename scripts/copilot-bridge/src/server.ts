@@ -679,8 +679,8 @@ app.post('/api/history', async (req, res) => {
 // ============================================
 
 const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/health`);
+  console.log(`✈️  SidePilot Copilot Bridge running on http://127.0.0.1:${PORT}`);
+  console.log(`   Health: http://127.0.0.1:${PORT}/health`);
 
   // Notify supervisor that worker is ready
   if (isForked && process.send) {
