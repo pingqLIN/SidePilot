@@ -24,7 +24,16 @@ const app = express();
 
 // --- Middleware ---
 app.use(cors({
-  origin: '*', // Chrome extension context
+  origin: (origin, callback) => {
+    // Allow requests from Chrome extension pages.
+    // Requests with no Origin header come from direct local tool calls (e.g. curl)
+    // which are already constrained to localhost by the 127.0.0.1 binding below.
+    if (!origin || origin.startsWith('chrome-extension://')) {
+      callback(null, true);
+    } else {
+      callback(new Error('CORS policy: Origin not allowed'));
+    }
+  },
   methods: ['GET', 'POST', 'DELETE'],
   allowedHeaders: ['Content-Type'],
 }));
@@ -680,9 +689,9 @@ app.post('/api/history', async (req, res) => {
 // Server Lifecycle
 // ============================================
 
-const server = app.listen(PORT, () => {
-  console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/health`);
+const server = app.listen(PORT, '127.0.0.1', () => {
+  console.log(`✈️  SidePilot Copilot Bridge running on http://127.0.0.1:${PORT}`);
+  console.log(`   Health: http://127.0.0.1:${PORT}/health`);
 
   // Notify supervisor that worker is ready
   if (isForked && process.send) {
