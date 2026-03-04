@@ -443,7 +443,7 @@ Content-Type: application/json
 
 在任何共用或 CI 環境中執行 Bridge 伺服器前，請確認以下事項：
 
-- [ ] Bridge 伺服器僅綁定至 `localhost`（預設值）— 切勿在共用環境中綁定 `0.0.0.0`
+- [ ] Bridge 伺服器已綁定至 `127.0.0.1`（迴路介面）— 切勿在共用環境中從 `app.listen()` 移除 hostname 參數
 - [ ] 連接埠 `31031` 無法從機器外部存取（防火牆 / VPN）
 - [ ] 未將 GitHub Token 或憑證提交至原始碼控管
 - [ ] `COPILOT_CONFIG_PATH` 環境變數（若有設定）指向非公開目錄
@@ -457,9 +457,9 @@ Content-Type: application/json
 
 #### 網路綁定
 
-Bridge 伺服器（`scripts/copilot-bridge`）預設監聽 `http://localhost:31031`，**不會**對外網路開放 — 僅有同一台機器上的程序可以存取。
+Bridge 伺服器（`scripts/copilot-bridge`）已明確綁定至 `127.0.0.1`（迴路介面），因此**無法從機器外部存取**。
 
-> **警告：** 除非你已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將綁定位址更改為 `0.0.0.0`。
+> **警告：** 除非你已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將 `app.listen()` 的 hostname 改為 `0.0.0.0` 或移除 hostname 參數。
 
 #### CORS 政策
 

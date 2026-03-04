@@ -443,7 +443,7 @@ Returns `{ success: true, content: "..." }` after the full response completes.
 
 Before running the bridge server in any shared or CI environment, confirm the following:
 
-- [ ] Bridge server is bound to `localhost` only (default) — never bind to `0.0.0.0` in shared environments
+- [ ] Bridge server is bound to `127.0.0.1` (loopback) — do not remove the hostname from `app.listen()` in shared environments
 - [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
 - [ ] No GitHub tokens or credentials are committed to source control
 - [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
@@ -457,13 +457,17 @@ Before running the bridge server in any shared or CI environment, confirm the fo
 
 #### Network Binding
 
-The bridge server (`scripts/copilot-bridge`) listens on `http://localhost:31031` by default. It is **not** exposed to the network — only processes on the same machine can reach it.
+The bridge server (`scripts/copilot-bridge`) is explicitly bound to `127.0.0.1` (loopback), so it is **not** reachable from outside your machine.
 
-> **Warning:** Do not change the bind address to `0.0.0.0` unless you have a firewall rule or reverse-proxy with authentication protecting port `31031`.
+> **Warning:** Do not change the bind address to `0.0.0.0` or remove the hostname argument from `app.listen()` unless you have a firewall rule or reverse-proxy with authentication protecting port `31031`.
 
 #### CORS Policy
 
-The bridge is configured with a permissive CORS policy (`origin: '*'`) because Chrome extensions do not send a predictable `Origin` header. This is safe as long as the server remains on `localhost`. If you modify the server for other use cases, restrict the origin:
+The bridge uses `origin: '*'` because Chrome extensions send a `chrome-extension://` origin that varies per installation and cannot be hard-coded in the server. **This is intentional for the local development use case**, but you should understand the trade-off:
+
+> Any web page a user visits can issue requests to `http://localhost:31031` and, with no authentication in place, read responses or trigger actions. This is an inherent risk whenever a localhost server uses open CORS.
+
+If you extend the bridge for non-extension use cases (e.g. a local web UI), add an explicit allowlist and consider adding a shared secret header:
 
 ```typescript
 // scripts/copilot-bridge/src/server.ts

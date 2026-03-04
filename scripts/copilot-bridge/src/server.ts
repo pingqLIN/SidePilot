@@ -311,7 +311,7 @@ app.post('/api/chat/sync', async (req, res) => {
 // Server Lifecycle
 // ============================================
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
 
