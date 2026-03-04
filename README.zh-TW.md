@@ -463,14 +463,40 @@ Bridge 伺服器（`scripts/copilot-bridge`）預設監聽 `http://localhost:310
 
 #### CORS 政策
 
-由於 Chrome 擴充功能不會傳送可預測的 `Origin` 標頭，Bridge 使用寬鬆的 CORS 政策（`origin: '*'`）。只要伺服器保持在 `localhost`，這個設定是安全的。若你為其他用途修改伺服器，請限制來源：
+**重要：** `origin: '*'` 並不會因為伺服器只綁在 `localhost` 就自動安全。任何開在瀏覽器裡的網頁都可以對 `http://localhost:PORT` 發送請求；如果你同時允許任何來源讀取回應，且沒有額外驗證機制，就可能在你不知情的情況下洩漏資料或觸發動作。
+
+Bridge 預設採用寬鬆的 CORS 設定是為了方便本機開發與配合瀏覽器擴充功能（例如 `chrome-extension://...`），但**建議只在你信任本機環境、且清楚了解風險時使用**。若你將 Bridge 用於其他場景（例如被網頁直接呼叫），請同時：
+
+- 限制允許的 `Origin`
+- 或加入驗證機制（例如 API token / header）
+
+下面是一個較安全、同時支援擴充功能與特定網頁來源的範例：
 
 ```typescript
 // scripts/copilot-bridge/src/server.ts
 app.use(cors({
-  origin: 'http://localhost:YOUR_PORT', // 將 * 替換為特定來源
+  origin(origin, callback) {
+    const allowedWebOrigins = [
+      'http://localhost:YOUR_PORT', // 將此處替換為你實際使用的網頁來源
+      // 如有需要，可在此加入其他受信任的 web Origin
+    ];
+
+    // 擴充功能來源，例如 chrome-extension://<id>
+    const isExtensionOrigin = typeof origin === 'string' && origin.startsWith('chrome-extension://');
+
+    // 視需求決定是否允許沒有 Origin 的請求（如 curl、本機程式）
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (isExtensionOrigin || allowedWebOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'Authorization'], // 建議搭配自訂 Token 做驗證
 }));
 ```
 
