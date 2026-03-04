@@ -23,6 +23,7 @@
   <a href="#-使用指南">使用指南</a> &bull;
   <a href="#%EF%B8%8F-設定">設定</a> &bull;
   <a href="#-api-參考">API 參考</a> &bull;
+  <a href="#-安全設置">安全設置</a> &bull;
   <a href="#-常見問題">常見問題</a>
 </p>
 
@@ -428,6 +429,152 @@ Content-Type: application/json
 ```
 
 在完整回應完成後回傳 `{ success: true, content: "..." }`。
+
+</details>
+
+---
+
+## 🔒 安全設置
+
+> 本節內容特別適用於**自行架設或疊代開發** SidePilot 的情況。在將 Bridge 伺服器暴露於本機以外的環境前，請仔細閱讀每個主題。
+
+<details>
+<summary><b>開發安全確認清單</b></summary>
+
+在任何共用或 CI 環境中執行 Bridge 伺服器前，請確認以下事項：
+
+- [ ] Bridge 伺服器預設已綁定至 `127.0.0.1`（loopback）— 確認你的 Fork 中沒有將 `app.listen()` 改為 `0.0.0.0` 或移除 hostname 參數
+- [ ] 連接埠 `31031` 無法從機器外部存取（防火牆 / VPN）
+- [ ] 未將 GitHub Token 或憑證提交至原始碼控管
+- [ ] `COPILOT_CONFIG_PATH` 環境變數（若有設定）指向非公開目錄
+- [ ] 已為你的 Fork 套用分支保護規則（請參閱下方[分支保護](#分支保護)）
+- [ ] 已閱讀關於 iframe 標頭移除的[法律聲明](#%EF%B8%8F-法律聲明)
+
+</details>
+
+<details>
+<summary><b>Bridge 伺服器安全</b></summary>
+
+#### 網路綁定
+
+Bridge 伺服器（`scripts/copilot-bridge`）預期僅供本機使用，目前實作中已明確綁定在 loopback 位址 `127.0.0.1`，預設監聽 `http://127.0.0.1:31031`。只有在你 fork 專案並修改程式碼中的 `app.listen()`（例如更改 hostname 或移除該參數）時，才會影響實際綁定位址與對外暴露範圍。
+
+> **警告：** 若你在自己的 Fork／客製版本中修改 `app.listen()`，除非已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將 hostname 改為 `0.0.0.0` 或移除 hostname 參數，避免將 Bridge 直接暴露在公網上。
+
+#### CORS 政策
+
+**重要：** `origin: '*'` 並不會因為伺服器只綁在 `127.0.0.1`（例如常見的 `localhost`，通常也會解析到 loopback 位址）就自動安全。任何開在瀏覽器裡的網頁都可以對 `http://127.0.0.1:PORT`（或 `http://localhost:PORT`，若其解析到 loopback）發送請求；如果你同時允許任何來源讀取回應，且沒有額外驗證機制，就可能在你不知情的情況下洩漏資料或觸發動作。
+
+Bridge 預設採用寬鬆的 CORS 設定是為了方便本機開發與配合瀏覽器擴充功能（例如 `chrome-extension://...`），但**建議只在你信任本機環境、且清楚了解風險時使用**。若你將 Bridge 用於其他場景（例如被網頁直接呼叫），請同時：
+
+- 限制允許的 `Origin`
+- 或加入驗證機制（例如 API token / header）
+
+下面是一個較安全、同時支援擴充功能與特定網頁來源的範例：
+
+```typescript
+// scripts/copilot-bridge/src/server.ts
+app.use(cors({
+  origin(origin, callback) {
+    const allowedWebOrigins = [
+      'http://localhost:YOUR_PORT', // 將此處替換為你實際使用的網頁來源
+      // 如有需要，可在此加入其他受信任的 web Origin
+    ];
+
+    // 擴充功能來源，例如 chrome-extension://<id>
+    const isExtensionOrigin = typeof origin === 'string' && origin.startsWith('chrome-extension://');
+
+    // 視需求決定是否允許沒有 Origin 的請求（如 curl、本機程式）
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    if (isExtensionOrigin || allowedWebOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Not allowed by CORS'));
+  },
+  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization'], // 建議搭配自訂 Token 做驗證
+}));
+```
+
+#### 連接埠設定
+
+你可以在啟動 Bridge 前設定 `PORT` 環境變數來變更預設連接埠：
+
+```bash
+PORT=32000 npm run dev
+```
+
+請同步更新擴充功能設定中 **Bridge 設定** 的 URL。
+
+#### 設定檔路徑
+
+Bridge 讀取並寫入 `~/.copilot/config.json`。可使用環境變數覆寫路徑：
+
+```bash
+COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>權限系統（檔案存取）</b></summary>
+
+目前在 Bridge 實作中，`scripts/copilot-bridge/src/session-manager.ts` 中的檔案系統能力是**關閉的**（`readTextFile: false`、`writeTextFile: false`），且 `scripts/copilot-bridge/src/server.ts` 沒有 `/api/permission/*` 路由。因此，目前沒有執行期 fs 允許清單，也沒有 REST 權限解析 API 可供設定。
+
+#### 權限解析方式
+
+若代理發起需要授權的操作，ACP 的 `requestPermission` callback（定義於 `session-manager.ts`）會呼叫 `selectPermissionOutcome()`，預設選取 SDK 回傳的**第一個選項**。你可以修改 `selectPermissionOutcome` 來實作更嚴格的政策：
+
+```typescript
+// 範例：拒絕所有操作
+function selectPermissionOutcome(options: any[] = []): any {
+  return { outcome: { outcome: 'cancelled' } };
+}
+```
+
+若你想引入執行期允許清單或 REST 權限 API，需要：
+- 在 `scripts/copilot-bridge/src/session-manager.ts` 的 ACP 客戶端中啟用相關 fs 功能，並
+- 在 `scripts/copilot-bridge/src/server.ts` 中實作對應的 `/api/permission/*` 路由。
+
+</details>
+
+<details>
+<summary><b>設定金鑰允許清單</b></summary>
+
+當擴充功能將設定同步至 `~/.copilot/config.json` 時，僅會寫入以下允許清單中的金鑰。擴充功能傳送的未知金鑰會被靜默忽略：
+
+| 金鑰 | 說明 |
+|------|------|
+| `model` | 選取的 AI 模型 |
+| `reasoning_effort` | 推理層級（`low` / `medium` / `high`） |
+| `render_markdown` | Markdown 渲染開關 |
+| `theme` | UI 主題（`auto` / `dark` / `light`） |
+| `banner` | 橫幅顯示頻率 |
+
+此機制可防止意外或惡意寫入無關的設定金鑰。
+
+</details>
+
+<details id="分支保護">
+<summary><b>分支保護</b></summary>
+
+本儲存庫在 `.github/branch-protection-ruleset.json` 提供了一份可重複使用的 GitHub Ruleset 定義。將其套用至你的 Fork 以強制執行：
+
+- 預設分支禁止直接推送（封鎖刪除與非快進合併）
+- 需要線性歷史記錄
+- 合併前至少需要 **1 位審查者核准**
+- 合併前所有審查討論串必須解決
+
+#### 套用規則集
+
+1. 前往你的 Fork → **Settings → Rules → Rulesets**
+2. 點擊 **New ruleset → Import ruleset**
+3. 上傳 `.github/branch-protection-ruleset.json`
+4. 將 **Enforcement** 設為 `Active` 並儲存
 
 </details>
 

@@ -23,6 +23,7 @@
   <a href="#-usage-guide">Usage Guide</a> &bull;
   <a href="#%EF%B8%8F-configuration">Configuration</a> &bull;
   <a href="#-api-reference">API Reference</a> &bull;
+  <a href="#-security">Security</a> &bull;
   <a href="#-faq">FAQ</a>
 </p>
 
@@ -428,6 +429,136 @@ Content-Type: application/json
 ```
 
 Returns `{ success: true, content: "..." }` after the full response completes.
+
+</details>
+
+---
+
+## 🔒 Security
+
+> This section is especially relevant when **self-hosting or iteratively developing** SidePilot. Review each topic before exposing the bridge server beyond your local machine.
+
+<details>
+<summary><b>Development Security Checklist</b></summary>
+
+Before running the bridge server in any shared or CI environment, confirm the following:
+
+- [ ] Bridge server is bound to `127.0.0.1` (loopback) by default — confirm you have not changed `app.listen()` to `0.0.0.0` or removed the hostname argument in any fork
+- [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
+- [ ] No GitHub tokens or credentials are committed to source control
+- [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
+- [ ] Branch protection is applied to your fork (see [Branch Protection](#branch-protection) below)
+- [ ] You have reviewed the [Legal Notice](#%EF%B8%8F-legal-notice) regarding iframe header removal
+
+</details>
+
+<details>
+<summary><b>Bridge Server Security</b></summary>
+
+#### Network Binding
+
+The bridge server (`scripts/copilot-bridge`) is explicitly bound to `127.0.0.1` (loopback), so it is **not** reachable from outside your machine.
+
+> **Warning:** Do not change the bind address to `0.0.0.0` or remove the hostname argument from `app.listen()` unless you have a firewall rule or reverse-proxy with authentication protecting port `31031`.
+
+#### CORS Policy
+
+The bridge uses `origin: '*'` because Chrome extensions send a `chrome-extension://` origin that varies per installation and cannot be hard-coded in the server. **This is intentional for the local development use case**, but the risk is real:
+
+> **Important:** Any web page a user visits can issue requests to `http://localhost:31031`. With no authentication in place, a malicious page could call endpoints like `GET /api/sessions` or `POST /api/chat`, potentially hijacking or exfiltrating Copilot sessions that contain sensitive code or secrets. If you extend the bridge for non-extension use cases, make an origin allowlist and a shared secret header **mandatory**.
+
+If you extend the bridge for non-extension use cases (e.g. a local web UI), add an explicit allowlist and consider adding a shared secret header:
+
+```typescript
+// scripts/copilot-bridge/src/server.ts
+app.use(cors({
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      'chrome-extension://YOUR_EXTENSION_ID', // your extension origin
+      'http://localhost:YOUR_PORT',          // optional: local web UI, if you have one
+    ];
+
+    // Allow requests with no origin (e.g. some CLI tools) or from whitelisted origins
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'X-Bridge-Secret'],
+}));
+```
+
+#### Port Configuration
+
+You can change the default port by setting the `PORT` environment variable before starting the bridge:
+
+```bash
+PORT=32000 npm run dev
+```
+
+Update the **Bridge Setup** URL in the extension settings to match.
+
+#### Config Path
+
+The bridge reads and writes `~/.copilot/config.json`. Override the path with:
+
+```bash
+COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>Permission System (File Access)</b></summary>
+
+SDK mode includes a permission system that can gate filesystem operations initiated by the Copilot agent. In a configuration where filesystem capabilities are enabled, the bridge would call `requestPermission` when the agent requests a filesystem action, and the outcome would determine whether the operation proceeds.
+
+In the **current bridge implementation**, however, filesystem capabilities are disabled, so there are no file operations that are always allowed and no prompts are issued for file access.
+#### How Permissions Are Resolved
+
+In the current bridge implementation, file system capabilities are disabled in `scripts/copilot-bridge/src/session-manager.ts`, and there are no `/api/permission/*` routes exposed by `scripts/copilot-bridge/src/server.ts`. As a result, there is no runtime allowlist for fs operations and no REST-based permission resolution API to configure.
+
+If you wish to introduce a runtime allowlist or a REST-based permission API, you would need to:
+- Enable the relevant fs capabilities in the ACP client within `scripts/copilot-bridge/src/session-manager.ts`, and
+- Implement corresponding `/api/permission/*` routes in `scripts/copilot-bridge/src/server.ts`.
+
+</details>
+
+<details>
+<summary><b>Config Key Allowlist</b></summary>
+
+When the extension syncs settings to `~/.copilot/config.json`, only keys on the following allowlist are written. Unknown keys sent by the extension are silently ignored:
+
+| Key | Description |
+|-----|-------------|
+| `model` | Selected AI model |
+| `reasoning_effort` | Reasoning level (`low` / `medium` / `high`) |
+| `render_markdown` | Markdown rendering toggle |
+| `theme` | UI theme (`auto` / `dark` / `light`) |
+| `banner` | Banner display frequency |
+
+This prevents accidental or malicious writes to unrelated config keys.
+
+</details>
+
+<details id="branch-protection">
+<summary><b>Branch Protection</b></summary>
+
+The repository ships a reusable GitHub ruleset definition at `.github/branch-protection-ruleset.json`. Apply it to your fork to enforce:
+
+- No direct pushes to the default branch (deletion & non-fast-forward blocked)
+- Linear history required
+- At least **1 approving review** before merge
+- All review threads must be resolved before merge
+
+#### Applying the Ruleset
+
+1. Go to your fork → **Settings → Rules → Rulesets**
+2. Click **New ruleset → Import ruleset**
+3. Upload `.github/branch-protection-ruleset.json`
+4. Set **Enforcement** to `Active` and save
 
 </details>
 
