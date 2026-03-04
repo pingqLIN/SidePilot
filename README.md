@@ -23,6 +23,7 @@
   <a href="#-usage-guide">Usage Guide</a> &bull;
   <a href="#%EF%B8%8F-configuration">Configuration</a> &bull;
   <a href="#-api-reference">API Reference</a> &bull;
+  <a href="#-security">Security</a> &bull;
   <a href="#-faq">FAQ</a>
 </p>
 
@@ -428,6 +429,142 @@ Content-Type: application/json
 ```
 
 Returns `{ success: true, content: "..." }` after the full response completes.
+
+</details>
+
+---
+
+## 🔒 Security
+
+> This section is especially relevant when **self-hosting or iteratively developing** SidePilot. Review each topic before exposing the bridge server beyond your local machine.
+
+<details>
+<summary><b>Development Security Checklist</b></summary>
+
+Before running the bridge server in any shared or CI environment, confirm the following:
+
+- [ ] Bridge server is bound to `localhost` only (default) — never bind to `0.0.0.0` in shared environments
+- [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
+- [ ] No GitHub tokens or credentials are committed to source control
+- [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
+- [ ] Branch protection is applied to your fork (see [Branch Protection](#branch-protection) below)
+- [ ] You have reviewed the [Legal Notice](#%EF%B8%8F-legal-notice) regarding iframe header removal
+
+</details>
+
+<details>
+<summary><b>Bridge Server Security</b></summary>
+
+#### Network Binding
+
+The bridge server (`scripts/copilot-bridge`) listens on `http://localhost:31031` by default. It is **not** exposed to the network — only processes on the same machine can reach it.
+
+> **Warning:** Do not change the bind address to `0.0.0.0` unless you have a firewall rule or reverse-proxy with authentication protecting port `31031`.
+
+#### CORS Policy
+
+The bridge is configured with a permissive CORS policy (`origin: '*'`) because Chrome extensions do not send a predictable `Origin` header. This is safe as long as the server remains on `localhost`. If you modify the server for other use cases, restrict the origin:
+
+```typescript
+// scripts/copilot-bridge/src/server.ts
+app.use(cors({
+  origin: 'http://localhost:YOUR_PORT', // replace * with a specific origin
+  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type'],
+}));
+```
+
+#### Port Configuration
+
+You can change the default port by setting the `PORT` environment variable before starting the bridge:
+
+```bash
+PORT=32000 npm run dev
+```
+
+Update the **Bridge Setup** URL in the extension settings to match.
+
+#### Config Path
+
+The bridge reads and writes `~/.copilot/config.json`. Override the path with:
+
+```bash
+COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>Permission System (File Access)</b></summary>
+
+SDK mode includes a permission system that gates filesystem operations initiated by the Copilot agent. When the agent requests a filesystem action, the bridge calls `requestPermission` and the outcome determines whether the operation proceeds.
+
+#### Allowlisted Operations
+
+The following operations are **always allowed** without a prompt:
+
+| Operation | Description |
+|-----------|-------------|
+| `readTextFile` | Read a file as plain text |
+| `listDirectory` | List the contents of a directory |
+
+#### How Permissions Are Resolved
+
+When the Copilot agent requests an operation outside the allowlist, the bridge calls `resolvePermission()`. By default it selects the **first available option** returned by the SDK (usually "Approve once"). You can modify `selectPermissionOutcome` in `scripts/copilot-bridge/src/session-manager.ts` to implement a stricter policy:
+
+```typescript
+// Example: always deny operations not on the allowlist
+function selectPermissionOutcome(options: any[] = []): any {
+  return { outcome: { outcome: 'cancelled' } };
+}
+```
+
+#### REST Permission Endpoint
+
+The extension can also resolve permissions interactively via the bridge API:
+
+```bash
+POST /api/permission/resolve
+Content-Type: application/json
+
+{ "id": "<permissionId>", "approved": true, "optionId": "<optionId>" }
+```
+
+</details>
+
+<details>
+<summary><b>Config Key Allowlist</b></summary>
+
+When the extension syncs settings to `~/.copilot/config.json`, only keys on the following allowlist are written. Unknown keys sent by the extension are silently ignored:
+
+| Key | Description |
+|-----|-------------|
+| `model` | Selected AI model |
+| `reasoning_effort` | Reasoning level (`low` / `medium` / `high`) |
+| `render_markdown` | Markdown rendering toggle |
+| `theme` | UI theme (`auto` / `dark` / `light`) |
+| `banner` | Banner display frequency |
+
+This prevents accidental or malicious writes to unrelated config keys.
+
+</details>
+
+<details id="branch-protection">
+<summary><b>Branch Protection</b></summary>
+
+The repository ships a reusable GitHub ruleset definition at `.github/branch-protection-ruleset.json`. Apply it to your fork to enforce:
+
+- No direct pushes to the default branch (deletion & non-fast-forward blocked)
+- Linear history required
+- At least **1 approving review** before merge
+- All review threads must be resolved before merge
+
+#### Applying the Ruleset
+
+1. Go to your fork → **Settings → Rules → Rulesets**
+2. Click **New ruleset → Import ruleset**
+3. Upload `.github/branch-protection-ruleset.json`
+4. Set **Enforcement** to `Active` and save
 
 </details>
 

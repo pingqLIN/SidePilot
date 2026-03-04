@@ -23,6 +23,7 @@
   <a href="#-使用指南">使用指南</a> &bull;
   <a href="#%EF%B8%8F-設定">設定</a> &bull;
   <a href="#-api-參考">API 參考</a> &bull;
+  <a href="#-安全設置">安全設置</a> &bull;
   <a href="#-常見問題">常見問題</a>
 </p>
 
@@ -428,6 +429,142 @@ Content-Type: application/json
 ```
 
 在完整回應完成後回傳 `{ success: true, content: "..." }`。
+
+</details>
+
+---
+
+## 🔒 安全設置
+
+> 本節內容特別適用於**自行架設或疊代開發** SidePilot 的情況。在將 Bridge 伺服器暴露於本機以外的環境前，請仔細閱讀每個主題。
+
+<details>
+<summary><b>開發安全確認清單</b></summary>
+
+在任何共用或 CI 環境中執行 Bridge 伺服器前，請確認以下事項：
+
+- [ ] Bridge 伺服器僅綁定至 `localhost`（預設值）— 切勿在共用環境中綁定 `0.0.0.0`
+- [ ] 連接埠 `31031` 無法從機器外部存取（防火牆 / VPN）
+- [ ] 未將 GitHub Token 或憑證提交至原始碼控管
+- [ ] `COPILOT_CONFIG_PATH` 環境變數（若有設定）指向非公開目錄
+- [ ] 已為你的 Fork 套用分支保護規則（請參閱下方[分支保護](#分支保護)）
+- [ ] 已閱讀關於 iframe 標頭移除的[法律聲明](#%EF%B8%8F-法律聲明)
+
+</details>
+
+<details>
+<summary><b>Bridge 伺服器安全</b></summary>
+
+#### 網路綁定
+
+Bridge 伺服器（`scripts/copilot-bridge`）預設監聽 `http://localhost:31031`，**不會**對外網路開放 — 僅有同一台機器上的程序可以存取。
+
+> **警告：** 除非你已設定防火牆規則或帶有驗證機制的反向代理保護連接埠 `31031`，否則請勿將綁定位址更改為 `0.0.0.0`。
+
+#### CORS 政策
+
+由於 Chrome 擴充功能不會傳送可預測的 `Origin` 標頭，Bridge 使用寬鬆的 CORS 政策（`origin: '*'`）。只要伺服器保持在 `localhost`，這個設定是安全的。若你為其他用途修改伺服器，請限制來源：
+
+```typescript
+// scripts/copilot-bridge/src/server.ts
+app.use(cors({
+  origin: 'http://localhost:YOUR_PORT', // 將 * 替換為特定來源
+  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
+  allowedHeaders: ['Content-Type'],
+}));
+```
+
+#### 連接埠設定
+
+你可以在啟動 Bridge 前設定 `PORT` 環境變數來變更預設連接埠：
+
+```bash
+PORT=32000 npm run dev
+```
+
+請同步更新擴充功能設定中 **Bridge 設定** 的 URL。
+
+#### 設定檔路徑
+
+Bridge 讀取並寫入 `~/.copilot/config.json`。可使用環境變數覆寫路徑：
+
+```bash
+COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
+```
+
+</details>
+
+<details>
+<summary><b>權限系統（檔案存取）</b></summary>
+
+SDK 模式包含一個權限系統，用於管控 Copilot 代理發起的檔案系統操作。當代理請求檔案系統動作時，Bridge 會呼叫 `requestPermission`，並依照結果決定是否執行操作。
+
+#### 允許清單操作
+
+以下操作**無需提示即可執行**：
+
+| 操作 | 說明 |
+|------|------|
+| `readTextFile` | 以純文字讀取檔案 |
+| `listDirectory` | 列出目錄內容 |
+
+#### 權限解析方式
+
+當 Copilot 代理請求不在允許清單上的操作時，Bridge 會呼叫 `resolvePermission()`。預設選取 SDK 回傳的**第一個選項**（通常為「核准一次」）。你可以修改 `scripts/copilot-bridge/src/session-manager.ts` 中的 `selectPermissionOutcome` 來實作更嚴格的政策：
+
+```typescript
+// 範例：拒絕所有不在允許清單上的操作
+function selectPermissionOutcome(options: any[] = []): any {
+  return { outcome: { outcome: 'cancelled' } };
+}
+```
+
+#### REST 權限端點
+
+擴充功能也可透過 Bridge API 互動式解析權限：
+
+```bash
+POST /api/permission/resolve
+Content-Type: application/json
+
+{ "id": "<permissionId>", "approved": true, "optionId": "<optionId>" }
+```
+
+</details>
+
+<details>
+<summary><b>設定金鑰允許清單</b></summary>
+
+當擴充功能將設定同步至 `~/.copilot/config.json` 時，僅會寫入以下允許清單中的金鑰。擴充功能傳送的未知金鑰會被靜默忽略：
+
+| 金鑰 | 說明 |
+|------|------|
+| `model` | 選取的 AI 模型 |
+| `reasoning_effort` | 推理層級（`low` / `medium` / `high`） |
+| `render_markdown` | Markdown 渲染開關 |
+| `theme` | UI 主題（`auto` / `dark` / `light`） |
+| `banner` | 橫幅顯示頻率 |
+
+此機制可防止意外或惡意寫入無關的設定金鑰。
+
+</details>
+
+<details id="分支保護">
+<summary><b>分支保護</b></summary>
+
+本儲存庫在 `.github/branch-protection-ruleset.json` 提供了一份可重複使用的 GitHub Ruleset 定義。將其套用至你的 Fork 以強制執行：
+
+- 預設分支禁止直接推送（封鎖刪除與非快進合併）
+- 需要線性歷史記錄
+- 合併前至少需要 **1 位審查者核准**
+- 合併前所有審查討論串必須解決
+
+#### 套用規則集
+
+1. 前往你的 Fork → **Settings → Rules → Rulesets**
+2. 點擊 **New ruleset → Import ruleset**
+3. 上傳 `.github/branch-protection-ruleset.json`
+4. 將 **Enforcement** 設為 `Active` 並儲存
 
 </details>
 
