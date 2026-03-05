@@ -246,20 +246,24 @@ describe('Permission System', () => {
     });
 
     it('should fallback to params.resource.uri', async () => {
-      sm.requestPermissionAsync('sess1', {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         resource: { uri: '/some/path' },
         options: [{ optionId: 'opt1' }],
       });
-      const pending = [...sm.pendingPermissions.values()][0];
+      const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('/some/path');
+      sm.resolvePermission(permissionId, { outcome: 'selected' });
+      await permissionPromise;
     });
 
     it('should default to "unknown" when no scope info', async () => {
-      sm.requestPermissionAsync('sess1', {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         options: [{ optionId: 'opt1' }],
       });
-      const pending = [...sm.pendingPermissions.values()][0];
+      const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('unknown');
+      sm.resolvePermission(permissionId, { outcome: 'selected' });
+      await permissionPromise;
     });
 
     it('should auto-cancel when options array is empty', async () => {
