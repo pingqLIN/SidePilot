@@ -306,6 +306,8 @@ describe('Permission System', () => {
         options: [{ optionId: 'opt1' }],
       });
       expect(sm.pendingPermissions.size).toBe(1);
+      const [permissionId] = sm.pendingPermissions.keys();
+      sm.resolvePermission(permissionId, false);
       await permissionPromise;
     });
 
