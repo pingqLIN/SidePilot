@@ -300,12 +300,13 @@ describe('Permission System', () => {
       expect(result.outcome.optionId).toBe('opt1'); // always first
     });
 
-    it('should NOT auto-approve non-whitelisted scope', () => {
-      sm.requestPermissionAsync('sess1', {
+    it('should NOT auto-approve non-whitelisted scope', async () => {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         scope: 'writeFile',
         options: [{ optionId: 'opt1' }],
       });
       expect(sm.pendingPermissions.size).toBe(1);
+      await permissionPromise;
     });
 
     it('should NOT auto-approve whitelisted scope with no options', async () => {
