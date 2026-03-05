@@ -1,9 +1,13 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as ModeManager from '../../extension/js/mode-manager.js';
 
 describe('Mode Manager Module', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    ModeManager.cleanup();
   });
 
   it('should export init function', () => {
@@ -27,9 +31,14 @@ describe('Mode Manager Module', () => {
     expect(mode).toBeNull();
   });
 
-  it('should support valid mode values', () => {
+  it('should return only null, sdk, or iframe from getActiveMode', async () => {
     const validModes = ['sdk', 'iframe'];
-    expect(validModes).toContain('sdk');
-    expect(validModes).toContain('iframe');
+    // Before setMode is called the value must be null
+    expect(ModeManager.getActiveMode()).toBeNull();
+    // After setting each valid mode, getActiveMode must reflect it
+    await ModeManager.setMode('sdk');
+    expect(validModes).toContain(ModeManager.getActiveMode());
+    await ModeManager.setMode('iframe');
+    expect(validModes).toContain(ModeManager.getActiveMode());
   });
 });

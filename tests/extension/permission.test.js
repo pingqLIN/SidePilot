@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
 
 /**
  * Permission System Tests
@@ -98,7 +98,7 @@ function createMockSessionManager() {
 
 // -- Helper: 模擬前端 resolvePermission 行為 --
 
-function createFrontendResolver(bridgePort = 31031) {
+function createFrontendResolver() {
   let _currentPermissionId = null;
   let _currentPermissionOptions = [];
   let _selectedOptionId = null;
