@@ -1,15 +1,17 @@
 {
   "name": "sidepilot",
   "version": "1.0.0",
+  "type": "module",
   "description": "SidePilot - Chrome extension with GitHub Copilot integration",
   "scripts": {
-    "test": "jest --no-coverage",
-    "test:watch": "jest --watch --no-coverage",
-    "test:coverage": "jest --coverage"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --no-coverage",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch --no-coverage",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.11",
     "@types/chrome": "^0.0.252",
-    "jest": "^29.7.0"
+    "@types/jest": "^29.5.11",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   }
 }

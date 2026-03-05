@@ -1,4 +1,5 @@
-import * as SDKClient from '../../js/sdk-client.js';
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import * as SDKClient from '../../extension/js/sdk-client.js';
 
 describe('SDK Client Module', () => {
   beforeEach(() => {
