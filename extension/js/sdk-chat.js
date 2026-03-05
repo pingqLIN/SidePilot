@@ -3,7 +3,30 @@
 // Handles SDK mode UI: messaging, streaming, indicators
 // ============================================
 
+'use strict';
+
 let sdkMessages = []; // Chat history
+
+// ============================================
+// Streaming RAF buffer — batch DOM writes per animation frame
+// ============================================
+
+/** @type {WeakMap<HTMLElement, {pending: string, rafId: number|null}>} */
+const streamingBuffers = new WeakMap();
+
+/**
+ * Get or create a streaming buffer entry for the given element.
+ * @param {HTMLElement} msgEl
+ * @returns {{pending: string, rafId: number|null}}
+ */
+function getStreamBuffer(msgEl) {
+  let buf = streamingBuffers.get(msgEl);
+  if (!buf) {
+    buf = { pending: '', rafId: null };
+    streamingBuffers.set(msgEl, buf);
+  }
+  return buf;
+}
 
 /**
  * Switch UI mode between iframe and SDK
@@ -125,16 +148,27 @@ function addStreamingMessage() {
 }
 
 /**
- * Append text chunk to a streaming message
+ * Append text chunk to a streaming message.
+ * Incoming deltas are buffered and flushed to DOM in the next animation frame
+ * to avoid blocking the UI thread during high-speed token streaming.
  * @param {HTMLElement} msgEl
  * @param {string} delta
  */
 function appendToStreamingMessage(msgEl, delta) {
-  const contentEl = msgEl.querySelector('.sdk-message-content');
-  if (contentEl) {
-    contentEl.textContent += delta;
-  }
-  scrollToBottom();
+  const buf = getStreamBuffer(msgEl);
+  buf.pending += delta;
+
+  if (buf.rafId !== null) return; // flush already scheduled
+
+  buf.rafId = requestAnimationFrame(() => {
+    buf.rafId = null;
+    const contentEl = msgEl.querySelector('.sdk-message-content');
+    if (contentEl && buf.pending) {
+      contentEl.textContent += buf.pending;
+      buf.pending = '';
+    }
+    scrollToBottom();
+  });
 }
 
 /**
@@ -160,11 +194,22 @@ function showToolIndicator(msgEl, tool) {
 }
 
 /**
- * Finalize streaming message — set final content and timestamp
+ * Finalize streaming message — flush any buffered delta, set final content and timestamp.
  * @param {HTMLElement} msgEl
  * @param {string} finalContent
  */
 function finalizeStreamingMessage(msgEl, finalContent) {
+  // Cancel any pending RAF flush and apply remaining buffered text now
+  const buf = streamingBuffers.get(msgEl);
+  if (buf) {
+    if (buf.rafId !== null) {
+      cancelAnimationFrame(buf.rafId);
+      buf.rafId = null;
+    }
+    buf.pending = '';
+    streamingBuffers.delete(msgEl);
+  }
+
   msgEl.classList.remove('streaming');
 
   const contentEl = msgEl.querySelector('.sdk-message-content');
