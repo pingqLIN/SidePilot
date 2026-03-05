@@ -32,7 +32,6 @@ describe('Mode Manager Module', () => {
   });
 
   it('should return only null, sdk, or iframe from getActiveMode', async () => {
-    const validModes = ['sdk', 'iframe'];
     // Before setMode is called the value must be null
     expect(ModeManager.getActiveMode()).toBeNull();
     // After setting each valid mode, getActiveMode must reflect it
