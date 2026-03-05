@@ -37,8 +37,8 @@ describe('Mode Manager Module', () => {
     expect(ModeManager.getActiveMode()).toBeNull();
     // After setting each valid mode, getActiveMode must reflect it
     await ModeManager.setMode('sdk');
-    expect(validModes).toContain(ModeManager.getActiveMode());
+    expect(ModeManager.getActiveMode()).toBe('sdk');
     await ModeManager.setMode('iframe');
-    expect(validModes).toContain(ModeManager.getActiveMode());
+    expect(ModeManager.getActiveMode()).toBe('iframe');
   });
 });
