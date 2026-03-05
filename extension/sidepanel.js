@@ -2417,6 +2417,156 @@ function sendEntryToVSCode() {
 
 let _captureHoverTimer = null;
 
+// ============================================
+// WP-01: Permission Modal Logic
+// ============================================
+
+let _currentPermissionId = null;
+
+function connectPermissionSSE() {
+  if (state.permissionSSE) {
+    state.permissionSSE.close();
+    state.permissionSSE = null;
+  }
+  const url = `http://localhost:${SDK_BRIDGE_PORT}/api/permissions/stream`;
+  const sse = new EventSource(url);
+  
+  sse.addEventListener('permission_required', (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      showPermissionModal(data);
+    } catch(err) {
+      console.error('[SidePilot] Failed to parse permission event:', err);
+    }
+  });
+  
+  sse.onerror = () => {
+    sse.close();
+    state.permissionSSE = null;
+    // Auto reconnect later if SDK mode is active
+    setTimeout(() => {
+      if (dom.sdkModeBtn && dom.sdkModeBtn.dataset.status === 'success') {
+        connectPermissionSSE();
+      }
+    }, 5000);
+  };
+  
+  state.permissionSSE = sse;
+}
+
+function showPermissionModal(data) {
+  _currentPermissionId = data.id;
+  
+  if (dom.permissionScope) dom.permissionScope.textContent = data.scope || '未知操作';
+  if (dom.permissionReason) dom.permissionReason.textContent = data.reason || 'Bridge 要求額外權限以執行該操作。';
+  
+  const optionsHtml = (data.options || []).map(opt => 
+    `<label><input type="radio" name="perm_option" value="${escapeHtml(opt.id)}"> ${escapeHtml(opt.title)}</label>`
+  ).join('');
+  
+  if (dom.permissionOptions) {
+    dom.permissionOptions.innerHTML = optionsHtml;
+    const firstInput = dom.permissionOptions.querySelector('input');
+    if (firstInput) firstInput.checked = true;
+  }
+  
+  let remain = 60;
+  if (dom.permissionCountdown) dom.permissionCountdown.textContent = String(remain);
+  if (state.permissionCountdownTimer) clearInterval(state.permissionCountdownTimer);
+  
+  state.permissionCountdownTimer = setInterval(() => {
+    remain--;
+    if (remain <= 0) {
+      resolvePermission('deny');
+    } else {
+      if (dom.permissionCountdown) dom.permissionCountdown.textContent = String(remain);
+    }
+  }, 1000);
+  
+  dom.permissionModal?.classList.remove('hidden');
+}
+
+function hidePermissionModal() {
+  dom.permissionModal?.classList.add('hidden');
+  if (state.permissionCountdownTimer) {
+    clearInterval(state.permissionCountdownTimer);
+    state.permissionCountdownTimer = null;
+  }
+  _currentPermissionId = null;
+}
+
+async function resolvePermission(action) {
+  if (!_currentPermissionId) return;
+  hidePermissionModal();
+  
+  let selectedOptionId;
+  const selectedRadio = dom.permissionOptions?.querySelector('input[name="perm_option"]:checked');
+  if (selectedRadio) {
+    selectedOptionId = selectedRadio.value;
+  }
+  
+  try {
+    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: _currentPermissionId,
+        action,
+        selectedOptionId
+      })
+    });
+  } catch(err) {
+    console.error('[SidePilot] Failed to resolve permission:', err);
+  }
+}
+
+// ============================================
+// WP-07: Prompt Strategy Logic
+// ============================================
+
+async function loadPromptStrategy() {
+  try {
+    const res = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.strategy) {
+        updatePromptStrategyUI(data.strategy);
+      }
+    }
+  } catch(err) {
+    console.warn('[SidePilot] Failed to load prompt strategy:', err);
+  }
+}
+
+async function setPromptStrategy(strategy) {
+  updatePromptStrategyUI(strategy); // optimistic update
+  try {
+    const res = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`輸出精簡模式已切換：${strategy}`);
+    } else {
+      throw new Error(data.error);
+    }
+  } catch(err) {
+    console.error('[SidePilot] Failed to set prompt strategy:', err);
+    loadPromptStrategy(); // revert UI on failure
+    showToast('策略切換失敗', 'error');
+  }
+}
+
+function updatePromptStrategyUI(strategy) {
+  if (!dom.promptStrategyBtns) return;
+  dom.promptStrategyBtns.querySelectorAll('.strategy-btn').forEach(btn => {
+    const isActive = btn.dataset.strategy === strategy;
+    btn.classList.toggle('active', isActive);
+  });
+}
+
 function setupEventListeners() {
   // 底部浮動擷取按鈕
   dom.floatingCaptureBtn?.addEventListener('click', toggleCapturePanel);
