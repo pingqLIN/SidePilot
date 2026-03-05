@@ -1,7 +1,7 @@
 # SidePilot Bridge 自動啟動方案設計（MVP）
 
-> 狀態：Proposed  
-> 日期：2026-03-04  
+> 狀態：Phase 1 Implemented  
+> 日期：2026-03-05  
 > 範圍：Chrome Extension + 本機 Bridge 啟動流程（不改動核心 AI 邏輯）
 
 ---
@@ -185,4 +185,3 @@ SidePilot Extension (SDK tab)
 
 在「不過度開發」前提下，**方案 B** 可用中等成本換取接近自動化體驗，且保留清楚的升級路線（Native Host）。  
 建議先完成 Phase 1，快速降低 SDK 模式的連線摩擦。
-
