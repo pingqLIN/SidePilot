@@ -252,7 +252,7 @@ describe('Permission System', () => {
       });
       const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('/some/path');
-      sm.resolvePermission(permissionId, { outcome: 'selected' });
+      sm.resolvePermission(permissionId, true, 'opt1');
       await permissionPromise;
     });
 
@@ -262,7 +262,7 @@ describe('Permission System', () => {
       });
       const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('unknown');
-      sm.resolvePermission(permissionId, { outcome: 'selected' });
+      sm.resolvePermission(permissionId, true, 'opt1');
       await permissionPromise;
     });
 
