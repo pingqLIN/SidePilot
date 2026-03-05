@@ -257,9 +257,14 @@ export class SessionManager {
     return this.maxHistoryTurns;
   }
 
-  /** 設定最大歷史輪數 */
+  /** 設定最大歷史輪數 (clamps to 1–1000; ignores non-finite values) */
   setMaxHistoryTurns(turns: number): void {
-    this.maxHistoryTurns = Math.max(1, turns);
+    if (!Number.isFinite(turns)) {
+      this.pushLog('warn', `[SessionManager] setMaxHistoryTurns: invalid value ignored: ${turns}`);
+      console.warn('[SessionManager] setMaxHistoryTurns: invalid value ignored:', turns);
+      return;
+    }
+    this.maxHistoryTurns = Math.min(1000, Math.max(1, turns));
   }
 
   /**
