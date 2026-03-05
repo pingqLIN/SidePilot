@@ -1,0 +1,52 @@
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- 對照 Microsoft Agent Framework 文件 vs SidePilot 現況 ┌───────────────────────────────────────┬────────────────────────────────────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────── ───────────┐ │ 官方 SDK 功能 │ SidePilot 現況 │ 最佳化建議 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Model 選擇 (gpt-5, claude-sonnet-4) │ ✅ DEFAULT\_MODELS 硬編碼 + COPILOT\_MODELS env │ 🔶 可新增 gpt-5.2, claude-sonnet-4.5 等新模型；考慮從 CLI --list-models 動態取得 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Streaming (RunStreamingAsync) │ ✅ /api/chat SSE 串流已支援 │ ✅ 已實作 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Session 管理 (多輪對話上下文) │ ✅ createSession + getOrCreateSession │ 🔶 目前 session 存活於子程序，無持久化。可加 session resume 機制 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Permission 處理 │ ⚠️ 自動 approve 第一選項 (selectPermissionOutcome) │ 🔴 安全風險：所有權限請求自動同意。應透傳到前端讓用戶確認，或至少提供白名單設定 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ MCP Server 整合 (stdio/HTTP) │ ❌ 完全未實作 │ 🔴 最大缺口：官方支援 MCP 是重要擴展點。Bridge 可透傳 MCP config 到 CLI session │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Function Tools │ ❌ 未實作自訂工具 │ 🟡 中期：可讓用戶定義簡單工具（如天氣、計算器）注冊到 session │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ 環境變數 (GITHUB\_COPILOT\_CLI\_PATH 等) │ ⚠️ 僅支援 COPILOT\_MODEL / COPILOT\_MODELS │ 🔶 應支援 GITHUB\_COPILOT\_CLI\_PATH（自訂 CLI 路徑）、GITHUB\_COPILOT\_TIMEOUT、GITHUB\_COPILOT\_LOG\_LEVEL │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ Timeout 設定 │ ❌ 無 timeout 控制 │ 🔶 spawn 程序無 timeout，若 CLI 卡死會永遠掛起 │ ├───────────────────────────────────────┼────────────────────────────────────────────────────┼─────────────────────────────────────────────────────────────────────────────────────────── ───────────┤ │ 容器化安全建議 │ ❌ 未考慮 │ 🟡 文件建議 Docker/Dev Container 執行。可在 Settings 加提示 │ └───────────────────────────────────────┴────────────────────────────────────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────── ───────────┘ 優先級排序 🔴 高優先 — 安全與核心缺口： 1. Permission 前端確認 — 目前 selectPermissionOutcome 盲目同意所有權限（shell 執行、檔案操作）。應改為透傳到 sidepanel 彈窗讓用戶 approve/deny 2. Request Timeout — 加入 session-level timeout（如 120s），避免 CLI 卡死時整個 Bridge 掛起 3. MCP Server 配置 — 官方文件的核心擴展能力，可讓 SidePilot 連接任意 MCP 工具 🔶 中優先 — 功能增強： 4. 環境變數完整支援 — GITHUB\_COPILOT\_CLI\_PATH, GITHUB\_COPILOT\_TIMEOUT, GITHUB\_COPILOT\_LOG\_LEVEL 5. Model 列表動態化 — 嘗試從 CLI 查詢可用模型，而非硬編碼 6. Session resume — 斷線後可恢復 session 上下文
+1. 禁用「分塊緩衝」 (Disable Response Buffering)
+許多中介軟體（如 Nginx 或企業防火牆）會為了節省資源而緩衝 HTTP 回應。
+前端解決方案： 在 Chrome 擴充功能的 fetch 請求中，確保沒有使用會導致完整下載才觸發的 Library。
+關鍵 Header： 確保後端回應包含 X-Accel-Buffering: no（針對 Nginx）以及 Cache-Control: no-transform，這能強迫資料即時噴發而不被暫存 MDN: Using SSE。
+2. 優化 DOM 渲染頻率 (RequestAnimationFrame)
+AI 吐字速度極快時，若每個 Token 都觸發一次 React/Vue 的渲染，Chrome 的 UI 執行緒會卡死。
+策略： 使用 Buffer Queue。將收到的字元先存入陣列，並利用 requestAnimationFrame 在瀏覽器下一次重繪前（約 16ms）批次更新 UI，這能讓視覺感受極度流暢。
+3. Windows 特有的網路優化 (TCP Tuning)
+Windows 的 TCP 堆疊有時會為了頻寬效率延遲小封包的傳送（Nagle's Algorithm）。
+實作： 如果你有權限控制後端 Server，請開啟 TCP_NODELAY。
+客戶端： 確保 Windows 的「傳遞最佳化」功能未佔用過多背景頻寬。
+4. 擴充功能架構調整 (Service Worker vs. Content Script)
+建議： 將 SSE 連線放在 Background Service Worker 處理，再透過 chrome.runtime.sendMessage 傳給 Content Script 或 Popup。
+優點： 即使分頁切換或 DOM 結構複雜，Service Worker 的連線背景處理能力較強，能避免因分頁資源被節流 (Throttling) 導致的斷續感。
+5. 繞過 Chrome 限制
+HTTP/2 優先： Chrome 對同一 Domain 的 HTTP/1.1 連線限制為 6 個，若連線過多 SSE 會排隊。強制使用 HTTP/2 可以解除限制並降低標頭開銷 Chrome Developers: HTTP/2。
+
+在 Manifest V3 (MV3) 下，最大的挑戰是 Service Worker (SW) 會自動休眠。若連線在傳輸中途被瀏覽器「斷頭」，就會產生嚴重的 Lag 感或連線中斷。
+針對 MV3 擴充功能優化 SSE 串流效能，請執行以下操作：
+1. 解決 Service Worker 休眠產生的延遲
+MV3 的 SW 在閒置 30 秒後會關閉。若 SSE 連線被掛起，下次喚醒需要時間。
+保活機制 (Keep-alive)： 在 SSE 連線期間，利用 chrome.runtime.connect 建立一個長連接埠 (Port)，或定時發送 chrome.storage.local 更新，強迫 SW 維持活性。
+底層 API： 使用 fetch API 處理串流，而非舊的 EventSource，因為 fetch 在 MV3 環境下對異步處理與記憶體管理更友善。
+2. 使用 ReadableStream 提升「首字感」
+不要等待整個訊息區塊，利用 ReadableStream 實現真正的「邊收邊畫」：
+javascript
+const response = await fetch(url, { ... });
+const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
+
+while (true) {
+  const { value, done } = await reader.read();
+  if (done) break;
+  // 立即透過 sendMessage 傳給前台 UI，不要累積 buffer
+  chrome.runtime.sendMessage({ type: 'CHUNK', data: value });
+}
+請謹慎使用程式碼。
+
+這種做法能繞過 EventSource 在某些 Webpack 封裝下可能產生的解析延遲。 MDN: ReadableStream
+3. 避免 Offscreen Document 的額外開銷
+有些開發者為了規避 SW 休眠會開一個隱藏視窗 (Offscreen Document) 跑 SSE。
+優化建議： 除非你的 SSE 需要處理極大量的數據運算，否則直接在 Service Worker 處理延遲最低。跨環境 (SW ↔ Offscreen) 的訊息傳遞會增加數毫秒的微延遲。
+4. 針對 Windows Chrome 的硬體加速
+Windows 上的 Chrome 擴充介面渲染若卡頓，通常與 GPU 點陣化有關：
+前往 chrome://settings/system 確保「在可用時使用硬體加速」已開啟。
+在擴充功能的 CSS 中，對動態文字容器加上 will-change: contents;，強制瀏覽器優化該區域的渲染路徑。
+5. 減少 Content Script 的阻塞
+若你的擴充功能是直接在網頁上插入 UI：
+確保沒用 MutationObserver 監聽整個 body，這會在你噴出 AI 字元時造成連鎖反應，導致 CPU 飆高。
+使用單一容器掛載 UI，並設定 contain: strict; CSS Layout Containment 以減少重繪範圍。
+您的擴充功能是主要在 Popup 視窗顯示，還是在網頁側邊欄 (Side Panel) 顯示？ 這兩者在 連線持久性 上的優化策略有顯著不同。
+

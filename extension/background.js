@@ -11,39 +11,268 @@ import * as VSCodeConnector from './js/vscode-connector.js';
 // ============================================
 
 const COPILOT_URL = 'https://github.com/copilot';
+const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{16}$/i;
+const SEAL_DIGEST_PATTERN = /^[0-9a-f]{16}$/i;
+const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
+const INTEGRITY_VERIFY_ENDPOINT = 'http://localhost:31031/api/integrity/verify';
+
+const startupGuard = {
+  ready: false,
+  locked: false,
+  enabled: false,
+  reasons: [],
+  checkedAt: 0
+};
+
+const CORE_MODULES = [
+  ['ModeManager', () => ModeManager.init()],
+  ['SDKClient', () => SDKClient.init()],
+  ['RulesManager', () => RulesManager.init()],
+  ['MemoryBank', () => MemoryBank.init()],
+  ['VSCodeConnector', () => VSCodeConnector.init()]
+];
+
+function addStartupGuardFailure(message) {
+  startupGuard.reasons.push(String(message || 'unknown failure'));
+}
+
+function getStartupGuardStatus() {
+  return {
+    ready: startupGuard.ready,
+    locked: startupGuard.locked,
+    enabled: startupGuard.enabled,
+    reasons: [...startupGuard.reasons],
+    checkedAt: startupGuard.checkedAt
+  };
+}
+
+function normalizeSelfIterationSettings(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const digest = typeof source.selfIterationLastSealDigest === 'string'
+    ? source.selfIterationLastSealDigest.trim().toLowerCase()
+    : '';
+
+  return {
+    selfIterationEnabled: source.selfIterationEnabled === true,
+    selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
+    selfIterationLastSealDigest: SEAL_DIGEST_PATTERN.test(digest) ? digest : ''
+  };
+}
+
+async function readSelfIterationSettings() {
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  return normalizeSelfIterationSettings(result?.[SETTINGS_STORAGE_KEY]);
+}
+
+function getManifestSealDigest() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const seal = String(manifest?.version_name || '');
+    const matched = seal.match(SEAL_PATTERN);
+    if (!matched) {
+      return { valid: false, versionName: seal, digest: '' };
+    }
+    const digest = seal.split('+')[1].toLowerCase();
+    return { valid: true, versionName: seal, digest };
+  } catch {
+    return { valid: false, versionName: '', digest: '' };
+  }
+}
+
+async function verifyIntegrityViaBridge(timeoutMs = 7000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(INTEGRITY_VERIFY_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ timeoutMs }),
+      signal: controller.signal
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok || !payload?.success) {
+      return {
+        success: false,
+        error: payload?.error || `HTTP ${response.status}`
+      };
+    }
+    return { success: true };
+  } catch (err) {
+    const error = err?.name === 'AbortError'
+      ? `verify timeout after ${timeoutMs}ms`
+      : (err?.message || String(err));
+    return { success: false, error };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function applyPanelStartupPolicy() {
+  const openPanelOnActionClick = startupGuard.ready && !startupGuard.locked;
+  try {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick });
+  } catch (err) {
+    console.error('Failed to set panel behavior:', err);
+  }
+}
+
+async function initializeCoreModules(strictMode) {
+  for (const [name, initFn] of CORE_MODULES) {
+    try {
+      await initFn();
+    } catch (err) {
+      const message = `${name}.init failed: ${err?.message || err}`;
+      console.error(`[SidePilot] Failed to initialize ${name}:`, err);
+      if (strictMode) {
+        addStartupGuardFailure(message);
+      }
+    }
+  }
+}
+
+async function runStartupGuardChecks() {
+  startupGuard.ready = false;
+  startupGuard.locked = false;
+  startupGuard.enabled = false;
+  startupGuard.reasons = [];
+  startupGuard.checkedAt = Date.now();
+
+  let settings;
+  try {
+    settings = await readSelfIterationSettings();
+  } catch (err) {
+    addStartupGuardFailure(`Cannot read self-iteration settings: ${err?.message || err}`);
+    startupGuard.enabled = true;
+    startupGuard.locked = true;
+    startupGuard.ready = true;
+    startupGuard.checkedAt = Date.now();
+    await applyPanelStartupPolicy();
+    return;
+  }
+
+  const guardEnabled = settings.selfIterationEnabled;
+  startupGuard.enabled = guardEnabled;
+
+  // Core modules should always be initialized; strict failure lock only applies
+  // when self-iteration mode is enabled.
+  await initializeCoreModules(guardEnabled);
+
+  // Self-iteration mode not enabled -> startup guard bypassed (no lock enforcement)
+  if (!guardEnabled) {
+    startupGuard.ready = true;
+    startupGuard.locked = false;
+    startupGuard.checkedAt = Date.now();
+    console.log('[SidePilot] Startup guard BYPASS (self-iteration disabled)');
+    await applyPanelStartupPolicy();
+    return;
+  }
+
+  // Check 1: Manifest seal format
+  const manifestSeal = getManifestSealDigest();
+  if (!manifestSeal.valid) {
+    addStartupGuardFailure(
+      `Manifest version_name seal missing or invalid: "${manifestSeal.versionName || '(empty)'}"`
+    );
+  }
+
+  // Check 2: self-iteration must complete first seal
+  if (!settings.selfIterationFirstSealDone) {
+    addStartupGuardFailure('selfIterationFirstSealDone must be true when self-iteration is enabled');
+  }
+
+  if (!settings.selfIterationLastSealDigest) {
+    addStartupGuardFailure('selfIterationLastSealDigest missing when self-iteration is enabled');
+  }
+
+  // Check 3: persisted digest should match current manifest digest
+  if (
+    settings.selfIterationLastSealDigest &&
+    manifestSeal.digest &&
+    settings.selfIterationLastSealDigest !== manifestSeal.digest
+  ) {
+    addStartupGuardFailure(
+      `Seal digest mismatch: settings=${settings.selfIterationLastSealDigest}, manifest=${manifestSeal.digest}`
+    );
+  }
+
+  // Check 4: external integrity verifier (bridge script)
+  const verifyResult = await verifyIntegrityViaBridge();
+  if (!verifyResult.success) {
+    addStartupGuardFailure(`External integrity verify failed: ${verifyResult.error}`);
+  }
+
+  startupGuard.locked = startupGuard.reasons.length > 0;
+  startupGuard.ready = true;
+
+  if (startupGuard.locked) {
+    console.error('[SidePilot] Startup guard LOCKED', startupGuard.reasons);
+  } else {
+    console.log('[SidePilot] Startup guard PASS');
+  }
+
+  await applyPanelStartupPolicy();
+}
 
 // ============================================
-// Initialize Modules
+// Startup Guard
 // ============================================
 
-ModeManager.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize ModeManager:', err)
-);
+runStartupGuardChecks().catch(async (err) => {
+  addStartupGuardFailure(`startup guard unexpected error: ${err?.message || err}`);
+  startupGuard.locked = true;
+  startupGuard.ready = true;
+  startupGuard.enabled = true;
+  startupGuard.checkedAt = Date.now();
+  console.error('[SidePilot] Startup guard crashed:', err);
+  await applyPanelStartupPolicy();
+});
 
-SDKClient.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize SDKClient:', err)
-);
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+  const settingsChange = changes?.[SETTINGS_STORAGE_KEY];
+  if (!settingsChange) return;
 
-RulesManager.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize RulesManager:', err)
-);
+  const oldSettings = normalizeSelfIterationSettings(settingsChange.oldValue);
+  const newSettings = normalizeSelfIterationSettings(settingsChange.newValue);
+  const enabledChanged = oldSettings.selfIterationEnabled !== newSettings.selfIterationEnabled;
+  const sealStateChanged =
+    oldSettings.selfIterationFirstSealDone !== newSettings.selfIterationFirstSealDone ||
+    oldSettings.selfIterationLastSealDigest !== newSettings.selfIterationLastSealDigest;
 
-MemoryBank.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize MemoryBank:', err)
-);
+  if (!enabledChanged && !(newSettings.selfIterationEnabled && sealStateChanged)) {
+    return;
+  }
 
-VSCodeConnector.init().catch(err => 
-  console.error('[SidePilot] Failed to initialize VSCodeConnector:', err)
-);
+  runStartupGuardChecks().catch(async (err) => {
+    addStartupGuardFailure(`startup guard refresh error: ${err?.message || err}`);
+    startupGuard.locked = true;
+    startupGuard.ready = true;
+    startupGuard.enabled = true;
+    startupGuard.checkedAt = Date.now();
+    console.error('[SidePilot] Startup guard refresh crashed:', err);
+    await applyPanelStartupPolicy();
+  });
+});
 
 // ============================================
 // Side Panel 控制
 // ============================================
 
-chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+// Default deny until startup guard completes
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false })
   .catch(err => console.error('Failed to set panel behavior:', err));
 
 chrome.action.onClicked.addListener(async (tab) => {
+  if (!startupGuard.ready) {
+    console.warn('[SidePilot] Startup guard is still running. Panel open blocked.');
+    return;
+  }
+  if (startupGuard.locked) {
+    console.error('[SidePilot] Startup guard locked. Panel open blocked.');
+    return;
+  }
+
   try {
     await chrome.sidePanel.open({ tabId: tab.id });
   } catch (err) {
@@ -56,21 +285,68 @@ chrome.action.onClicked.addListener(async (tab) => {
 // ============================================
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  switch (message.action) {
+  const action = message?.action;
+
+  if (action === 'startupGuardStatus') {
+    sendResponse({
+      success: !startupGuard.locked,
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  if (action === 'startupGuardRefresh') {
+    runStartupGuardChecks()
+      .then(() => {
+        sendResponse({ success: !startupGuard.locked, guard: getStartupGuardStatus() });
+      })
+      .catch((err) => {
+        sendResponse({
+          success: false,
+          error: err?.message || String(err),
+          guard: getStartupGuardStatus()
+        });
+      });
+    return true;
+  }
+
+  if (!startupGuard.ready) {
+    sendResponse({
+      success: false,
+      error: 'STARTUP_GUARD_PENDING',
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  if (startupGuard.locked) {
+    sendResponse({
+      success: false,
+      error: 'STARTUP_GUARD_LOCKED',
+      guard: getStartupGuardStatus()
+    });
+    return false;
+  }
+
+  switch (action) {
     case 'getPageContent':
-      handleGetPageContent(sendResponse);
+      handleGetPageContent(message, sendResponse);
       return true;
 
     case 'getSelectedText':
-      handleGetSelectedText(sendResponse);
+      handleGetSelectedText(message, sendResponse);
       return true;
 
     case 'captureVisibleScreenshot':
-      handleCaptureVisibleScreenshot(sendResponse);
+      handleCaptureVisibleScreenshot(message, sendResponse);
       return true;
 
     case 'capturePartialScreenshot':
-      handleCapturePartialScreenshot(sendResponse);
+      handleCapturePartialScreenshot(message, sendResponse);
+      return true;
+
+    case 'captureFullPageScreenshot':
+      handleCaptureFullPageScreenshot(message, sendResponse);
       return true;
 
     case 'openCopilotWindow':
@@ -114,11 +390,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ success: true });
       return false;
 
-    case 'sdkResetSession':
-      SDKClient.resetSession();
-      sendResponse({ success: true });
-      return false;
-
     case 'sdkSend':
       SDKClient.sendMessage(message.data).then(response => {
         sendResponse({ success: true, data: response });
@@ -134,22 +405,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'sdkModels':
       SDKClient.listModels().then(models => {
         sendResponse({ success: true, models });
-      }).catch(err => {
-        sendResponse({ success: false, error: err.message });
-      });
-      return true;
-
-    case 'sdkConfig.get':
-      SDKClient.getConfig().then(result => {
-        sendResponse({ success: true, ...result });
-      }).catch(err => {
-        sendResponse({ success: false, error: err.message });
-      });
-      return true;
-
-    case 'sdkConfig.update':
-      SDKClient.updateConfig(message.patch || {}).then(result => {
-        sendResponse({ success: true, ...result });
       }).catch(err => {
         sendResponse({ success: false, error: err.message });
       });
@@ -287,10 +542,25 @@ async function handleBridgeHealth(message, sendResponse) {
   }
 }
 
+// ============================================
+// Capture Tab Helper
+// ============================================
+
+async function getCaptureTab(message) {
+  let tabs;
+  if (message?.windowId) {
+    tabs = await chrome.tabs.query({ active: true, windowId: message.windowId });
+  }
+  if (!tabs || tabs.length === 0) {
+    tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  }
+  return tabs[0] || null;
+}
+
 // 取得頁面內容
-async function handleGetPageContent(sendResponse) {
+async function handleGetPageContent(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab) {
       sendResponse({ success: false, error: '找不到使用中的分頁' });
@@ -307,6 +577,16 @@ async function handleGetPageContent(sendResponse) {
         pageInfo: { title: tab.title, url: url }
       });
       return;
+    }
+
+    // Inject vendor bundle (Defuddle + Turndown) then extract content
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['js/vendor-content-cleaner.js']
+      });
+    } catch {
+      // Vendor injection may fail on some pages; fall back to basic extraction
     }
 
     const results = await chrome.scripting.executeScript({
@@ -326,9 +606,9 @@ async function handleGetPageContent(sendResponse) {
 }
 
 // 取得選取文字
-async function handleGetSelectedText(sendResponse) {
+async function handleGetSelectedText(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, selectedText: '' });
@@ -350,9 +630,9 @@ async function handleGetSelectedText(sendResponse) {
 }
 
 // 擷取可見範圍截圖
-async function handleCaptureVisibleScreenshot(sendResponse) {
+async function handleCaptureVisibleScreenshot(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
@@ -367,9 +647,9 @@ async function handleCaptureVisibleScreenshot(sendResponse) {
 }
 
 // 擷取部分截圖（選取區域）
-async function handleCapturePartialScreenshot(sendResponse) {
+async function handleCapturePartialScreenshot(message, sendResponse) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const tab = await getCaptureTab(message);
 
     if (!tab || isRestrictedUrl(tab.url)) {
       sendResponse({ success: false, error: '無法在此頁面擷取截圖' });
@@ -390,6 +670,185 @@ async function handleCapturePartialScreenshot(sendResponse) {
     const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
     const croppedUrl = await cropImageDataUrl(dataUrl, region);
     sendResponse({ success: true, dataUrl: croppedUrl });
+  } catch (err) {
+    sendResponse({ success: false, error: err.message });
+  }
+}
+
+// 整頁截圖（scroll-and-stitch）
+async function handleCaptureFullPageScreenshot(message, sendResponse) {
+  const CAPTURE_DELAY = 350;
+  const MAX_STEPS = 50;
+  const FIXED_HIDE_CLASS = '__sidepilot_hide_fixed__';
+
+  try {
+    const tab = await getCaptureTab(message);
+
+    if (!tab || isRestrictedUrl(tab.url)) {
+      sendResponse({ success: false, error: '無法在此頁面擷取整頁截圖' });
+      return;
+    }
+
+    // 1. Get page dimensions, force instant scroll, and hide fixed/sticky elements
+    const dimResults = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: (hideClass) => {
+        const orig = document.documentElement.style.scrollBehavior;
+        document.documentElement.style.scrollBehavior = 'auto';
+
+        // Inject a style rule to hide position:fixed and position:sticky elements
+        const style = document.createElement('style');
+        style.id = hideClass;
+        style.textContent = `.${hideClass} { visibility: hidden !important; }`;
+        document.head.appendChild(style);
+
+        // Find and mark all fixed/sticky elements
+        const allEls = document.querySelectorAll('*');
+        let hiddenCount = 0;
+        for (const el of allEls) {
+          const cs = window.getComputedStyle(el);
+          if (cs.position === 'fixed' || cs.position === 'sticky') {
+            el.classList.add(hideClass);
+            hiddenCount++;
+          }
+        }
+
+        return {
+          fullHeight: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight),
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth,
+          scrollY: window.scrollY,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          origScrollBehavior: orig || '',
+          hiddenCount
+        };
+      },
+      args: [FIXED_HIDE_CLASS]
+    });
+
+    const dims = dimResults?.[0]?.result;
+    if (!dims) {
+      sendResponse({ success: false, error: '無法取得頁面尺寸' });
+      return;
+    }
+
+    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr, origScrollBehavior } = dims;
+
+    if (fullHeight <= viewportHeight) {
+      // Page fits in one viewport — restore and capture once
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: (hideClass, scrollBehavior) => {
+          try {
+            document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+            document.getElementById(hideClass)?.remove();
+          } finally {
+            document.documentElement.style.scrollBehavior = scrollBehavior || '';
+          }
+        },
+        args: [FIXED_HIDE_CLASS, origScrollBehavior]
+      });
+      const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+      sendResponse({ success: true, dataUrl });
+      return;
+    }
+
+    // 2. Calculate scroll positions — sequential, non-overlapping except last strip
+    const maxScrollY = fullHeight - viewportHeight;
+    const scrollPositions = [];
+    for (let y = 0; y < maxScrollY; y += viewportHeight) {
+      scrollPositions.push(y);
+    }
+    scrollPositions.push(maxScrollY);
+
+    if (scrollPositions.length > MAX_STEPS) {
+      scrollPositions.length = MAX_STEPS;
+    }
+
+    // 3. Scroll-and-capture loop (fixed/sticky elements are already hidden)
+    const captures = [];
+    for (let i = 0; i < scrollPositions.length; i++) {
+      const targetY = scrollPositions[i];
+
+      const scrollResults = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        function: (y) => {
+          window.scrollTo({ top: y, behavior: 'instant' });
+          return window.scrollY;
+        },
+        args: [targetY]
+      });
+
+      const actualScrollY = scrollResults?.[0]?.result ?? targetY;
+      await new Promise(r => setTimeout(r, CAPTURE_DELAY));
+
+      const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+      captures.push({ dataUrl, scrollY: actualScrollY, index: i });
+    }
+
+    // 4. Restore: unhide fixed/sticky elements, scroll position, scroll behavior
+    await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      function: (y, origBehavior, hideClass) => {
+        document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+        document.getElementById(hideClass)?.remove();
+        window.scrollTo({ top: y, behavior: 'instant' });
+        document.documentElement.style.scrollBehavior = origBehavior;
+      },
+      args: [origScrollY, dims.origScrollBehavior, FIXED_HIDE_CLASS]
+    });
+
+    // 5. Deduplicate by rounded scrollY, keep order
+    const uniqueCaptures = [];
+    const seenY = new Set();
+    for (const cap of captures) {
+      const key = Math.round(cap.scrollY);
+      if (!seenY.has(key)) {
+        seenY.add(key);
+        uniqueCaptures.push(cap);
+      }
+    }
+
+    uniqueCaptures.sort((a, b) => a.scrollY - b.scrollY);
+
+    // 6. Stitch on OffscreenCanvas
+    const canvasW = Math.round(dims.viewportWidth * dpr);
+    const canvasH = Math.round(fullHeight * dpr);
+    const canvas = new OffscreenCanvas(canvasW, canvasH);
+    const ctx = canvas.getContext('2d');
+
+    for (let i = 0; i < uniqueCaptures.length; i++) {
+      const resp = await fetch(uniqueCaptures[i].dataUrl);
+      const blob = await resp.blob();
+      const bitmap = await createImageBitmap(blob);
+
+      const drawY = Math.round(uniqueCaptures[i].scrollY * dpr);
+      const nextDrawY = (i < uniqueCaptures.length - 1)
+        ? Math.round(uniqueCaptures[i + 1].scrollY * dpr)
+        : canvasH;
+
+      const stripH = Math.min(bitmap.height, nextDrawY - drawY);
+
+      if (i === uniqueCaptures.length - 1) {
+        // Last strip: align bottom of bitmap to bottom of canvas
+        const remaining = canvasH - drawY;
+        if (remaining > 0 && remaining < bitmap.height) {
+          const srcY = bitmap.height - remaining;
+          ctx.drawImage(bitmap, 0, srcY, bitmap.width, remaining, 0, drawY, bitmap.width, remaining);
+        } else {
+          ctx.drawImage(bitmap, 0, drawY);
+        }
+      } else if (stripH > 0) {
+        ctx.drawImage(bitmap, 0, 0, bitmap.width, stripH, 0, drawY, bitmap.width, stripH);
+      }
+
+      bitmap.close();
+    }
+
+    const stitchedBlob = await canvas.convertToBlob({ type: 'image/png' });
+    const buffer = await stitchedBlob.arrayBuffer();
+    const base64 = arrayBufferToBase64(buffer);
+    sendResponse({ success: true, dataUrl: `data:image/png;base64,${base64}` });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
   }
@@ -622,16 +1081,99 @@ function extractPageContent() {
     title: document.title || '',
     url: window.location.href,
     text: '',
+    markdown: '',
     paragraphs: [],
     wordCount: 0,
     charCount: 0,
     headings: [],
     codeBlocks: [],
-    meta: {}
+    meta: {},
+    extractor: 'basic'
   };
 
   try {
-    // 主要內容選擇器
+    // Try Defuddle + Turndown for high-quality extraction
+    if (typeof __SidePilotVendor !== 'undefined' && __SidePilotVendor.Defuddle) {
+      try {
+        const Defuddle = __SidePilotVendor.Defuddle;
+        const TurndownService = __SidePilotVendor.TurndownService;
+
+        const defuddled = new Defuddle(document).parse();
+
+        content.title = defuddled.title || content.title;
+        content.extractor = 'defuddle';
+
+        if (defuddled.author) content.meta.author = defuddled.author;
+        if (defuddled.description) content.meta.description = defuddled.description;
+        if (defuddled.site) content.meta.site = defuddled.site;
+        if (defuddled.published) content.meta.published = defuddled.published;
+        if (defuddled.wordCount) content.wordCount = defuddled.wordCount;
+
+        // Convert cleaned HTML to Markdown
+        if (defuddled.content && TurndownService) {
+          const td = new TurndownService({
+            headingStyle: 'atx',
+            codeBlockStyle: 'fenced',
+            bulletListMarker: '-',
+          });
+          // Skip images to save tokens
+          td.addRule('skipImages', {
+            filter: 'img',
+            replacement: () => ''
+          });
+          const md = td.turndown(defuddled.content);
+          content.markdown = md.substring(0, 15000);
+          content.text = md.substring(0, 12000);
+        } else if (defuddled.content) {
+          // Turndown unavailable — strip HTML tags for plain text
+          const div = document.createElement('div');
+          div.innerHTML = defuddled.content;
+          content.text = (div.innerText || '').replace(/[\t ]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().substring(0, 12000);
+        }
+
+        content.charCount = content.text ? content.text.replace(/\s+/g, '').length : 0;
+        if (!content.wordCount) {
+          content.wordCount = content.text ? content.text.split(/\s+/).length : 0;
+        }
+
+        // Extract paragraphs from markdown
+        if (content.markdown) {
+          content.paragraphs = content.markdown.split(/\n{2,}/).filter(p => p.trim().length > 20).slice(0, 120);
+        }
+
+        // Extract headings from markdown
+        const headingRe = /^(#{1,4})\s+(.+)$/gm;
+        let hMatch;
+        while ((hMatch = headingRe.exec(content.markdown)) !== null && content.headings.length < 20) {
+          content.headings.push({ level: `H${hMatch[1].length}`, text: hMatch[2].trim() });
+        }
+
+        // Extract code blocks from markdown
+        const codeRe = /```(\w*)\n([\s\S]*?)```/g;
+        let cMatch;
+        while ((cMatch = codeRe.exec(content.markdown)) !== null && content.codeBlocks.length < 5) {
+          if (cMatch[2].trim().length > 10) {
+            content.codeBlocks.push({ language: cMatch[1] || 'plaintext', code: cMatch[2].trim() });
+          }
+        }
+
+        // Fill remaining meta from document
+        document.querySelectorAll('meta[name], meta[property]').forEach(meta => {
+          const name = meta.getAttribute('name') || meta.getAttribute('property');
+          const value = meta.getAttribute('content');
+          if (name && value && ['description', 'keywords', 'og:title', 'og:description'].includes(name) && !content.meta[name]) {
+            content.meta[name] = value.substring(0, 300);
+          }
+        });
+
+        return content;
+      } catch (defuddleErr) {
+        console.warn('[SidePilot] Defuddle extraction failed, falling back:', defuddleErr);
+        content.extractor = 'basic-fallback';
+      }
+    }
+
+    // Fallback: basic extraction (original logic)
     const mainSelectors = [
       'main', 'article', '[role="main"]',
       '.content', '#content', '.main',
@@ -646,7 +1188,6 @@ function extractPageContent() {
     }
     mainContent = mainContent || document.body;
 
-    // 複製並清理內容
     const clone = mainContent.cloneNode(true);
     const removeSelectors = [
       'script', 'style', 'nav', 'footer', 'header',
@@ -719,7 +1260,6 @@ function extractPageContent() {
       if (text && text.length > 10 && text.length < 5000 && !seenCode.has(text)) {
         seenCode.add(text);
 
-        // 偵測語言
         const classNames = (code.className || '') + ' ' + (code.parentElement?.className || '');
         const langMatch = classNames.match(/language-(\w+)|lang-(\w+)/);
         const language = langMatch?.[1] || langMatch?.[2] || 'plaintext';

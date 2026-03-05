@@ -1,15 +1,26 @@
 {
   "name": "sidepilot",
-  "version": "1.0.0",
+  "version": "0.5.0",
+  "type": "module",
   "description": "SidePilot - Chrome extension with GitHub Copilot integration",
   "scripts": {
-    "test": "jest --no-coverage",
-    "test:watch": "jest --watch --no-coverage",
-    "test:coverage": "jest --coverage"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --no-coverage",
+    "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch --no-coverage",
+    "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --coverage",
+    "build:vendor": "node scripts/build-vendor.mjs",
+    "version:bump": "node scripts/bump-version.mjs",
+    "integrity:seal": "node scripts/seal-integrity.mjs",
+    "integrity:verify": "node scripts/verify-integrity.mjs",
+    "control:verify": "node scripts/verify-control-plane.mjs",
+    "basw:verify": "npm run integrity:verify && npm run control:verify"
   },
   "devDependencies": {
-    "@types/jest": "^29.5.11",
     "@types/chrome": "^0.0.252",
-    "jest": "^29.7.0"
+    "@types/jest": "^29.5.11",
+    "defuddle": "^0.8.0",
+    "esbuild": "^0.27.3",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "turndown": "^7.2.2"
   }
 }

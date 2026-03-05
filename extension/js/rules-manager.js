@@ -10,10 +10,17 @@ import * as StorageManager from './storage-manager.js';
 const STORAGE_KEYS = {
   CONTENT: 'rules.content',
   LAST_MODIFIED: 'rules.lastModified',
-  VERSION: 'rules.version'
+  VERSION: 'rules.version',
+  TEMPLATE_ID: 'rules.templateId',
+  SEED_VERSION: 'rules.seedVersion',
+  SOURCE: 'rules.source'
 };
 
 const EXPORT_FILENAME = 'copilot-instructions.md';
+const DEFAULT_TEMPLATE_ID = 'default';
+const RULES_SEED_VERSION = 1;
+const RULES_SOURCE_SYSTEM_BASELINE = 'system_baseline';
+const RULES_SOURCE_USER = 'user';
 
 // ============================================
 // Module State
@@ -43,6 +50,24 @@ const TEMPLATES = {
     name: 'React',
     description: 'React component guidelines',
     path: 'templates/react-rules.md'
+  },
+  'self-iteration': {
+    id: 'self-iteration',
+    name: '🔄 自我疊代',
+    description: 'AI 主動建議記憶與規則更新',
+    path: 'templates/self-iteration-rules.md'
+  },
+  'extension-dev': {
+    id: 'extension-dev',
+    name: '🧩 擴充開發',
+    description: 'SidePilot 擴充端開發慣例',
+    path: 'templates/extension-dev-rules.md'
+  },
+  safety: {
+    id: 'safety',
+    name: '🛡️ 絕對安全',
+    description: '最嚴格的安全與變更控制',
+    path: 'templates/safety-rules.md'
   }
 };
 
@@ -79,6 +104,55 @@ async function loadTemplateContent(templatePath) {
     console.error('[RulesManager] Failed to load template:', templatePath, err);
     throw err;
   }
+}
+
+async function markSeedVersion(version = RULES_SEED_VERSION) {
+  await StorageManager.save(STORAGE_KEYS.SEED_VERSION, version);
+}
+
+function normalizeRulesSource(source) {
+  return source === RULES_SOURCE_SYSTEM_BASELINE
+    ? RULES_SOURCE_SYSTEM_BASELINE
+    : RULES_SOURCE_USER;
+}
+
+/**
+ * Seed default rules once when extension is first used.
+ * - If user already has content, only mark seed version.
+ * - If content is empty, apply default template as baseline.
+ */
+async function ensureDefaultRulesSeed() {
+  const [seedVersionRaw, currentContent] = await Promise.all([
+    StorageManager.load(STORAGE_KEYS.SEED_VERSION),
+    StorageManager.load(STORAGE_KEYS.CONTENT)
+  ]);
+
+  const seedVersion = Number(seedVersionRaw) || 0;
+  if (seedVersion >= RULES_SEED_VERSION) {
+    return;
+  }
+
+  const hasExistingRules = typeof currentContent === 'string' && currentContent.trim().length > 0;
+  if (hasExistingRules) {
+    await markSeedVersion();
+    return;
+  }
+
+  const defaultTemplate = TEMPLATES[DEFAULT_TEMPLATE_ID];
+  if (!defaultTemplate) {
+    throw new Error(`Default template missing: ${DEFAULT_TEMPLATE_ID}`);
+  }
+
+  const defaultContent = await loadTemplateContent(defaultTemplate.path);
+  const saved = await saveRules(defaultContent, {
+    source: RULES_SOURCE_SYSTEM_BASELINE,
+    templateId: DEFAULT_TEMPLATE_ID
+  });
+  if (!saved) {
+    throw new Error('Failed to seed default rules');
+  }
+
+  await markSeedVersion();
 }
 
 /**
@@ -124,6 +198,12 @@ async function init() {
       await StorageManager.init();
     }
 
+    try {
+      await ensureDefaultRulesSeed();
+    } catch (seedErr) {
+      console.warn('[RulesManager] Default rules seed skipped:', seedErr?.message || seedErr);
+    }
+
     initialized = true;
   } catch (err) {
     console.error('[RulesManager] Init failed:', err);
@@ -152,20 +232,29 @@ function getStatus() {
 /**
  * Save rules content to storage.
  * @param {string} content - Rules content
+ * @param {{source?: string, templateId?: string}} [options] - Save metadata
  * @returns {Promise<boolean>} - True on success
  */
-async function saveRules(content) {
+async function saveRules(content, options = {}) {
   try {
     // Get current version
     const currentVersion = await StorageManager.load(STORAGE_KEYS.VERSION) || 0;
     const newVersion = currentVersion + 1;
+    const source = normalizeRulesSource(options?.source);
+    const templateId = typeof options?.templateId === 'string' && options.templateId.trim().length > 0
+      ? options.templateId.trim()
+      : 'custom';
 
     // Save all fields
-    const contentSaved = await StorageManager.save(STORAGE_KEYS.CONTENT, content);
-    const timestampSaved = await StorageManager.save(STORAGE_KEYS.LAST_MODIFIED, Date.now());
-    const versionSaved = await StorageManager.save(STORAGE_KEYS.VERSION, newVersion);
+    const [contentSaved, timestampSaved, versionSaved, sourceSaved, templateSaved] = await Promise.all([
+      StorageManager.save(STORAGE_KEYS.CONTENT, content),
+      StorageManager.save(STORAGE_KEYS.LAST_MODIFIED, Date.now()),
+      StorageManager.save(STORAGE_KEYS.VERSION, newVersion),
+      StorageManager.save(STORAGE_KEYS.SOURCE, source),
+      StorageManager.save(STORAGE_KEYS.TEMPLATE_ID, templateId)
+    ]);
 
-    return contentSaved && timestampSaved && versionSaved;
+    return contentSaved && timestampSaved && versionSaved && sourceSaved && templateSaved;
   } catch (err) {
     console.error('[RulesManager] Failed to save rules:', err);
     return false;
@@ -174,27 +263,33 @@ async function saveRules(content) {
 
 /**
  * Load rules from storage.
- * @returns {Promise<{content: string|null, lastModified: number|null, version: number|null}>}
+ * @returns {Promise<{content: string|null, lastModified: number|null, version: number|null, templateId: string|null, source: string}>}
  */
 async function loadRules() {
   try {
-    const [content, lastModified, version] = await Promise.all([
+    const [content, lastModified, version, templateId, source] = await Promise.all([
       StorageManager.load(STORAGE_KEYS.CONTENT),
       StorageManager.load(STORAGE_KEYS.LAST_MODIFIED),
-      StorageManager.load(STORAGE_KEYS.VERSION)
+      StorageManager.load(STORAGE_KEYS.VERSION),
+      StorageManager.load(STORAGE_KEYS.TEMPLATE_ID),
+      StorageManager.load(STORAGE_KEYS.SOURCE)
     ]);
 
     return {
       content,
       lastModified,
-      version
+      version,
+      templateId: typeof templateId === 'string' && templateId.trim().length > 0 ? templateId.trim() : null,
+      source: normalizeRulesSource(source)
     };
   } catch (err) {
     console.error('[RulesManager] Failed to load rules:', err);
     return {
       content: null,
       lastModified: null,
-      version: null
+      version: null,
+      templateId: null,
+      source: RULES_SOURCE_USER
     };
   }
 }
@@ -304,7 +399,10 @@ async function applyTemplate(templateId) {
     }
 
     const content = await loadTemplateContent(template.path);
-    const saved = await saveRules(content);
+    const saved = await saveRules(content, {
+      source: RULES_SOURCE_USER,
+      templateId
+    });
 
     if (!saved) {
       return { success: false, error: 'Failed to save template content' };

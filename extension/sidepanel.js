@@ -6,26 +6,96 @@
 
 const STORAGE_KEY = 'copilot_sidepanel_welcomed';
 const STORAGE_KEY_DECLINED = 'copilot_sidepanel_declined';
+const STORAGE_KEY_SDK_ASSISTANT_ONLY = 'sidepilot_sdk_assistant_only';
 const STORAGE_KEY_SDK_MODEL = 'sidepilot_sdk_model';
 const STORAGE_KEY_SDK_LOGIN_GUIDE_SHOWN = 'sidepilot_sdk_login_guide_shown';
+const STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT = 'sidepilot_sdk_input_container_height';
 const FRAME_LOAD_TIMEOUT = 15000;
 const MEMORY_PROMPT_MAX_ENTRIES = 5;
 const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
 const MEMORY_PROMPT_MAX_ENTRY_CONTENT = 700;
 const RULES_PROMPT_MAX_LENGTH = 2200;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
-const SETTINGS_AUTOSAVE_DELAY = 600;
 const SDK_LOGIN_URL = 'https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot';
 const SDK_BRIDGE_PORT = 31031;
 const COPILOT_HOME_URL = 'https://github.com/copilot';
 const DEFAULT_CAPTURE_BUTTON_WIDTH = 42;
 const BRIDGE_WORKDIR_HINT = 'C:\\Dev\\Projects\\SidePilot\\scripts\\copilot-bridge';
-const SDK_SESSION_STATE_PATH_HINT = 'C:\\Users\\miles\\.copilot\\session-state\\';
-const DEFAULT_CHAT_SAVE_PATH = 'C:\\Users\\miles\\copilot\\chat-exports\\';
-const DEFAULT_SCREENSHOT_SAVE_PATH = 'C:\\Users\\miles\\copilot\\screenshots\\';
 const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
-const SETTINGS_TOOLTIP_DELAY_MS = 800;
+const LOG_STORAGE_KEY = 'sidepilot.logs.v1';
+const LOG_MAX_ENTRIES = 300;
+const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
+const SDK_INPUT_CONTAINER_MIN_HEIGHT = 120;
+const SDK_INPUT_CONTAINER_DEFAULT_SCALE = 1.5;
+const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
+
+// ── SidePilot 自述 (System Identity) ──
+const SIDEPILOT_SYSTEM_IDENTITY = {
+  id: '__sidepilot_system__',
+  type: 'system',
+  title: 'SidePilot — Extension Self-Description',
+  content: [
+    '【自我認知】',
+    'SidePilot 是一個 Chrome 擴充功能側邊面板 AI 助手。',
+    '我運行在瀏覽器 Side Panel 中，透過 SDK Bridge（localhost:31031）與 GitHub Copilot CLI 通訊。',
+    '',
+    '【目標任務】',
+    '• 提供即時 AI 對話（SDK 模式：直接 API / iframe 模式：嵌入 Copilot UI）',
+    '• 擷取當前頁面內容（文字、可見截圖、整頁截圖、區域截圖）',
+    '• 管理記憶庫（Memory Bank）：儲存 task / note / context / reference 條目',
+    '• 管理規則（Rules）：自訂 Instructions 注入對話',
+    '• 結構化輸出：使用 sidepilot_packet / assistant_response 協議',
+    '',
+    '【所在環境】',
+    '• Chrome Extension Manifest V3, Side Panel API',
+    '• Background Service Worker + Content Script (link-guard)',
+    '• SDK Bridge: Node.js 本機服務 (port 31031), 橋接 GitHub Copilot CLI',
+    '',
+    '【具備工具】',
+    '• 頁面擷取：文字提取、可見範圍截圖、整頁滾動拼接截圖、區域選取截圖',
+    '• 記憶系統：CRUD、搜尋、相關性評分、自動注入 Prompt',
+    '• 規則引擎：自訂規則模板、即時載入注入',
+    '• 對話格式：Context 開關（Memory / Rules / System / Structured Output）',
+    '• 歷史紀錄：按日期分檔、按 Session 分組、標籤分類',
+    '• 即時 Log：Bridge SSE 串流、等級過濾、搜尋',
+    '',
+    '【權限】',
+    'sidePanel, activeTab, scripting, tabs, storage, downloads,',
+    'declarativeNetRequest (CSP bypass for github.com)',
+  ].join('\n'),
+  status: null,
+  updatedAt: Date.now(),
+  pinned: true
+};
+const IDENTITY_STORAGE_KEY = 'sidepilot.identity.template.v1';
+
+// Identity module tokens — auto-resolved at save time
+const IDENTITY_MODULES = [
+  { token: '{{BROWSER}}',       label: '🌐 瀏覽器',     resolve: () => `${navigator.userAgent.match(/Chrome\/[\d.]+/)?.[0] || 'Chrome'} (${navigator.platform})` },
+  { token: '{{BRIDGE_PORT}}',   label: '🔌 Bridge Port', resolve: () => String(SDK_BRIDGE_PORT) },
+  { token: '{{BRIDGE_URL}}',    label: '🔗 Bridge URL',  resolve: () => `http://localhost:${SDK_BRIDGE_PORT}` },
+  { token: '{{EXTENSION_ID}}',  label: '🆔 Extension ID', resolve: () => chrome.runtime?.id || 'unknown' },
+  { token: '{{EXT_VERSION}}',   label: '📦 版本',        resolve: () => chrome.runtime?.getManifest?.()?.version || '1.0.0' },
+  { token: '{{MANIFEST_V}}',    label: '📋 Manifest',    resolve: () => `MV${chrome.runtime?.getManifest?.()?.manifest_version || 3}` },
+  { token: '{{STORAGE_PATH}}',  label: '💾 儲存位置',    resolve: () => 'chrome.storage.local (Extension sandbox)' },
+  { token: '{{BRIDGE_DIR}}',    label: '📁 Bridge 路徑', resolve: () => BRIDGE_WORKDIR_HINT },
+  { token: '{{PERMISSIONS}}',   label: '🔐 權限',        resolve: () => (chrome.runtime?.getManifest?.()?.permissions || []).join(', ') },
+  { token: '{{LANG}}',          label: '🌍 語系',        resolve: () => navigator.language || 'zh-TW' },
+  { token: '{{SCREEN}}',        label: '🖥️ 螢幕',       resolve: () => `${screen.width}×${screen.height} @${devicePixelRatio}x` },
+  { token: '{{TIMESTAMP}}',     label: '🕐 時間戳',      resolve: () => new Date().toISOString() },
+];
+
+function resolveIdentityTokens(template) {
+  let result = template;
+  for (const mod of IDENTITY_MODULES) {
+    if (result.includes(mod.token)) {
+      try { result = result.replaceAll(mod.token, mod.resolve()); } catch { /* skip */ }
+    }
+  }
+  return result;
+}
+
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
   `You are running inside ${SIDEPILOT_SANDBOX_SCHEMA}.`,
   'For each response, output exactly 2 XML blocks in this order:',
@@ -49,25 +119,14 @@ const MEMORY_TYPE_WEIGHT = {
 
 const DEFAULT_SETTINGS = {
   autoSDKLoginGuide: true,
+  selfIterationEnabled: false,
+  selfIterationFirstSealDone: false,
+  selfIterationLastError: '',
+  selfIterationLastSealAt: 0,
+  selfIterationLastSealDigest: '',
   playIntroEveryOpen: false,
   showWarningOverlay: true,
   captureButtonWidth: DEFAULT_CAPTURE_BUTTON_WIDTH,
-  sdkIncludeMemory: true,
-  sdkIncludeRules: true,
-  sdkShowStorageLocation: false,
-  sdkSessionStatePath: SDK_SESSION_STATE_PATH_HINT,
-  sdkConversationSavePath: DEFAULT_CHAT_SAVE_PATH,
-  sdkScreenshotSavePath: DEFAULT_SCREENSHOT_SAVE_PATH,
-  sdkConfigSyncRenderMarkdown: false,
-  sdkConfigSyncTheme: false,
-  sdkConfigSyncBanner: false,
-  sdkConfigSyncReasoningEffort: false,
-  sdkDisplayTags: {
-    assistant: true,
-    packet: false,
-    raw: false
-  },
-  linkGuardMode: 'allow',
   linkAllowlist: [
     'https://github.com/copilot/*',
     'https://github.com/settings/copilot*',
@@ -75,24 +134,47 @@ const DEFAULT_SETTINGS = {
   ]
 };
 
+const SELF_ITERATION_BASELINE_MEMORY_ENTRY = {
+  type: 'context',
+  title: 'Self-Iteration Baseline',
+  content: [
+    '自我疊代模式下：',
+    '1) 高風險變更前先確認封印/啟動鎖狀態。',
+    '2) 未經明確同意不執行不可逆操作。',
+    '3) 每次修改後要回報可驗證結果（PASS/FAIL）。'
+  ].join('\n'),
+  source: 'system_baseline',
+  tags: ['sidepilot', 'baseline', 'self-iteration']
+};
+
+const RULES_SOURCE_SYSTEM_BASELINE = 'system_baseline';
+const RULES_SOURCE_USER = 'user';
+
 const state = {
   currentPageContent: null,
   currentPageScreenshot: null,
   currentPartialScreenshot: null,
+  currentFullPageScreenshot: null,
   currentPageError: null,
+  pendingChatImages: [],
   isCapturePanelOpen: false,
   frameLoaded: false,
   loadTimeout: null,
   detectedMode: null,
   settings: { ...DEFAULT_SETTINGS },
-  sdkConfigInfo: null
+  logs: [],
+  logSSE: null,
+  bridgeLogSSE: null,
+  permissionSSE: null,
+  permissionCountdownTimer: null,
+  sdkHealthTimer: null,
+  bridgeSectionHealthTimer: null,
+  startupLocked: false,
+  sdkInputResizeInitialized: false,
+  sdkInputResizeDragging: false,
+  sdkInputResizeStartY: 0,
+  sdkInputResizeStartHeight: 0
 };
-
-let settingsAutoSaveTimer = null;
-let settingsAutoSaveInFlight = null;
-let settingsTooltipTimer = null;
-let settingsTooltipEl = null;
-let settingsTooltipAnchor = null;
 
 // ============================================
 // DOM 元素
@@ -104,7 +186,72 @@ const dom = {};
 // 初始化
 // ============================================
 
-function init() {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function waitForStartupGuardReady(timeoutMs = 5000, intervalMs = 150) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const response = await chrome.runtime.sendMessage({ action: 'startupGuardStatus' });
+    if (response?.guard?.ready) return response;
+    await sleep(intervalMs);
+  }
+
+  return chrome.runtime.sendMessage({ action: 'startupGuardStatus' });
+}
+
+function lockSidePanelByStartupGuard(guard, errorMessage = '') {
+  state.startupLocked = true;
+  document.body.classList.add('startup-locked');
+
+  if (state.loadTimeout) {
+    clearTimeout(state.loadTimeout);
+    state.loadTimeout = null;
+  }
+
+  dom.loadingOverlay?.classList.add('hidden');
+  dom.copilotFrame?.classList.add('hidden');
+  dom.sdkChat?.classList.add('hidden');
+  dom.errorOverlay?.classList.remove('hidden');
+
+  const reasons = Array.isArray(guard?.reasons) ? guard.reasons : [];
+  const details = reasons.length > 0
+    ? reasons.join(' | ')
+    : (errorMessage || 'unknown startup guard failure');
+
+  if (dom.errorMessage) {
+    dom.errorMessage.textContent = `啟動安全檢測未通過，擴充已鎖定。原因：${details}`;
+  }
+
+  if (dom.retryBtn) dom.retryBtn.disabled = true;
+  if (dom.openWindowBtn) dom.openWindowBtn.disabled = true;
+
+  console.error('[SidePilot] Startup guard lock:', details);
+}
+
+async function ensureStartupGuardPasses() {
+  try {
+    const response = await waitForStartupGuardReady();
+    const guard = response?.guard;
+
+    if (!guard?.ready) {
+      lockSidePanelByStartupGuard(guard, 'startup guard timeout');
+      return false;
+    }
+    if (guard.locked) {
+      lockSidePanelByStartupGuard(guard, response?.error || '');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    lockSidePanelByStartupGuard(null, err?.message || String(err));
+    return false;
+  }
+}
+
+async function init() {
   // 取得所有 DOM 元素
   dom.copilotFrame = document.getElementById('copilotFrame');
   dom.loadingOverlay = document.getElementById('loadingOverlay');
@@ -116,7 +263,6 @@ function init() {
   dom.pageUrl = document.getElementById('pageUrl');
   dom.capturePanel = document.getElementById('capturePanel');
   dom.captureContent = document.getElementById('captureContent');
-  dom.copyAllBtn = document.getElementById('copyAllBtn');
   dom.closeCaptureBtn = document.getElementById('closeCaptureBtn');
   dom.retryBtn = document.getElementById('retryBtn');
   dom.openWindowBtn = document.getElementById('openWindowBtn');
@@ -138,18 +284,42 @@ function init() {
   dom.tabContents = document.querySelectorAll('.tab-content');
   dom.modeSwitch = document.getElementById('modeSwitch');
   dom.modeSwitchBtns = document.querySelectorAll('.mode-switch-btn');
+  dom.sdkModeBtn = document.getElementById('sdkModeBtn');
 
   // SDK Chat elements
   dom.sdkChat = document.getElementById('sdkChat');
   dom.sdkMessages = document.getElementById('sdkMessages');
+  dom.sdkInputContainer = document.getElementById('sdkInputContainer');
+  dom.sdkInputResizer = document.getElementById('sdkInputResizer');
   dom.sdkInput = document.getElementById('sdkInput');
   dom.sdkSendBtn = document.getElementById('sdkSendBtn');
-  dom.settingSdkIncludeMemory = document.getElementById('settingSdkIncludeMemory');
+  dom.sdkIncludeMemory = document.getElementById('sdkIncludeMemory');
+  dom.sdkIncludeIdentity = document.getElementById('sdkIncludeIdentity');
+  dom.sdkIncludeMemoryEntries = document.getElementById('sdkIncludeMemoryEntries');
+  dom.sdkIncludeRules = document.getElementById('sdkIncludeRules');
+  dom.sdkIncludeSystemMsg = document.getElementById('sdkIncludeSystemMsg');
+  dom.sdkStructuredOutput = document.getElementById('sdkStructuredOutput');
+  dom.sdkAssistantOnly = document.getElementById('sdkAssistantOnly');
   dom.sdkMemorySummary = document.getElementById('sdkMemorySummary');
   dom.sdkModelSelect = document.getElementById('sdkModelSelect');
-  dom.sdkStorageLocation = document.getElementById('sdkStorageLocation');
-  dom.sdkStorageLink = document.getElementById('sdkStorageLink');
+  dom.contextChildToggles = document.getElementById('contextChildToggles');
+  dom.settingsIdentityContent = document.getElementById('settingsIdentityContent');
+  dom.identityEditor = document.getElementById('identityEditor');
+  dom.identitySaveBtn = document.getElementById('identitySaveBtn');
+  dom.identityResetBtn = document.getElementById('identityResetBtn');
+  dom.identityModuleChips = document.getElementById('identityModuleChips');
 
+  if (dom.sdkAssistantOnly) {
+    dom.sdkAssistantOnly.checked = localStorage.getItem(STORAGE_KEY_SDK_ASSISTANT_ONLY) === 'true';
+  }
+  // Restore granular toggle states
+  ['sdkIncludeIdentity', 'sdkIncludeMemoryEntries', 'sdkIncludeRules', 'sdkIncludeSystemMsg', 'sdkStructuredOutput'].forEach(key => {
+    if (dom[key]) {
+      const stored = localStorage.getItem(`sidepilot_${key}`);
+      dom[key].checked = stored !== null ? stored === 'true' : true;
+    }
+  });
+  syncContextChildToggles();
   if (dom.sdkModelSelect) {
     const selectedModel = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || '';
     dom.sdkModelSelect.value = selectedModel;
@@ -157,12 +327,15 @@ function init() {
 
   // Rules tab
   dom.rulesEditor = document.getElementById('rulesEditor');
+  dom.rulesModuleChips = document.getElementById('rulesModuleChips');
   dom.saveRulesBtn = document.getElementById('saveRulesBtn');
   dom.exportRulesBtn = document.getElementById('exportRulesBtn');
   dom.importRulesBtn = document.getElementById('importRulesBtn');
   dom.rulesFileInput = document.getElementById('rulesFileInput');
   dom.templateSelect = document.getElementById('templateSelect');
   dom.rulesStatus = document.getElementById('rulesStatus');
+  dom.rulesOriginBadge = document.getElementById('rulesOriginBadge');
+  dom.rulesOriginDetail = document.getElementById('rulesOriginDetail');
 
   // Memory tab
   dom.memoryList = document.getElementById('memoryList');
@@ -176,42 +349,36 @@ function init() {
   dom.entryType = document.getElementById('entryType');
   dom.entryTitle = document.getElementById('entryTitle');
   dom.entryContent = document.getElementById('entryContent');
+  dom.memoryModuleChips = document.getElementById('memoryModuleChips');
   dom.entryStatus = document.getElementById('entryStatus');
   dom.memoryModalTitle = document.getElementById('memoryModalTitle');
   dom.sendToVSCodeBtn = document.getElementById('sendToVSCodeBtn');
+
+  // Logs tab
+  dom.logList = document.getElementById('logList');
+  dom.logSearch = document.getElementById('logSearch');
+  dom.logLevelFilter = document.getElementById('logLevelFilter');
+  dom.copyLogsBtn = document.getElementById('copyLogsBtn');
+  dom.clearLogsBtn = document.getElementById('clearLogsBtn');
+
+  // History Log tab (Bridge)
+  dom.logFileList = document.getElementById('logFileList');
+  dom.refreshLogBtn = document.getElementById('refreshLogBtn');
 
   // Settings tab
   dom.saveSettingsBtn = document.getElementById('saveSettingsBtn');
   dom.settingsStatus = document.getElementById('settingsStatus');
   dom.settingAutoSdkLogin = document.getElementById('settingAutoSdkLogin');
+  dom.settingSelfIterationEnabled = document.getElementById('settingSelfIterationEnabled');
+  dom.selfIterationSealBadge = document.getElementById('selfIterationSealBadge');
+  dom.selfIterationSealDetail = document.getElementById('selfIterationSealDetail');
   dom.settingPlayIntroEveryOpen = document.getElementById('settingPlayIntroEveryOpen');
   dom.settingShowWarningOverlay = document.getElementById('settingShowWarningOverlay');
   dom.settingCaptureButtonWidth = document.getElementById('settingCaptureButtonWidth');
   dom.settingLinkAllowlist = document.getElementById('settingLinkAllowlist');
   dom.captureBtnWidthValue = document.getElementById('captureBtnWidthValue');
-  dom.settingLinkGuardMode = document.getElementById('settingLinkGuardMode');
-  dom.linkAllowlistTitle = document.getElementById('linkAllowlistTitle');
-  dom.linkAllowlistDesc = document.getElementById('linkAllowlistDesc');
   dom.openSdkLoginGuideBtn = document.getElementById('openSdkLoginGuideBtn');
   dom.testSdkBridgeBtn = document.getElementById('testSdkBridgeBtn');
-  dom.settingSdkTagAssistant = document.getElementById('settingSdkTagAssistant');
-  dom.settingSdkTagPacket = document.getElementById('settingSdkTagPacket');
-  dom.settingSdkTagRaw = document.getElementById('settingSdkTagRaw');
-  dom.settingSdkIncludeRules = document.getElementById('settingSdkIncludeRules');
-  dom.settingSdkShowStorageLocation = document.getElementById('settingSdkShowStorageLocation');
-  dom.settingSdkSessionPath = document.getElementById('settingSdkSessionPath');
-  dom.settingSdkConversationSavePath = document.getElementById('settingSdkConversationSavePath');
-  dom.settingSdkScreenshotSavePath = document.getElementById('settingSdkScreenshotSavePath');
-  dom.settingSdkSyncRenderMarkdown = document.getElementById('settingSdkSyncRenderMarkdown');
-  dom.settingSdkSyncTheme = document.getElementById('settingSdkSyncTheme');
-  dom.settingSdkSyncBanner = document.getElementById('settingSdkSyncBanner');
-  dom.settingSdkSyncReasoningEffort = document.getElementById('settingSdkSyncReasoningEffort');
-  dom.settingSdkRenderMarkdown = document.getElementById('settingSdkRenderMarkdown');
-  dom.settingSdkTheme = document.getElementById('settingSdkTheme');
-  dom.settingSdkBanner = document.getElementById('settingSdkBanner');
-  dom.settingSdkReasoningEffort = document.getElementById('settingSdkReasoningEffort');
-  dom.sdkConfigPath = document.getElementById('sdkConfigPath');
-  dom.sdkConfigSummary = document.getElementById('sdkConfigSummary');
   dom.bridgeInstallStatus = document.getElementById('bridgeInstallStatus');
   dom.bridgeInstallDetail = document.getElementById('bridgeInstallDetail');
   dom.bridgeCheckBtn = document.getElementById('bridgeCheckBtn');
@@ -226,6 +393,18 @@ function init() {
   dom.sdkLoginNowBtn = document.getElementById('sdkLoginNowBtn');
   dom.sdkLoginSuppressCheckbox = document.getElementById('sdkLoginSuppressCheckbox');
 
+  // WP-01: Permission modal
+  dom.permissionModal = document.getElementById('permissionModal');
+  dom.permissionScope = document.getElementById('permissionScope');
+  dom.permissionReason = document.getElementById('permissionReason');
+  dom.permissionOptions = document.getElementById('permissionOptions');
+  dom.permissionCountdown = document.getElementById('permissionCountdown');
+  dom.permissionApproveBtn = document.getElementById('permissionApproveBtn');
+  dom.permissionDenyBtn = document.getElementById('permissionDenyBtn');
+
+  // WP-07: Prompt strategy
+  dom.promptStrategyBtns = document.getElementById('promptStrategyBtns');
+
   // 驗證必要元素
   const required = ['copilotFrame', 'loadingOverlay', 'capturePanel', 'toast'];
   for (const key of required) {
@@ -235,9 +414,15 @@ function init() {
     }
   }
 
-  setupSettingsSections();
-  setupSettingsTooltips();
+  const guardPass = await ensureStartupGuardPasses();
+  if (!guardPass) {
+    return;
+  }
+
   setupEventListeners();
+  loadLogs();
+  renderLogs();
+  addLog('info', 'SidePilot 已啟動');
   setBridgeInstallDefaultHint();
   setupFrameLoadDetection();
   loadCurrentPageInfo();
@@ -255,6 +440,14 @@ function init() {
 
   // Detect mode on startup (non-blocking)
   detectModeOnStartup();
+
+  // Load saved identity template (resolve tokens for prompt injection)
+  chrome.storage.local.get(IDENTITY_STORAGE_KEY, (r) => {
+    if (r[IDENTITY_STORAGE_KEY]) {
+      SIDEPILOT_SYSTEM_IDENTITY.content = resolveIdentityTokens(r[IDENTITY_STORAGE_KEY]);
+      SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+    }
+  });
 }
 
 // ============================================
@@ -267,14 +460,17 @@ async function detectModeOnStartup() {
     if (stored?.success && (stored.mode === 'sdk' || stored.mode === 'iframe')) {
       state.detectedMode = stored.mode;
       console.log('[SidePilot] Loaded mode:', stored.mode);
+      addLog('info', `模式載入：${stored.mode}`);
     } else {
       const detected = await chrome.runtime.sendMessage({ action: 'detectMode' });
       if (detected?.success) {
         state.detectedMode = detected.mode;
         console.log('[SidePilot] Detected mode:', detected.mode);
+        addLog('info', `模式偵測：${detected.mode}`);
       } else {
         state.detectedMode = 'iframe';
         console.warn('[SidePilot] Mode detection failed, defaulting to iframe');
+        addLog('warn', '模式偵測失敗，已切回 iframe');
       }
     }
     updateModeBadge();
@@ -283,11 +479,14 @@ async function detectModeOnStartup() {
       const bridgeReady = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
       if (bridgeReady) {
         await loadSDKModelOptions();
+        connectPermissionSSE();
+        loadPromptStrategy();
       }
     }
   } catch (err) {
     state.detectedMode = 'iframe';
     console.warn('[SidePilot] Mode detection error, defaulting to iframe:', err.message);
+    addLog('error', '模式偵測發生錯誤，已切回 iframe', err.message);
     updateModeBadge();
   }
 }
@@ -307,13 +506,17 @@ function updateModeBadge() {
   if (mode === 'sdk') {
     dom.copilotFrame?.classList.add('hidden');
     dom.sdkChat?.classList.remove('hidden');
+    ensureSDKInputContainerReady();
+    startSdkHealthPolling();
   } else {
+    stopSDKInputResizeDrag();
     dom.copilotFrame?.classList.remove('hidden');
     dom.sdkChat?.classList.add('hidden');
+    stopSdkHealthPolling();
+    updateSdkStatusDot('');
   }
 
   syncCapturePanelMode();
-  updateSDKStorageLocationDisplay();
 }
 
 // ============================================
@@ -339,75 +542,219 @@ function switchTab(tabId) {
     }
   });
 
+  // Fix iframe bleed-through: hide iframe when not on copilot tab
+  if (dom.copilotFrame) {
+    dom.copilotFrame.style.display = (tabId === 'copilot') ? '' : 'none';
+  }
+  if (tabId === 'copilot' && state.detectedMode === 'sdk') {
+    requestAnimationFrame(() => {
+      ensureSDKInputContainerReady();
+    });
+  }
+
   // Load content if needed
   if (tabId === 'rules') {
     loadRules();
     loadTemplates();
+    setupModuleChips(dom.rulesModuleChips, dom.rulesEditor);
   } else if (tabId === 'memory') {
     loadMemoryEntries();
+    setupModuleChips(dom.memoryModuleChips, dom.entryContent);
+  }else if (tabId === 'logs') {
+    renderLogs();
+    connectBridgeLogSSE();
+  } else if (tabId === 'log') {
+    updateHistoryTabMode();
+    loadLogFiles();
   } else if (tabId === 'settings') {
-    loadSettings().catch((err) => {
-      console.warn('[SidePilot] Failed to reload settings:', err?.message || err);
-      applySettingsToUI();
-    });
-    loadSDKConfigAndApplyUI();
+    applySettingsToUI();
+    // Start bridge polling if install helper section is open
+    const installSection = document.getElementById('settingsSectionInstall');
+    if (installSection && !installSection.classList.contains('collapsed')) {
+      startBridgeSectionPolling();
+    }
+  } else {
+    // Stop bridge polling when leaving settings tab
+    stopBridgeSectionPolling();
+    disconnectBridgeLogSSE();
   }
+
+  addLog('info', `切換分頁：${tabId}`);
 }
 
 // ============================================
 // Settings Management
 // ============================================
 
+function isSDKInputContainerVisible() {
+  if (!dom.sdkInputContainer || !dom.sdkChat) return false;
+  if (dom.sdkChat.classList.contains('hidden')) return false;
+  return dom.sdkInputContainer.offsetParent !== null;
+}
+
+function getSDKInputContainerMaxHeight() {
+  const chatHeight = Number(dom.sdkChat?.clientHeight || 0);
+  if (!Number.isFinite(chatHeight) || chatHeight <= 0) {
+    return SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT;
+  }
+  const ratioCap = Math.floor(chatHeight * 0.72);
+  const messageSafetyCap = Math.floor(chatHeight - 180);
+  const cap = Math.min(ratioCap, messageSafetyCap);
+  return Math.max(SDK_INPUT_CONTAINER_MIN_HEIGHT, cap);
+}
+
+function clampSDKInputContainerHeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return SDK_INPUT_CONTAINER_MIN_HEIGHT;
+  }
+  return Math.min(
+    getSDKInputContainerMaxHeight(),
+    Math.max(SDK_INPUT_CONTAINER_MIN_HEIGHT, Math.round(numeric))
+  );
+}
+
+function setSDKInputContainerHeight(height, { persist = false } = {}) {
+  if (!dom.sdkInputContainer) return null;
+  const clamped = clampSDKInputContainerHeight(height);
+  dom.sdkInputContainer.style.height = `${clamped}px`;
+  if (persist) {
+    localStorage.setItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT, String(clamped));
+  }
+  return clamped;
+}
+
+function restoreOrInitSDKInputContainerHeight() {
+  if (!dom.sdkInputContainer) return;
+
+  const storedHeight = Number(localStorage.getItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT));
+  if (Number.isFinite(storedHeight) && storedHeight > 0) {
+    setSDKInputContainerHeight(storedHeight, { persist: false });
+    state.sdkInputResizeInitialized = true;
+    return;
+  }
+
+  if (!isSDKInputContainerVisible()) return;
+
+  const measured = Math.round(dom.sdkInputContainer.getBoundingClientRect().height);
+  if (!Number.isFinite(measured) || measured <= 0) return;
+
+  const defaultHeight = Math.round(measured * SDK_INPUT_CONTAINER_DEFAULT_SCALE);
+  setSDKInputContainerHeight(defaultHeight, { persist: true });
+  state.sdkInputResizeInitialized = true;
+}
+
+function ensureSDKInputContainerReady() {
+  if (!dom.sdkInputContainer) return;
+
+  if (!state.sdkInputResizeInitialized) {
+    restoreOrInitSDKInputContainerHeight();
+    return;
+  }
+
+  const inlineHeight = Number.parseInt(dom.sdkInputContainer.style.height, 10);
+  if (Number.isFinite(inlineHeight) && inlineHeight > 0) {
+    setSDKInputContainerHeight(inlineHeight, { persist: false });
+    return;
+  }
+
+  const storedHeight = Number(localStorage.getItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT));
+  if (Number.isFinite(storedHeight) && storedHeight > 0) {
+    setSDKInputContainerHeight(storedHeight, { persist: false });
+  }
+}
+
+function startSDKInputResizeDrag(event) {
+  if (event.button !== 0) return;
+  if (!dom.sdkInputContainer) return;
+
+  ensureSDKInputContainerReady();
+  const currentHeight = Math.round(dom.sdkInputContainer.getBoundingClientRect().height);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+
+  state.sdkInputResizeDragging = true;
+  state.sdkInputResizeStartY = event.clientY;
+  state.sdkInputResizeStartHeight = currentHeight;
+
+  document.body.classList.add('sdk-input-resizing');
+  document.addEventListener('mousemove', handleSDKInputResizeDrag);
+  document.addEventListener('mouseup', stopSDKInputResizeDrag);
+  window.addEventListener('blur', stopSDKInputResizeDrag, { once: true });
+  event.preventDefault();
+}
+
+function handleSDKInputResizeDrag(event) {
+  if (!state.sdkInputResizeDragging) return;
+  const delta = state.sdkInputResizeStartY - event.clientY;
+  const nextHeight = state.sdkInputResizeStartHeight + delta;
+  setSDKInputContainerHeight(nextHeight, { persist: false });
+}
+
+function stopSDKInputResizeDrag() {
+  document.body.classList.remove('sdk-input-resizing');
+  document.removeEventListener('mousemove', handleSDKInputResizeDrag);
+  document.removeEventListener('mouseup', stopSDKInputResizeDrag);
+  window.removeEventListener('blur', stopSDKInputResizeDrag);
+  if (!state.sdkInputResizeDragging) return;
+
+  state.sdkInputResizeDragging = false;
+
+  const currentHeight = Number.parseInt(dom.sdkInputContainer?.style?.height || '', 10);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+  const persisted = clampSDKInputContainerHeight(currentHeight);
+  dom.sdkInputContainer.style.height = `${persisted}px`;
+  localStorage.setItem(STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT, String(persisted));
+}
+
+function handleSDKInputViewportResize() {
+  if (!state.sdkInputResizeInitialized || !dom.sdkInputContainer) return;
+  const currentHeight = Number.parseInt(dom.sdkInputContainer.style.height, 10);
+  if (!Number.isFinite(currentHeight) || currentHeight <= 0) return;
+  setSDKInputContainerHeight(currentHeight, { persist: true });
+}
+
 function normalizeSettings(raw = {}) {
   const source = raw && typeof raw === 'object' ? raw : {};
   const captureWidth = clampCaptureButtonWidth(source.captureButtonWidth);
-  const sdkIncludeMemory = source.sdkIncludeMemory !== false;
-  const sdkIncludeRules = source.sdkIncludeRules !== false;
-  const sdkShowStorageLocation = source.sdkShowStorageLocation === true;
-  const sdkSessionStatePath = normalizeSessionStatePath(source.sdkSessionStatePath);
-  const sdkConversationSavePath = normalizeSavePath(source.sdkConversationSavePath, DEFAULT_CHAT_SAVE_PATH);
-  const sdkScreenshotSavePath = normalizeSavePath(source.sdkScreenshotSavePath, DEFAULT_SCREENSHOT_SAVE_PATH);
-  const sdkConfigSyncRenderMarkdown = source.sdkConfigSyncRenderMarkdown === true;
-  const sdkConfigSyncTheme = source.sdkConfigSyncTheme === true;
-  const sdkConfigSyncBanner = source.sdkConfigSyncBanner === true;
-  const sdkConfigSyncReasoningEffort = source.sdkConfigSyncReasoningEffort === true;
-  const sdkDisplayTags = normalizeSdkDisplayTags(source.sdkDisplayTags);
-  const linkGuardMode = source.linkGuardMode === 'deny' ? 'deny' : 'allow';
-  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist, linkGuardMode);
+  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist);
+  const rawLastError = typeof source.selfIterationLastError === 'string'
+    ? source.selfIterationLastError.trim()
+    : '';
+  const selfIterationLastError = rawLastError.slice(0, 400);
+  const selfIterationLastSealAt = Number.isFinite(Number(source.selfIterationLastSealAt))
+    ? Number(source.selfIterationLastSealAt)
+    : 0;
+  const digestCandidate = typeof source.selfIterationLastSealDigest === 'string'
+    ? source.selfIterationLastSealDigest.trim().toLowerCase()
+    : '';
+  const selfIterationLastSealDigest = /^[0-9a-f]{8}$/.test(digestCandidate)
+    ? digestCandidate
+    : '';
 
   return {
     autoSDKLoginGuide: source.autoSDKLoginGuide !== false,
+    selfIterationEnabled: source.selfIterationEnabled === true,
+    selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
+    selfIterationLastError,
+    selfIterationLastSealAt,
+    selfIterationLastSealDigest,
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
     captureButtonWidth: captureWidth,
-    sdkIncludeMemory,
-    sdkIncludeRules,
-    sdkShowStorageLocation,
-    sdkSessionStatePath,
-    sdkConversationSavePath,
-    sdkScreenshotSavePath,
-    sdkConfigSyncRenderMarkdown,
-    sdkConfigSyncTheme,
-    sdkConfigSyncBanner,
-    sdkConfigSyncReasoningEffort,
-    sdkDisplayTags,
-    linkGuardMode,
-    linkAllowlist
+    linkAllowlist,
+    iframeHistoryUrl: source.iframeHistoryUrl || 'https://github.com/copilot'
   };
 }
 
 function clampCaptureButtonWidth(value) {
-  if (value === '' || value === null || value === undefined) {
-    return DEFAULT_CAPTURE_BUTTON_WIDTH;
-  }
   const number = Number(value);
   if (!Number.isFinite(number)) {
     return DEFAULT_CAPTURE_BUTTON_WIDTH;
   }
-  return Math.min(128, Math.max(1, Math.round(number)));
+  return Math.min(100, Math.max(2, Math.round(number)));
 }
 
-function normalizeLinkAllowlist(value, mode = 'allow') {
+function normalizeLinkAllowlist(value) {
   const sourceList = Array.isArray(value)
     ? value
     : (typeof value === 'string' ? value.split('\n') : []);
@@ -423,41 +770,99 @@ function normalizeLinkAllowlist(value, mode = 'allow') {
     normalized.push(trimmed);
   }
 
-  if (normalized.length > 0) return normalized;
-  return mode === 'deny' ? [] : [...DEFAULT_SETTINGS.linkAllowlist];
+  return normalized.length > 0 ? normalized : [...DEFAULT_SETTINGS.linkAllowlist];
 }
 
-function formatAllowlistForTextarea(list, mode) {
-  const normalized = normalizeLinkAllowlist(list, mode);
+function formatAllowlistForTextarea(list) {
+  const normalized = normalizeLinkAllowlist(list);
   return normalized.join('\n');
 }
 
-function normalizeSdkDisplayTags(value) {
-  const source = value && typeof value === 'object' ? value : {};
-  const assistant = source.assistant !== false;
-  const packet = source.packet === true;
-  const raw = source.raw === true;
+function getManifestSealInfo() {
+  try {
+    const manifest = chrome.runtime.getManifest();
+    const versionName = String(manifest?.version_name || '');
+    const matched = versionName.match(MANIFEST_SEAL_PATTERN);
+    if (!matched) {
+      return {
+        valid: false,
+        versionName,
+        digest: ''
+      };
+    }
+    return {
+      valid: true,
+      versionName,
+      digest: matched[2].toLowerCase()
+    };
+  } catch {
+    return {
+      valid: false,
+      versionName: '',
+      digest: ''
+    };
+  }
+}
 
-  if (!assistant && !packet && !raw) {
-    return { assistant: true, packet: false, raw: false };
+function formatLocalDateTime(timestampMs) {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return '';
+  try {
+    return new Date(timestampMs).toLocaleString('zh-TW', { hour12: false });
+  } catch {
+    return '';
+  }
+}
+
+function updateSelfIterationSealBadge() {
+  if (!dom.selfIterationSealBadge || !dom.selfIterationSealDetail) return;
+
+  const settings = normalizeSettings(state.settings);
+  const sealInfo = getManifestSealInfo();
+
+  let badgeText = '未封印';
+  let badgeStatus = 'off';
+  let detailText = '功能未啟用；開啟後才會套用啟動鎖與封印檢測';
+
+  if (settings.selfIterationEnabled) {
+    if (sealInfo.valid && settings.selfIterationFirstSealDone) {
+      badgeText = '已封印';
+      badgeStatus = 'sealed';
+      const parts = [];
+      if (settings.selfIterationLastSealDigest) {
+        parts.push(`Digest ${settings.selfIterationLastSealDigest}`);
+      } else if (sealInfo.digest) {
+        parts.push(`Digest ${sealInfo.digest}`);
+      }
+      const atText = formatLocalDateTime(settings.selfIterationLastSealAt);
+      if (atText) parts.push(`時間 ${atText}`);
+      detailText = parts.length > 0 ? parts.join(' · ') : '封印格式有效';
+    } else {
+      badgeText = '未封印';
+      badgeStatus = 'unsealed';
+      detailText = '啟用中，但尚未完成有效封印';
+    }
   }
 
-  return { assistant, packet, raw };
-}
+  if (settings.selfIterationLastError) {
+    const shortError = settings.selfIterationLastError.length > 180
+      ? `${settings.selfIterationLastError.slice(0, 180)}...`
+      : settings.selfIterationLastError;
+    badgeText = '未封印';
+    detailText = settings.selfIterationEnabled
+      ? `上次失敗原因：${shortError}`
+      : `目前未啟用；上次失敗原因：${shortError}`;
+    if (settings.selfIterationEnabled) {
+      badgeStatus = 'error';
+    }
+  }
 
-function isAssistantOnlyTags(tags) {
-  const normalized = normalizeSdkDisplayTags(tags);
-  return normalized.assistant && !normalized.packet && !normalized.raw;
-}
-
-function normalizeSessionStatePath(value) {
-  const trimmed = String(value || '').trim();
-  return trimmed || SDK_SESSION_STATE_PATH_HINT;
-}
-
-function normalizeSavePath(value, fallback) {
-  const trimmed = String(value || '').trim();
-  return trimmed || fallback;
+  dom.selfIterationSealBadge.textContent = badgeText;
+  dom.selfIterationSealBadge.dataset.status = badgeStatus;
+  dom.selfIterationSealDetail.textContent = detailText;
+  dom.selfIterationSealDetail.title = detailText;
+  dom.selfIterationSealBadge.title = sealInfo.versionName
+    ? `manifest.version_name = ${sealInfo.versionName}`
+    : 'manifest.version_name 未設定';
 }
 
 async function loadSettings() {
@@ -469,10 +874,136 @@ async function loadSettings() {
   return state.settings;
 }
 
+async function requestAutoSealFromBridge() {
+  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/auto-seal`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dryRun: false })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || `HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function requestVerifyIntegrityFromBridge() {
+  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/verify`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timeoutMs: 12_000 })
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload?.success) {
+    throw new Error(payload?.error || `HTTP ${response.status}`);
+  }
+
+  return payload;
+}
+
+function createMemoryEntryViaBackground(entry) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ action: 'memory.create', entry }, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      if (!response?.success) {
+        reject(new Error(response?.error || 'memory.create failed'));
+        return;
+      }
+      resolve(response.entry || null);
+    });
+  });
+}
+
+async function ensureSelfIterationBaselineMemory() {
+  const entries = await listAllMemoryEntries();
+  if (Array.isArray(entries) && entries.length > 0) {
+    return false;
+  }
+
+  await createMemoryEntryViaBackground({ ...SELF_ITERATION_BASELINE_MEMORY_ENTRY });
+  return true;
+}
+
+async function refreshStartupGuardInBackground() {
+  try {
+    await chrome.runtime.sendMessage({ action: 'startupGuardRefresh' });
+  } catch (err) {
+    console.warn('[SidePilot] Failed to refresh startup guard:', err?.message || err);
+  }
+}
+
 async function persistSettings(settings, options = {}) {
-  const normalized = normalizeSettings(settings);
+  const previous = normalizeSettings(state.settings);
+  let normalized = normalizeSettings(settings);
+  let statusText = options.statusText || '設定已儲存';
+  let statusType = 'success';
+  let shouldReloadForSeal = false;
+  let selfIterationToggled = false;
+
+  const enablingSelfIterationFirstTime =
+    !previous.selfIterationEnabled &&
+    normalized.selfIterationEnabled &&
+    previous.selfIterationFirstSealDone !== true;
+
+  if (enablingSelfIterationFirstTime) {
+    updateSettingsStatus('自我疊代啟用中，正在首次自動執行 SEAL...', 'warning');
+    try {
+      const sealResult = await requestAutoSealFromBridge();
+      const digestMatch = String(sealResult?.stdout || '').match(/Digest:\s*([0-9a-f]{8,64})/i);
+      const sealDigest = digestMatch ? digestMatch[1].slice(0, 8).toLowerCase() : '';
+      if (!sealDigest) {
+        throw new Error('auto-seal completed but digest not found in output');
+      }
+      await requestVerifyIntegrityFromBridge();
+      try {
+        const seeded = await ensureSelfIterationBaselineMemory();
+        if (seeded) {
+          addLog('info', '[BASW] 已建立自我疊代 baseline 記憶條目');
+        }
+      } catch (seedErr) {
+        addLog('warning', `[BASW] baseline 記憶補植失敗：${seedErr?.message || seedErr}`);
+      }
+      normalized = normalizeSettings({
+        ...normalized,
+        selfIterationFirstSealDone: true,
+        selfIterationLastError: '',
+        selfIterationLastSealAt: Date.now(),
+        selfIterationLastSealDigest: sealDigest
+      });
+      addLog('info', `[BASW] 首次自動 SEAL 完成 (${sealResult?.durationMs ?? '-'}ms)`);
+      showToast('首次 SEAL 完成，自我疊代保護已啟用', 'success');
+      shouldReloadForSeal = true;
+    } catch (err) {
+      const errorMessage = (err?.message || String(err)).slice(0, 380);
+      normalized = normalizeSettings({
+        ...normalized,
+        selfIterationEnabled: false,
+        selfIterationFirstSealDone: false,
+        selfIterationLastError: errorMessage,
+        selfIterationLastSealAt: 0,
+        selfIterationLastSealDigest: ''
+      });
+      if (dom.settingSelfIterationEnabled) {
+        dom.settingSelfIterationEnabled.checked = false;
+      }
+      statusText = '首次 SEAL 失敗，已取消啟用自我疊代';
+      statusType = 'error';
+      addLog('error', `[BASW] 首次自動 SEAL 失敗: ${errorMessage}`);
+      showToast(`首次 SEAL 失敗：${errorMessage}`, 'error');
+    }
+  }
+
   await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: normalized });
   state.settings = normalized;
+  selfIterationToggled = previous.selfIterationEnabled !== normalized.selfIterationEnabled;
 
   if (normalized.playIntroEveryOpen) {
     localStorage.removeItem('intro_played');
@@ -491,8 +1022,21 @@ async function persistSettings(settings, options = {}) {
     showToast('設定已儲存');
   }
 
-  const statusText = options.statusText || '設定已儲存';
-  updateSettingsStatus(statusText, 'success');
+  if (shouldReloadForSeal) {
+    statusText = '首次 SEAL 已完成，正在重新載入擴充套件';
+    statusType = 'warning';
+    updateSettingsStatus(statusText, statusType);
+    setTimeout(() => {
+      chrome.runtime.reload();
+    }, 1200);
+    return normalized;
+  }
+
+  if (selfIterationToggled) {
+    await refreshStartupGuardInBackground();
+  }
+
+  updateSettingsStatus(statusText, statusType);
   return normalized;
 }
 
@@ -503,6 +1047,9 @@ function applySettingsToUI() {
   if (dom.settingAutoSdkLogin) {
     dom.settingAutoSdkLogin.checked = settings.autoSDKLoginGuide;
   }
+  if (dom.settingSelfIterationEnabled) {
+    dom.settingSelfIterationEnabled.checked = settings.selfIterationEnabled === true;
+  }
   if (dom.settingPlayIntroEveryOpen) {
     dom.settingPlayIntroEveryOpen.checked = settings.playIntroEveryOpen;
   }
@@ -512,115 +1059,160 @@ function applySettingsToUI() {
   if (dom.settingCaptureButtonWidth) {
     dom.settingCaptureButtonWidth.value = String(settings.captureButtonWidth);
   }
-  if (dom.settingSdkIncludeMemory) {
-    dom.settingSdkIncludeMemory.checked = settings.sdkIncludeMemory !== false;
-  }
-  if (dom.settingSdkIncludeRules) {
-    dom.settingSdkIncludeRules.checked = settings.sdkIncludeRules !== false;
-  }
-  if (dom.settingSdkShowStorageLocation) {
-    dom.settingSdkShowStorageLocation.checked = settings.sdkShowStorageLocation === true;
-  }
-  if (dom.settingSdkSessionPath) {
-    dom.settingSdkSessionPath.value = settings.sdkSessionStatePath || SDK_SESSION_STATE_PATH_HINT;
-  }
-  if (dom.settingSdkConversationSavePath) {
-    dom.settingSdkConversationSavePath.value = settings.sdkConversationSavePath || DEFAULT_CHAT_SAVE_PATH;
-  }
-  if (dom.settingSdkScreenshotSavePath) {
-    dom.settingSdkScreenshotSavePath.value = settings.sdkScreenshotSavePath || DEFAULT_SCREENSHOT_SAVE_PATH;
-  }
-  if (dom.settingSdkSyncRenderMarkdown) {
-    dom.settingSdkSyncRenderMarkdown.checked = settings.sdkConfigSyncRenderMarkdown === true;
-  }
-  if (dom.settingSdkSyncTheme) {
-    dom.settingSdkSyncTheme.checked = settings.sdkConfigSyncTheme === true;
-  }
-  if (dom.settingSdkSyncBanner) {
-    dom.settingSdkSyncBanner.checked = settings.sdkConfigSyncBanner === true;
-  }
-  if (dom.settingSdkSyncReasoningEffort) {
-    dom.settingSdkSyncReasoningEffort.checked = settings.sdkConfigSyncReasoningEffort === true;
-  }
-  if (dom.settingSdkTagAssistant) {
-    dom.settingSdkTagAssistant.checked = settings.sdkDisplayTags.assistant !== false;
-  }
-  if (dom.settingSdkTagPacket) {
-    dom.settingSdkTagPacket.checked = settings.sdkDisplayTags.packet === true;
-  }
-  if (dom.settingSdkTagRaw) {
-    dom.settingSdkTagRaw.checked = settings.sdkDisplayTags.raw === true;
-  }
-  if (dom.settingLinkGuardMode) {
-    dom.settingLinkGuardMode.value = settings.linkGuardMode || 'allow';
-  }
   if (dom.settingLinkAllowlist) {
-    dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist, settings.linkGuardMode);
+    dom.settingLinkAllowlist.value = formatAllowlistForTextarea(settings.linkAllowlist);
   }
-  updateLinkGuardLabels(settings.linkGuardMode);
   updateCaptureWidthLabel(settings.captureButtonWidth);
-  refreshSDKMemorySummary();
-  applySDKAssistantOnlyMode();
-  updateSDKStorageLocationDisplay();
-  applySDKConfigToUI();
+  updateSelfIterationSealBadge();
+
+  // Conversation records
+  const sdkHistoryPath = document.getElementById('settingSdkHistoryPath');
+  if (sdkHistoryPath) {
+    sdkHistoryPath.value = '~/copilot/history';
+  }
+  const iframeHistoryUrl = document.getElementById('settingIframeHistoryUrl');
+  if (iframeHistoryUrl) {
+    iframeHistoryUrl.value = settings.iframeHistoryUrl || 'https://github.com/copilot';
+  }
+
+  // Populate system identity editor and preview
+  if (dom.settingsIdentityContent) {
+    loadIdentityTemplate();
+  }
 }
 
 function collectSettingsFromUI() {
-  const rawWidth = dom.settingCaptureButtonWidth?.value;
-  const captureWidth = rawWidth === '' || rawWidth === null || rawWidth === undefined
-    ? state.settings.captureButtonWidth
-    : rawWidth;
-
   return normalizeSettings({
     autoSDKLoginGuide: !!dom.settingAutoSdkLogin?.checked,
+    selfIterationEnabled: !!dom.settingSelfIterationEnabled?.checked,
+    selfIterationFirstSealDone: state.settings?.selfIterationFirstSealDone === true,
+    selfIterationLastError: state.settings?.selfIterationLastError || '',
+    selfIterationLastSealAt: state.settings?.selfIterationLastSealAt || 0,
+    selfIterationLastSealDigest: state.settings?.selfIterationLastSealDigest || '',
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
-    captureButtonWidth: captureWidth,
-    sdkIncludeMemory: !!dom.settingSdkIncludeMemory?.checked,
-    sdkIncludeRules: !!dom.settingSdkIncludeRules?.checked,
-    sdkShowStorageLocation: !!dom.settingSdkShowStorageLocation?.checked,
-    sdkSessionStatePath: dom.settingSdkSessionPath?.value,
-    sdkConversationSavePath: dom.settingSdkConversationSavePath?.value,
-    sdkScreenshotSavePath: dom.settingSdkScreenshotSavePath?.value,
-    sdkConfigSyncRenderMarkdown: !!dom.settingSdkSyncRenderMarkdown?.checked,
-    sdkConfigSyncTheme: !!dom.settingSdkSyncTheme?.checked,
-    sdkConfigSyncBanner: !!dom.settingSdkSyncBanner?.checked,
-    sdkConfigSyncReasoningEffort: !!dom.settingSdkSyncReasoningEffort?.checked,
-    sdkDisplayTags: {
-      assistant: !!dom.settingSdkTagAssistant?.checked,
-      packet: !!dom.settingSdkTagPacket?.checked,
-      raw: !!dom.settingSdkTagRaw?.checked
-    },
-    linkGuardMode: dom.settingLinkGuardMode?.value,
-    linkAllowlist: dom.settingLinkAllowlist?.value
+    captureButtonWidth: dom.settingCaptureButtonWidth?.value,
+    linkAllowlist: dom.settingLinkAllowlist?.value,
+    iframeHistoryUrl: document.getElementById('settingIframeHistoryUrl')?.value
+  });
+}
+
+// ── Identity Template Management ──
+
+function getDefaultIdentityTemplate() {
+  return SIDEPILOT_SYSTEM_IDENTITY.content;
+}
+
+async function loadIdentityTemplate() {
+  // Render module chips
+  if (dom.identityModuleChips) {
+    dom.identityModuleChips.innerHTML = IDENTITY_MODULES.map(m =>
+      `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + ' → ' + m.resolve())}">${m.label}</button>`
+    ).join('');
+    dom.identityModuleChips.querySelectorAll('.identity-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        if (!dom.identityEditor) return;
+        const token = chip.dataset.token;
+        const ta = dom.identityEditor;
+        const start = ta.selectionStart;
+        const end = ta.selectionEnd;
+        ta.value = ta.value.substring(0, start) + token + ta.value.substring(end);
+        ta.selectionStart = ta.selectionEnd = start + token.length;
+        ta.focus();
+        updateIdentityPreview();
+      });
+    });
+  }
+
+  // Load saved template or use default
+  const stored = await new Promise(resolve => {
+    chrome.storage.local.get(IDENTITY_STORAGE_KEY, r => resolve(r[IDENTITY_STORAGE_KEY]));
+  });
+  const template = stored || getDefaultIdentityTemplate();
+  if (dom.identityEditor) dom.identityEditor.value = template;
+  updateIdentityPreview();
+
+  // Wire events
+  dom.identityEditor?.addEventListener('input', updateIdentityPreview);
+  dom.identitySaveBtn?.addEventListener('click', saveIdentityTemplate);
+  dom.identityResetBtn?.addEventListener('click', resetIdentityTemplate);
+}
+
+function updateIdentityPreview() {
+  if (!dom.settingsIdentityContent || !dom.identityEditor) return;
+  const resolved = resolveIdentityTokens(dom.identityEditor.value);
+  dom.settingsIdentityContent.textContent = resolved;
+}
+
+async function saveIdentityTemplate() {
+  if (!dom.identityEditor) return;
+  const template = dom.identityEditor.value;
+  await new Promise(resolve => {
+    chrome.storage.local.set({ [IDENTITY_STORAGE_KEY]: template }, resolve);
+  });
+  // Update the runtime identity content with resolved values
+  const resolved = resolveIdentityTokens(template);
+  SIDEPILOT_SYSTEM_IDENTITY.content = resolved;
+  SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+  updateIdentityPreview();
+  showToast('擴充自述已儲存');
+}
+
+async function resetIdentityTemplate() {
+  const defaultTemplate = getDefaultIdentityTemplate();
+  if (dom.identityEditor) dom.identityEditor.value = defaultTemplate;
+  await new Promise(resolve => {
+    chrome.storage.local.remove(IDENTITY_STORAGE_KEY, resolve);
+  });
+  SIDEPILOT_SYSTEM_IDENTITY.content = defaultTemplate;
+  SIDEPILOT_SYSTEM_IDENTITY.updatedAt = Date.now();
+  updateIdentityPreview();
+  showToast('已還原為預設自述');
+}
+
+// Populate identity module chips for a given container + textarea pair
+function setupModuleChips(container, textarea) {
+  if (!container || !textarea) return;
+  container.innerHTML = IDENTITY_MODULES.map(m =>
+    `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + ' → ' + m.resolve())}">${m.label}</button>`
+  ).join('');
+  container.querySelectorAll('.identity-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const token = chip.dataset.token;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      textarea.value = textarea.value.substring(0, start) + token + textarea.value.substring(end);
+      textarea.selectionStart = textarea.selectionEnd = start + token.length;
+      textarea.focus();
+    });
   });
 }
 
 function updateCaptureWidthLabel(width) {
   if (!dom.captureBtnWidthValue) return;
   const normalized = clampCaptureButtonWidth(width);
-  dom.captureBtnWidthValue.textContent = `${normalized}px`;
+  dom.captureBtnWidthValue.textContent = normalized < 20
+    ? `${normalized}px (僅色塊)`
+    : `${normalized}px`;
 }
 
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
-  if (normalized <= 15) {
-    dom.floatingCaptureBtn?.classList.add('capture-compact');
-  } else {
-    dom.floatingCaptureBtn?.classList.remove('capture-compact');
-  }
   document.documentElement.style.setProperty('--capture-button-width', `${normalized}px`);
-  document.documentElement.style.setProperty('--capture-idle-opacity', `${computeCaptureIdleOpacity(normalized)}`);
-}
 
-function computeCaptureIdleOpacity(width) {
-  const normalized = Math.max(1, Math.round(width));
-  if (normalized === 1) return 1;
-  if (normalized > 15) return 0.5;
-  const span = 14;
-  const ratio = (normalized - 1) / span;
-  const opacity = 1 - ratio * 0.5;
-  return Math.max(0.5, Math.min(1, Number(opacity.toFixed(2))));
+  // Hide text/icons when narrow
+  dom.floatingCaptureBtn?.classList.toggle('capture-compact', normalized < 20);
+
+  // Compute resting opacity based on width
+  let opacity;
+  if (normalized <= 20) {
+    // 2-20px → 1.0 to 0.5
+    opacity = 1.0 - ((normalized - 2) / 18) * 0.5;
+  } else {
+    // 21-100px → 0.5 to 0.8
+    opacity = 0.5 + ((normalized - 21) / 79) * 0.3;
+  }
+  document.documentElement.style.setProperty('--capture-btn-opacity', opacity.toFixed(3));
 }
 
 async function saveSettings() {
@@ -628,234 +1220,10 @@ async function saveSettings() {
   await persistSettings(nextSettings, { showToast: true });
 }
 
-function queueSettingsAutoSave(options = {}) {
-  const { immediate = false, showToast = false } = options;
-
-  if (settingsAutoSaveTimer) {
-    clearTimeout(settingsAutoSaveTimer);
-    settingsAutoSaveTimer = null;
-  }
-
-  if (immediate) {
-    void runSettingsAutoSave({ showToast });
-    return;
-  }
-
-  settingsAutoSaveTimer = setTimeout(() => {
-    settingsAutoSaveTimer = null;
-    void runSettingsAutoSave({ showToast });
-  }, SETTINGS_AUTOSAVE_DELAY);
-}
-
-async function runSettingsAutoSave(options = {}) {
-  if (settingsAutoSaveInFlight) return settingsAutoSaveInFlight;
-
-  const { showToast = false } = options;
-  const nextSettings = collectSettingsFromUI();
-
-  settingsAutoSaveInFlight = persistSettings(nextSettings, {
-    showToast,
-    statusText: '已自動儲存'
-  })
-    .catch((err) => {
-      console.error('[SidePilot] Auto-save settings failed:', err);
-      updateSettingsStatus('自動儲存失敗', 'error');
-    })
-    .finally(() => {
-      settingsAutoSaveInFlight = null;
-    });
-
-  return settingsAutoSaveInFlight;
-}
-
 function updateSettingsStatus(text, type = 'info') {
   if (!dom.settingsStatus) return;
   dom.settingsStatus.textContent = text;
   dom.settingsStatus.className = `settings-status ${type}`;
-}
-
-function setSettingsSectionExpanded(section, expanded, options = {}) {
-  if (!section) return;
-  const header = section.querySelector('.settings-section-header');
-  const toggle = section.querySelector('.settings-section-toggle');
-  const willExpand = !!expanded;
-  section.classList.toggle('collapsed', !willExpand);
-  if (header) {
-    header.setAttribute('aria-expanded', String(willExpand));
-  }
-  if (toggle) {
-    toggle.textContent = willExpand ? '–' : '+';
-  }
-
-  if (willExpand && options.scrollIntoView) {
-    section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-}
-
-function setupSettingsSections() {
-  const sections = document.querySelectorAll('.settings-section.collapsible');
-  sections.forEach((section) => {
-    const header = section.querySelector('.settings-section-header');
-    if (!header) return;
-    const isCollapsed = section.classList.contains('collapsed');
-    setSettingsSectionExpanded(section, !isCollapsed);
-    header.addEventListener('click', () => {
-      const isCollapsed = section.classList.contains('collapsed');
-      setSettingsSectionExpanded(section, isCollapsed);
-    });
-    header.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter' || event.key === ' ') {
-        event.preventDefault();
-        const isCollapsed = section.classList.contains('collapsed');
-        setSettingsSectionExpanded(section, isCollapsed);
-      }
-    });
-  });
-
-  const tocLinks = document.querySelectorAll('.settings-toc-link');
-  tocLinks.forEach((link) => {
-    link.addEventListener('click', () => {
-      const target = link.dataset.target;
-      if (!target) return;
-      const section = document.querySelector(`.settings-section.collapsible[data-section="${target}"]`);
-      if (!section) return;
-      setSettingsSectionExpanded(section, true, { scrollIntoView: true });
-    });
-  });
-}
-
-function ensureSettingsTooltip() {
-  if (settingsTooltipEl) return settingsTooltipEl;
-  const tooltip = document.createElement('div');
-  tooltip.className = 'settings-tooltip';
-  tooltip.id = 'settingsTooltip';
-  document.body.appendChild(tooltip);
-  settingsTooltipEl = tooltip;
-  return settingsTooltipEl;
-}
-
-function getSettingsTooltipText(target) {
-  if (!target) return '';
-  const explicit = target.closest?.('[data-help]');
-  if (explicit?.dataset?.help) {
-    const text = explicit.dataset.help.trim();
-    if (text) return text;
-  }
-
-  const item = target.closest?.('.settings-item');
-  if (item) {
-    const desc = item.querySelector('.settings-item-desc');
-    if (desc?.textContent?.trim()) {
-      return desc.textContent.trim();
-    }
-    const title = item.querySelector('.settings-item-title');
-    if (title?.textContent?.trim()) {
-      return title.textContent.trim();
-    }
-  }
-
-  return '';
-}
-
-function positionSettingsTooltip(anchor) {
-  if (!settingsTooltipEl || !anchor) return;
-  const rect = anchor.getBoundingClientRect();
-  const tooltipRect = settingsTooltipEl.getBoundingClientRect();
-  const padding = 8;
-  const spacing = 8;
-  let top = rect.bottom + spacing;
-
-  if (top + tooltipRect.height > window.innerHeight - padding) {
-    top = rect.top - tooltipRect.height - spacing;
-  }
-  if (top < padding) {
-    top = padding;
-  }
-
-  let left = rect.left;
-  if (left + tooltipRect.width > window.innerWidth - padding) {
-    left = window.innerWidth - tooltipRect.width - padding;
-  }
-  if (left < padding) {
-    left = padding;
-  }
-
-  settingsTooltipEl.style.top = `${Math.round(top)}px`;
-  settingsTooltipEl.style.left = `${Math.round(left)}px`;
-}
-
-function showSettingsTooltip(anchor, text) {
-  if (!text) return;
-  const tooltip = ensureSettingsTooltip();
-  tooltip.textContent = text;
-  tooltip.classList.add('visible');
-  positionSettingsTooltip(anchor);
-}
-
-function hideSettingsTooltip() {
-  if (!settingsTooltipEl) return;
-  settingsTooltipEl.classList.remove('visible');
-}
-
-function clearSettingsTooltipTimer() {
-  if (settingsTooltipTimer) {
-    clearTimeout(settingsTooltipTimer);
-    settingsTooltipTimer = null;
-  }
-}
-
-function setupSettingsTooltips() {
-  const container = document.getElementById('settings-tab');
-  if (!container) return;
-
-  const handleMouseOver = (event) => {
-    const target = event.target;
-    const anchor = target.closest?.('.settings-item, [data-help]');
-    if (!anchor || !container.contains(anchor)) return;
-    const helpText = getSettingsTooltipText(target);
-    if (!helpText) return;
-
-    if (settingsTooltipAnchor === anchor) return;
-    settingsTooltipAnchor = anchor;
-    clearSettingsTooltipTimer();
-    hideSettingsTooltip();
-    settingsTooltipTimer = setTimeout(() => {
-      showSettingsTooltip(anchor, helpText);
-    }, SETTINGS_TOOLTIP_DELAY_MS);
-  };
-
-  const handleMouseOut = (event) => {
-    if (!settingsTooltipAnchor) return;
-    const related = event.relatedTarget;
-    if (related && settingsTooltipAnchor.contains(related)) return;
-    clearSettingsTooltipTimer();
-    hideSettingsTooltip();
-    settingsTooltipAnchor = null;
-  };
-
-  container.addEventListener('mouseover', handleMouseOver, true);
-  container.addEventListener('mouseout', handleMouseOut, true);
-  container.addEventListener('mousedown', hideSettingsTooltip, true);
-  document.addEventListener('scroll', hideSettingsTooltip, true);
-  window.addEventListener('resize', () => {
-    if (settingsTooltipAnchor && settingsTooltipEl?.classList.contains('visible')) {
-      positionSettingsTooltip(settingsTooltipAnchor);
-    }
-  });
-}
-
-function updateLinkGuardLabels(mode) {
-  const resolved = mode === 'deny' ? 'deny' : 'allow';
-  if (dom.linkAllowlistTitle) {
-    dom.linkAllowlistTitle.textContent = resolved === 'deny'
-      ? '禁止留在 Sidecar 的連結前綴'
-      : '允許留在 Sidecar 的連結前綴';
-  }
-  if (dom.linkAllowlistDesc) {
-    dom.linkAllowlistDesc.textContent = resolved === 'deny'
-      ? '符合以下前綴的連結會改用新分頁開啟'
-      : '每行一個 URL 前綴，支援結尾萬用字元 *';
-  }
 }
 
 function getBridgeHealthUrl(port = SDK_BRIDGE_PORT) {
@@ -876,13 +1244,26 @@ function buildBridgeCheckCommand(port = SDK_BRIDGE_PORT) {
   return `powershell -Command "Invoke-RestMethod ${url}"`;
 }
 
+// Cache last bridge status to avoid unnecessary DOM updates
+let _lastBridgeStatus = { text: '', detail: '', type: '' };
+
 function setBridgeInstallStatus(statusText, detailText, type = 'info') {
   if (!dom.bridgeInstallStatus) return;
+
+  // Skip DOM update if nothing changed
+  if (_lastBridgeStatus.text === statusText &&
+      _lastBridgeStatus.detail === detailText &&
+      _lastBridgeStatus.type === type) {
+    return;
+  }
+  _lastBridgeStatus = { text: statusText, detail: detailText, type };
+
   dom.bridgeInstallStatus.textContent = statusText;
   dom.bridgeInstallStatus.dataset.status = type;
   if (dom.bridgeStatusDot) {
     dom.bridgeStatusDot.dataset.status = type;
   }
+  updateSdkStatusDot(type);
 
   if (dom.bridgeInstallDetail) {
     dom.bridgeInstallDetail.textContent = detailText || '-';
@@ -900,8 +1281,12 @@ async function checkBridgeHealth(options = {}) {
   const port = SDK_BRIDGE_PORT;
   const url = getBridgeHealthUrl(port);
   const toastEnabled = options.showToast !== false;
+  const isQuietPoll = !toastEnabled;
 
-  setBridgeInstallStatus('檢查中...', url, 'warning');
+  // Only show "檢查中..." on manual/first check, not on silent 1-sec polling
+  if (!isQuietPoll) {
+    setBridgeInstallStatus('檢查中...', url, 'warning');
+  }
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -916,15 +1301,20 @@ async function checkBridgeHealth(options = {}) {
         const sdkState = sdkStateValue ? `sdk: ${sdkStateValue}` : '';
         const backendType = response?.data?.backend?.type ? `backend: ${response.data.backend.type}` : '';
         const detail = [url, sdkState, backendType].filter(Boolean).join(' | ');
-        const statusType = sdkStateValue && sdkStateValue !== 'ready' ? 'warning' : 'success';
+        const okStates = ['ready', 'idle', 'connected', ''];
+        const statusType = okStates.includes(sdkStateValue) ? 'success' : 'warning';
         setBridgeInstallStatus('Bridge 已連線', detail, statusType);
         if (toastEnabled) {
           showToast(statusType === 'success' ? 'Bridge 已連線' : 'Bridge 已連線但狀態異常', statusType === 'success' ? 'success' : 'warning');
         }
 
-        const connected = await ensureSDKBridgeConnection({ port });
-        if (connected) {
-          await loadSDKModelOptions();
+        // Only load models on first connection or manual check, not every 1-sec tick
+        if (!isQuietPoll || !state.bridgeModelsLoaded) {
+          const connected = await ensureSDKBridgeConnection({ port });
+          if (connected) {
+            await loadSDKModelOptions();
+            state.bridgeModelsLoaded = true;
+          }
         }
         return;
       }
@@ -932,6 +1322,7 @@ async function checkBridgeHealth(options = {}) {
       const serviceName = response?.data?.service || 'unknown';
       setBridgeInstallStatus('不是 SidePilot Bridge', `service: ${serviceName}`, 'warning');
       if (toastEnabled) showToast('埠口不是 SidePilot Bridge', 'warning');
+      state.bridgeModelsLoaded = false;
       return;
     }
 
@@ -943,6 +1334,7 @@ async function checkBridgeHealth(options = {}) {
         'warning'
       );
       if (toastEnabled) showToast('Bridge 回應 404，請確認啟動目錄', 'warning');
+      state.bridgeModelsLoaded = false;
       return;
     }
 
@@ -953,6 +1345,7 @@ async function checkBridgeHealth(options = {}) {
       'error'
     );
     if (toastEnabled) showToast('Bridge 無法連線', 'error');
+    state.bridgeModelsLoaded = false;
   } catch (err) {
     setBridgeInstallStatus(
       '檢查失敗',
@@ -960,12 +1353,93 @@ async function checkBridgeHealth(options = {}) {
       'error'
     );
     if (toastEnabled) showToast('Bridge 檢查失敗', 'error');
+    state.bridgeModelsLoaded = false;
   }
 }
 
+// Lightweight bridge health check for SDK status dot (no toast, no side-effects)
+async function pollBridgeHealthQuiet() {
+  const port = SDK_BRIDGE_PORT;
+  const url = getBridgeHealthUrl(port);
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: 'bridgeHealth', port, timeoutMs: 3000
+    });
+    if (response?.success && response?.isBridge) {
+      const sdkState = response?.data?.sdk || '';
+      // idle = service running, ready = session ready, connected = actively chatting
+      const okStates = ['ready', 'idle', 'connected', ''];
+      return okStates.includes(sdkState) ? 'success' : 'warning';
+    }
+    return 'error';
+  } catch {
+    return 'error';
+  }
+}
+
+function updateSdkStatusDot(status) {
+  if (dom.sdkModeBtn) {
+    if (status) {
+      dom.sdkModeBtn.dataset.status = status;
+    } else {
+      delete dom.sdkModeBtn.dataset.status;
+    }
+  }
+}
+
+function startSdkHealthPolling() {
+  stopSdkHealthPolling();
+  // Immediate check then every 3s
+  pollBridgeHealthQuiet().then(updateSdkStatusDot);
+  state.sdkHealthTimer = setInterval(() => {
+    pollBridgeHealthQuiet().then(updateSdkStatusDot);
+  }, 3000);
+}
+
+function stopSdkHealthPolling() {
+  if (state.sdkHealthTimer) {
+    clearInterval(state.sdkHealthTimer);
+    state.sdkHealthTimer = null;
+  }
+}
+
+function startBridgeSectionPolling() {
+  stopBridgeSectionPolling();
+  checkBridgeHealth({ showToast: false });
+  state.bridgeSectionHealthTimer = setInterval(() => {
+    checkBridgeHealth({ showToast: false });
+  }, 1000);
+}
+
+function stopBridgeSectionPolling() {
+  if (state.bridgeSectionHealthTimer) {
+    clearInterval(state.bridgeSectionHealthTimer);
+    state.bridgeSectionHealthTimer = null;
+  }
+}
+
+let _autoSaveTimer = null;
 function markSettingsDirty() {
-  updateSettingsStatus('變更已記錄，稍後自動儲存', 'warning');
-  queueSettingsAutoSave();
+  if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+  _autoSaveTimer = setTimeout(async () => {
+    _autoSaveTimer = null;
+    try {
+      const requestedSettings = collectSettingsFromUI();
+      const savedSettings = await persistSettings(requestedSettings, { showToast: false });
+      const currentStatus = dom.settingsStatus?.textContent || '';
+      if (currentStatus.includes('重新載入擴充套件')) {
+        return;
+      }
+      if (requestedSettings.selfIterationEnabled && !savedSettings.selfIterationEnabled) {
+        showToast('首次 SEAL 失敗，設定已回退', 'warning', 1800);
+      } else {
+        showToast('設定已自動儲存', 'success', 1200);
+      }
+    } catch (err) {
+      console.error('[SidePilot] Auto-save failed:', err);
+      showToast('自動儲存失敗', 'error');
+    }
+  }, 600);
 }
 
 async function goCopilotHome() {
@@ -1054,214 +1528,16 @@ function sendSDKMessageViaBackground(data) {
   });
 }
 
-async function loadSDKConfig() {
-  try {
-    const response = await chrome.runtime.sendMessage({ action: 'sdkConfig.get' });
-    if (!response?.success) {
-      throw new Error(response?.error || 'Failed to load SDK config');
-    }
-    state.sdkConfigInfo = {
-      path: response.path,
-      exists: !!response.exists,
-      config: response.config || {}
-    };
-    return state.sdkConfigInfo;
-  } catch (err) {
-    console.warn('[SidePilot] Failed to load SDK config:', err?.message || err);
-    state.sdkConfigInfo = {
-      path: '',
-      exists: false,
-      config: null,
-      error: err?.message || 'unknown'
-    };
-    return null;
-  }
-}
-
-async function loadSDKConfigAndApplyUI() {
-  await loadSDKConfig();
-  applySDKConfigToUI();
-}
-
-function getSDKConfigValue(key) {
-  const config = state.sdkConfigInfo?.config;
-  if (!config || typeof config !== 'object') return undefined;
-  return config[key];
-}
-
-function getSDKConfigSummaryText() {
-  const info = state.sdkConfigInfo;
-  if (!info) {
-    return '尚未讀取 Copilot CLI 設定';
-  }
-  if (info?.error) {
-    return 'Bridge 未連線，無法讀取設定';
-  }
-  const config = info.config || {};
-  const model = config.model || 'default';
-  const renderMarkdown = typeof config.render_markdown === 'boolean' ? config.render_markdown : 'default';
-  const theme = config.theme || 'default';
-  const banner = config.banner || 'default';
-  const reasoningEffort = config.reasoning_effort || 'default';
-
-  return `model: ${model} | render_markdown: ${renderMarkdown} | theme: ${theme} | banner: ${banner} | reasoning_effort: ${reasoningEffort}`;
-}
-
-function setSDKConfigSelectValue(select, value) {
-  if (!select) return;
-  const nextValue = value === undefined || value === null ? '' : String(value);
-  select.value = nextValue;
-  if (select.value !== nextValue) {
-    select.value = '';
-  }
-}
-
-function applySDKConfigToUI() {
-  const info = state.sdkConfigInfo;
-  const hasConfig = !!info && !info?.error;
-
-  if (dom.sdkConfigPath) {
-    if (!info) {
-      dom.sdkConfigPath.textContent = '尚未讀取';
-    } else if (info.error) {
-      dom.sdkConfigPath.textContent = 'Bridge 未連線';
-    } else {
-      const suffix = info.exists === false ? ' (尚未建立)' : '';
-      dom.sdkConfigPath.textContent = `${info.path || '未知路徑'}${suffix}`;
-    }
-  }
-
-  if (dom.sdkConfigSummary) {
-    dom.sdkConfigSummary.textContent = getSDKConfigSummaryText();
-  }
-
-  setSDKConfigSelectValue(dom.settingSdkRenderMarkdown, getSDKConfigValue('render_markdown'));
-  setSDKConfigSelectValue(dom.settingSdkTheme, getSDKConfigValue('theme'));
-  setSDKConfigSelectValue(dom.settingSdkBanner, getSDKConfigValue('banner'));
-  setSDKConfigSelectValue(dom.settingSdkReasoningEffort, getSDKConfigValue('reasoning_effort'));
-
-  if (!hasConfig) {
-    setSDKConfigSelectValue(dom.settingSdkRenderMarkdown, '');
-    setSDKConfigSelectValue(dom.settingSdkTheme, '');
-    setSDKConfigSelectValue(dom.settingSdkBanner, '');
-    setSDKConfigSelectValue(dom.settingSdkReasoningEffort, '');
-  }
-
-  updateSDKConfigControlState();
-}
-
-function updateSDKConfigControlState() {
-  const info = state.sdkConfigInfo;
-  const hasConfig = !!info && !info?.error;
-
-  const setDisabled = (el, disabled) => {
-    if (!el) return;
-    el.disabled = disabled;
-  };
-
-  setDisabled(dom.settingSdkRenderMarkdown, !hasConfig || !state.settings.sdkConfigSyncRenderMarkdown);
-  setDisabled(dom.settingSdkTheme, !hasConfig || !state.settings.sdkConfigSyncTheme);
-  setDisabled(dom.settingSdkBanner, !hasConfig || !state.settings.sdkConfigSyncBanner);
-  setDisabled(dom.settingSdkReasoningEffort, !hasConfig || !state.settings.sdkConfigSyncReasoningEffort);
-}
-
-function buildSDKConfigPatchFromUI(fields = null) {
-  const patch = {};
-  const allow = Array.isArray(fields) ? new Set(fields) : null;
-
-  if (state.settings.sdkConfigSyncRenderMarkdown && (!allow || allow.has('render_markdown'))) {
-    const value = dom.settingSdkRenderMarkdown?.value ?? '';
-    patch.render_markdown = value === '' ? null : value === 'true';
-  }
-  if (state.settings.sdkConfigSyncTheme && (!allow || allow.has('theme'))) {
-    const value = dom.settingSdkTheme?.value ?? '';
-    patch.theme = value === '' ? null : value;
-  }
-  if (state.settings.sdkConfigSyncBanner && (!allow || allow.has('banner'))) {
-    const value = dom.settingSdkBanner?.value ?? '';
-    patch.banner = value === '' ? null : value;
-  }
-  if (state.settings.sdkConfigSyncReasoningEffort && (!allow || allow.has('reasoning_effort'))) {
-    const value = dom.settingSdkReasoningEffort?.value ?? '';
-    patch.reasoning_effort = value === '' ? null : value;
-  }
-
-  return patch;
-}
-
-async function updateSDKConfigFromUI(options = {}) {
-  const patch = buildSDKConfigPatchFromUI(options.fields);
-  if (!Object.keys(patch).length) return;
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'sdkConfig.update',
-      patch
-    });
-    if (!response?.success) {
-      throw new Error(response?.error || 'Failed to update config');
-    }
-
-    state.sdkConfigInfo = {
-      path: response.path || state.sdkConfigInfo?.path || '',
-      exists: true,
-      config: response.config || {}
-    };
-    applySDKConfigToUI();
-
-    if (options.showToast) {
-      showToast('Copilot CLI 設定已更新');
-    }
-  } catch (err) {
-    console.warn('[SidePilot] Failed to update SDK config:', err?.message || err);
-    if (options.showToast) {
-      showToast('Copilot CLI 設定更新失敗', 'error');
-    }
-  }
-}
-
-async function syncSDKConfigModel(model) {
-  const trimmed = String(model || '').trim();
-  const current = typeof getSDKConfigValue('model') === 'string' ? getSDKConfigValue('model') : null;
-
-  if (!trimmed) {
-    if (current === null || current === undefined || current === '') return;
-  } else if (current === trimmed) {
-    return;
-  }
-
-  try {
-    const response = await chrome.runtime.sendMessage({
-      action: 'sdkConfig.update',
-      patch: { model: trimmed ? trimmed : null }
-    });
-    if (response?.success) {
-      state.sdkConfigInfo = {
-        path: response.path || state.sdkConfigInfo?.path || '',
-        exists: true,
-        config: response.config || {}
-      };
-      applySDKConfigToUI();
-    }
-  } catch (err) {
-    console.warn('[SidePilot] Failed to update SDK config model:', err?.message || err);
-  }
-}
-
 async function loadSDKModelOptions() {
   if (!dom.sdkModelSelect) return;
 
   try {
-    const [response, configInfo] = await Promise.all([
-      chrome.runtime.sendMessage({ action: 'sdkModels' }),
-      loadSDKConfig()
-    ]);
+    const response = await chrome.runtime.sendMessage({ action: 'sdkModels' });
     if (!response?.success || !Array.isArray(response.models)) {
       throw new Error(response?.error || 'Failed to load model list');
     }
 
     const current = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || '';
-    const configModel = typeof configInfo?.config?.model === 'string' ? configInfo.config.model.trim() : '';
     dom.sdkModelSelect.innerHTML = '';
 
     const defaultOption = document.createElement('option');
@@ -1278,13 +1554,10 @@ async function loadSDKModelOptions() {
 
     if (current && response.models.includes(current)) {
       dom.sdkModelSelect.value = current;
-    } else if (configModel && response.models.includes(configModel)) {
-      dom.sdkModelSelect.value = configModel;
     } else {
       dom.sdkModelSelect.value = '';
       localStorage.removeItem(STORAGE_KEY_SDK_MODEL);
     }
-    applySDKConfigToUI();
   } catch (err) {
     console.warn('[SidePilot] Failed to load SDK models:', err?.message || err);
   }
@@ -1340,13 +1613,46 @@ function buildSDK404HelpMessage(errorMessage = '') {
 // Rules Management
 // ============================================
 
-async function loadRules() {
+function updateRulesOriginBadge(meta = {}) {
+  if (!dom.rulesOriginBadge || !dom.rulesOriginDetail) return;
+
+  const source = meta?.source === RULES_SOURCE_SYSTEM_BASELINE
+    ? RULES_SOURCE_SYSTEM_BASELINE
+    : RULES_SOURCE_USER;
+  const templateId = typeof meta?.templateId === 'string' ? meta.templateId.trim() : '';
+  const version = Number(meta?.version) || 0;
+
+  if (source === RULES_SOURCE_SYSTEM_BASELINE) {
+    dom.rulesOriginBadge.textContent = '系統 baseline';
+    dom.rulesOriginBadge.dataset.origin = 'baseline';
+    dom.rulesOriginDetail.textContent = `來源：預設樣板${templateId ? ` (${templateId})` : ''} · version ${version || '-'}`;
+    return;
+  }
+
+  dom.rulesOriginBadge.textContent = '使用者自建';
+  dom.rulesOriginBadge.dataset.origin = 'user';
+  if (templateId && templateId !== 'custom') {
+    dom.rulesOriginDetail.textContent = `來源：使用者套用樣板 (${templateId}) · version ${version || '-'}`;
+  } else {
+    dom.rulesOriginDetail.textContent = `來源：使用者編輯/匯入 · version ${version || '-'}`;
+  }
+}
+
+async function loadRules(options = {}) {
+  const silentStatus = options?.silentStatus === true;
+
   chrome.runtime.sendMessage({ action: 'rules.load' }, (response) => {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
-      updateRulesStatus('Loaded', 'success');
+      updateRulesOriginBadge(response);
+      if (!silentStatus) {
+        updateRulesStatus('已載入', 'success');
+      }
     } else {
-      updateRulesStatus('Failed to load', 'error');
+      if (!silentStatus) {
+        updateRulesStatus('載入失敗', 'error');
+      }
+      updateRulesOriginBadge({ source: RULES_SOURCE_USER, templateId: 'custom' });
     }
   });
 }
@@ -1354,16 +1660,17 @@ async function loadRules() {
 async function saveRules() {
   if (!dom.rulesEditor) return;
   
-  updateRulesStatus('Saving...', 'pending');
+  updateRulesStatus('儲存中...', 'pending');
   const content = dom.rulesEditor.value;
   
   chrome.runtime.sendMessage({ action: 'rules.save', content }, (response) => {
     if (response?.success) {
-      updateRulesStatus('Saved', 'success');
-      showToast('Rules saved successfully');
+      updateRulesStatus('已儲存', 'success');
+      loadRules({ silentStatus: true });
+      showToast('規則已儲存');
     } else {
-      updateRulesStatus('Save failed', 'error');
-      showToast('Failed to save rules', 'error');
+      updateRulesStatus('儲存失敗', 'error');
+      showToast('規則儲存失敗', 'error');
     }
   });
 }
@@ -1424,10 +1731,11 @@ function applyTemplate(templateId) {
   chrome.runtime.sendMessage({ action: 'rules.applyTemplate', templateId }, (response) => {
     if (response?.success && dom.rulesEditor) {
       dom.rulesEditor.value = response.content || '';
-      updateRulesStatus('Template applied', 'success');
-      showToast('Template applied');
+      updateRulesStatus('已套用樣板', 'success');
+      loadRules({ silentStatus: true });
+      showToast('樣板已套用');
     } else {
-      showToast('Failed to apply template', 'error');
+      showToast('套用樣板失敗', 'error');
     }
     if (dom.templateSelect) dom.templateSelect.value = '';
   });
@@ -1474,20 +1782,54 @@ function searchMemory(query) {
   });
 }
 
+function normalizeEntrySource(entry) {
+  if (entry?.source === 'system_baseline') return 'system_baseline';
+  return 'user';
+}
+
+function getMemoryOriginLabel(entry) {
+  return normalizeEntrySource(entry) === 'system_baseline'
+    ? '系統 baseline'
+    : '使用者自建';
+}
+
+function getMemoryOriginClass(entry) {
+  return normalizeEntrySource(entry) === 'system_baseline'
+    ? 'baseline'
+    : 'user';
+}
+
 // Render memory entries list with proper event delegation
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
   
+  // Build pinned system identity card
+  const identityCard = `
+    <div class="memory-entry memory-entry-pinned" data-id="${SIDEPILOT_SYSTEM_IDENTITY.id}">
+      <div class="memory-entry-header">
+        <span class="memory-entry-title">📌 ${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.title)}</span>
+        <span class="memory-entry-type">system</span>
+      </div>
+      <div class="memory-entry-content">${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.content)}</div>
+      <div class="memory-entry-footer">
+        <a href="#" class="memory-edit-link" data-action="edit-identity">⚙️ 前往設定修改</a>
+      </div>
+    </div>
+  `;
+
   if (!entries || entries.length === 0) {
-    dom.memoryList.innerHTML = '<div class="memory-empty">No entries found.</div>';
+    dom.memoryList.innerHTML = identityCard + '<div class="memory-empty">No entries found.</div>';
     return;
   }
 
-  dom.memoryList.innerHTML = entries.map(entry => `
+  dom.memoryList.innerHTML = identityCard + entries.map(entry => `
     <div class="memory-entry" data-id="${entry.id}">
       <div class="memory-entry-header">
         <span class="memory-entry-title">${escapeHtml(entry.title)}</span>
-        <span class="memory-entry-type">${entry.type}</span>
+        <div class="memory-entry-meta">
+          <span class="memory-entry-type">${entry.type}</span>
+          <span class="memory-entry-origin memory-entry-origin-${getMemoryOriginClass(entry)}">${getMemoryOriginLabel(entry)}</span>
+        </div>
       </div>
       <div class="memory-entry-content">${escapeHtml(entry.content)}</div>
       <div class="memory-entry-footer">
@@ -1517,6 +1859,13 @@ function renderMemoryList(entries) {
 function setupMemoryListeners() {
   if (dom.memoryList) {
     dom.memoryList.addEventListener('click', (e) => {
+      // Identity card → jump to settings tab
+      const editLink = e.target.closest('[data-action="edit-identity"]');
+      if (editLink) {
+        e.preventDefault();
+        switchTab('settings');
+        return;
+      }
       const entryDiv = e.target.closest('.memory-entry');
       if (entryDiv) {
         editMemoryEntry(entryDiv.dataset.id);
@@ -1525,11 +1874,24 @@ function setupMemoryListeners() {
   }
 }
 
+const ENTRY_TYPE_HINTS = {
+  task: '為此對話標記一個待辦事項或行動項目',
+  note: '記錄觀察到的現象、想法或學習心得',
+  context: '保存專案架構、技術決策等背景資訊，供 AI 參考',
+  reference: '保存外部連結、文件路徑或參考資料'
+};
+
+function updateEntryTypeHint(type) {
+  const hint = document.getElementById('entryTypeHint');
+  if (hint) hint.textContent = ENTRY_TYPE_HINTS[type] || '';
+}
+
 function openMemoryModal(entry = null) {
   currentEditingId = entry ? entry.id : null;
   
-  if (dom.memoryModalTitle) dom.memoryModalTitle.textContent = entry ? 'Edit Entry' : 'New Entry';
+  if (dom.memoryModalTitle) dom.memoryModalTitle.textContent = entry ? '編輯條目' : '新增條目';
   if (dom.entryType) dom.entryType.value = entry ? entry.type : 'task';
+  updateEntryTypeHint(entry ? entry.type : 'task');
   if (dom.entryTitle) dom.entryTitle.value = entry ? entry.title : '';
   if (dom.entryContent) dom.entryContent.value = entry ? entry.content : '';
   if (dom.entryStatus) {
@@ -1585,9 +1947,9 @@ function saveMemoryEntry() {
       if (response?.success) {
         closeMemoryModal();
         loadMemoryEntries();
-        showToast('Entry updated');
+        showToast('條目已更新');
       } else {
-        showToast('Failed to update: ' + response.error, 'error');
+        showToast('更新失敗: ' + response.error, 'error');
       }
     });
   } else {
@@ -1595,24 +1957,24 @@ function saveMemoryEntry() {
       if (response?.success) {
         closeMemoryModal();
         loadMemoryEntries();
-        showToast('Entry created');
+        showToast('條目已建立');
       } else {
-        showToast('Failed to create: ' + response.error, 'error');
+        showToast('建立失敗: ' + response.error, 'error');
       }
     });
   }
 }
 
 function deleteMemoryEntry(id) {
-  if (!confirm('Are you sure you want to delete this entry?')) return;
+  if (!confirm('確定要刪除此條目嗎？')) return;
   
   chrome.runtime.sendMessage({ action: 'memory.delete', id }, (response) => {
     if (response?.success) {
       closeMemoryModal();
       loadMemoryEntries();
-      showToast('Entry deleted');
+      showToast('條目已刪除');
     } else {
-      showToast('Failed to delete', 'error');
+      showToast('刪除失敗', 'error');
     }
   });
 }
@@ -1636,14 +1998,34 @@ function sendEntryToVSCode() {
 // 事件監聽器設置
 // ============================================
 
+let _captureHoverTimer = null;
+
 function setupEventListeners() {
   // 底部浮動擷取按鈕
   dom.floatingCaptureBtn?.addEventListener('click', toggleCapturePanel);
 
+  // Hover: expand narrow button to 20px, restore after 1s on leave
+  dom.floatingCaptureBtn?.addEventListener('mouseenter', () => {
+    if (_captureHoverTimer) { clearTimeout(_captureHoverTimer); _captureHoverTimer = null; }
+    const saved = clampCaptureButtonWidth(state.settings?.captureButtonWidth);
+    if (saved < 20) {
+      document.documentElement.style.setProperty('--capture-button-width', '20px');
+      dom.floatingCaptureBtn?.classList.remove('capture-compact');
+    }
+  });
+  dom.floatingCaptureBtn?.addEventListener('mouseleave', () => {
+    const saved = clampCaptureButtonWidth(state.settings?.captureButtonWidth);
+    if (saved < 20) {
+      _captureHoverTimer = setTimeout(() => {
+        applyCaptureButtonWidth(saved);
+        _captureHoverTimer = null;
+      }, 1000);
+    }
+  });
+
   // 擷取面板
   dom.closeCaptureBtn?.addEventListener('click', closeCapturePanel);
   dom.captureContent?.addEventListener('click', handleCaptureContentClick);
-  dom.copyAllBtn?.addEventListener('click', outputTextToChat);
 
   // 錯誤處理
   dom.retryBtn?.addEventListener('click', refreshFrame);
@@ -1690,94 +2072,21 @@ function setupEventListeners() {
     if (dom.entryStatus) {
       dom.entryStatus.style.display = e.target.value === 'task' ? 'block' : 'none';
     }
+    updateEntryTypeHint(e.target.value);
   });
   dom.sendToVSCodeBtn?.addEventListener('click', sendEntryToVSCode);
-  dom.settingSdkIncludeMemory?.addEventListener('change', () => {
-    state.settings.sdkIncludeMemory = !!dom.settingSdkIncludeMemory?.checked;
+  dom.sdkIncludeMemory?.addEventListener('change', () => {
+    syncContextChildToggles();
     refreshSDKMemorySummary();
-    markSettingsDirty();
   });
-  dom.settingSdkIncludeRules?.addEventListener('change', () => {
-    state.settings.sdkIncludeRules = !!dom.settingSdkIncludeRules?.checked;
-    refreshSDKMemorySummary();
-    markSettingsDirty();
+  // Granular context toggles — save state
+  ['sdkIncludeIdentity', 'sdkIncludeMemoryEntries', 'sdkIncludeRules', 'sdkIncludeSystemMsg', 'sdkStructuredOutput'].forEach(key => {
+    dom[key]?.addEventListener('change', () => {
+      localStorage.setItem(`sidepilot_${key}`, String(dom[key].checked));
+      refreshSDKMemorySummary();
+    });
   });
-  dom.settingSdkShowStorageLocation?.addEventListener('change', () => {
-    state.settings.sdkShowStorageLocation = !!dom.settingSdkShowStorageLocation?.checked;
-    updateSDKStorageLocationDisplay();
-    markSettingsDirty();
-  });
-  dom.settingSdkSessionPath?.addEventListener('input', () => {
-    state.settings.sdkSessionStatePath = normalizeSessionStatePath(dom.settingSdkSessionPath?.value);
-    updateSDKStorageLocationDisplay();
-    markSettingsDirty();
-  });
-  dom.settingSdkConversationSavePath?.addEventListener('input', () => {
-    state.settings.sdkConversationSavePath = normalizeSavePath(
-      dom.settingSdkConversationSavePath?.value,
-      DEFAULT_CHAT_SAVE_PATH
-    );
-    markSettingsDirty();
-  });
-  dom.settingSdkScreenshotSavePath?.addEventListener('input', () => {
-    state.settings.sdkScreenshotSavePath = normalizeSavePath(
-      dom.settingSdkScreenshotSavePath?.value,
-      DEFAULT_SCREENSHOT_SAVE_PATH
-    );
-    markSettingsDirty();
-  });
-  dom.settingSdkSyncRenderMarkdown?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncRenderMarkdown = !!dom.settingSdkSyncRenderMarkdown?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncRenderMarkdown) {
-      updateSDKConfigFromUI({ fields: ['render_markdown'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncTheme?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncTheme = !!dom.settingSdkSyncTheme?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncTheme) {
-      updateSDKConfigFromUI({ fields: ['theme'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncBanner?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncBanner = !!dom.settingSdkSyncBanner?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncBanner) {
-      updateSDKConfigFromUI({ fields: ['banner'], showToast: true });
-    }
-  });
-  dom.settingSdkSyncReasoningEffort?.addEventListener('change', () => {
-    state.settings.sdkConfigSyncReasoningEffort = !!dom.settingSdkSyncReasoningEffort?.checked;
-    updateSDKConfigControlState();
-    markSettingsDirty();
-    if (state.settings.sdkConfigSyncReasoningEffort) {
-      updateSDKConfigFromUI({ fields: ['reasoning_effort'], showToast: true });
-    }
-  });
-  dom.settingSdkRenderMarkdown?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncRenderMarkdown) {
-      updateSDKConfigFromUI({ fields: ['render_markdown'], showToast: true });
-    }
-  });
-  dom.settingSdkTheme?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncTheme) {
-      updateSDKConfigFromUI({ fields: ['theme'], showToast: true });
-    }
-  });
-  dom.settingSdkBanner?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncBanner) {
-      updateSDKConfigFromUI({ fields: ['banner'], showToast: true });
-    }
-  });
-  dom.settingSdkReasoningEffort?.addEventListener('change', () => {
-    if (state.settings.sdkConfigSyncReasoningEffort) {
-      updateSDKConfigFromUI({ fields: ['reasoning_effort'], showToast: true });
-    }
-  });
+  dom.sdkAssistantOnly?.addEventListener('change', applySDKAssistantOnlyMode);
   dom.sdkModelSelect?.addEventListener('change', () => {
     const value = dom.sdkModelSelect?.value || '';
     if (value) {
@@ -1785,18 +2094,37 @@ function setupEventListeners() {
     } else {
       localStorage.removeItem(STORAGE_KEY_SDK_MODEL);
     }
-    syncSDKConfigModel(value);
-    chrome.runtime.sendMessage({ action: 'sdkResetSession' });
   });
 
-  // Settings Tab
-  dom.saveSettingsBtn?.addEventListener('click', () => {
-    saveSettings().catch((err) => {
-      console.error('[SidePilot] Failed to save settings:', err);
-      updateSettingsStatus('儲存失敗', 'error');
-      showToast('設定儲存失敗', 'error');
+  // Logs Tab
+  dom.logSearch?.addEventListener('input', () => renderLogs());
+  dom.logLevelFilter?.addEventListener('change', () => renderLogs());
+  dom.clearLogsBtn?.addEventListener('click', clearLogs);
+  dom.copyLogsBtn?.addEventListener('click', copyLogsToClipboard);
+
+  // History Log Tab (Bridge)
+  dom.refreshLogBtn?.addEventListener('click', () => loadLogFiles());
+
+  // Settings Tab (auto-save — no manual save button)
+
+  // Collapsible settings sections + bridge section polling
+  document.querySelectorAll('.settings-section-title[data-toggle="section"]').forEach(title => {
+    title.addEventListener('click', () => {
+      const section = title.closest('.settings-section');
+      section.classList.toggle('collapsed');
+
+      // Start/stop bridge section polling when install helper section toggles
+      const isBridgeSection = section.querySelector('#bridgeStatusDot');
+      if (isBridgeSection) {
+        if (section.classList.contains('collapsed')) {
+          stopBridgeSectionPolling();
+        } else {
+          startBridgeSectionPolling();
+        }
+      }
     });
   });
+
   dom.settingCaptureButtonWidth?.addEventListener('input', (e) => {
     const width = clampCaptureButtonWidth(e.target.value);
     updateCaptureWidthLabel(width);
@@ -1804,17 +2132,11 @@ function setupEventListeners() {
     markSettingsDirty();
   });
   dom.settingAutoSdkLogin?.addEventListener('change', markSettingsDirty);
+  dom.settingSelfIterationEnabled?.addEventListener('change', markSettingsDirty);
   dom.settingPlayIntroEveryOpen?.addEventListener('change', markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener('change', markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener('input', markSettingsDirty);
-  dom.settingLinkGuardMode?.addEventListener('change', () => {
-    state.settings.linkGuardMode = dom.settingLinkGuardMode?.value === 'deny' ? 'deny' : 'allow';
-    updateLinkGuardLabels(state.settings.linkGuardMode);
-    markSettingsDirty();
-  });
-  dom.settingSdkTagAssistant?.addEventListener('change', markSettingsDirty);
-  dom.settingSdkTagPacket?.addEventListener('change', markSettingsDirty);
-  dom.settingSdkTagRaw?.addEventListener('change', markSettingsDirty);
+  document.getElementById('settingIframeHistoryUrl')?.addEventListener('input', markSettingsDirty);
   dom.openSdkLoginGuideBtn?.addEventListener('click', openSDKLoginPage);
   dom.testSdkBridgeBtn?.addEventListener('click', async () => {
     updateSettingsStatus('測試 Bridge 連線中...', 'warning');
@@ -1824,7 +2146,6 @@ function setupEventListeners() {
         updateSettingsStatus('Bridge 連線成功', 'success');
         showToast('SDK Bridge 已連線');
         loadSDKModelOptions();
-        loadSDKConfigAndApplyUI();
       } else {
         updateSettingsStatus('Bridge 未啟動或無法連線', 'error');
         showToast('Bridge 連線失敗，請先啟動本機服務', 'error');
@@ -1859,6 +2180,21 @@ function setupEventListeners() {
       handleSDKLoginModalAction();
     }
   });
+
+  // WP-01: Permission modal buttons
+  dom.permissionApproveBtn?.addEventListener('click', () => resolvePermission('allow'));
+  dom.permissionDenyBtn?.addEventListener('click', () => resolvePermission('deny'));
+  dom.permissionModal?.addEventListener('click', (e) => {
+    if (e.target === dom.permissionModal) resolvePermission('deny');
+  });
+
+  // WP-07: Prompt strategy buttons
+  dom.promptStrategyBtns?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.strategy-btn');
+    if (!btn) return;
+    const strategy = btn.dataset.strategy;
+    if (strategy) setPromptStrategy(strategy);
+  });
   
   setupMemoryListeners();
   refreshSDKMemorySummary();
@@ -1872,8 +2208,10 @@ function setupEventListeners() {
     dom.sdkInput.value = '';
     dom.sdkSendBtn.disabled = true;
     
-    // Add user message
-    addSDKMessage('user', content);
+    // Add user message with image indicator
+    const imgCount = state.pendingChatImages.length;
+    const displayContent = imgCount > 0 ? `${content}\n📎 ${imgCount} 張圖片附加` : content;
+    addSDKMessage('user', displayContent);
     
     // Add typing indicator
     const typingId = addSDKTypingIndicator();
@@ -1882,34 +2220,52 @@ function setupEventListeners() {
       let promptToSend = content;
       let sandboxSystemMessage;
 
-      const includeMemory = state.settings.sdkIncludeMemory !== false;
-      const includeRules = state.settings.sdkIncludeRules !== false;
-
-      if (includeMemory || includeRules) {
+      if (dom.sdkIncludeMemory?.checked) {
         try {
+          const includeIdentity = !!dom.sdkIncludeIdentity?.checked;
+          const includeMemEntries = !!dom.sdkIncludeMemoryEntries?.checked;
+          const includeRules = !!dom.sdkIncludeRules?.checked;
+          const includeSystemMsg = !!dom.sdkIncludeSystemMsg?.checked;
+          const useStructuredOutput = !!dom.sdkStructuredOutput?.checked;
+
           const [allMemoryEntries, rulesContent] = await Promise.all([
-            includeMemory ? listAllMemoryEntries() : Promise.resolve([]),
+            includeMemEntries ? listAllMemoryEntries() : Promise.resolve([]),
             includeRules ? loadRulesContent().catch(() => '') : Promise.resolve('')
           ]);
-          const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent);
+          const identityText = includeIdentity ? SIDEPILOT_SYSTEM_IDENTITY.content : '';
+          const composed = buildMemoryInjectedPrompt(content, allMemoryEntries, rulesContent, { useStructuredOutput, identityText });
           promptToSend = composed.prompt;
-          sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
-          updateSDKMemorySummary(
-            `Packet v1: ${composed.injectedCount} mem, rules ${composed.rulesInjected ? 'on' : 'off'}`
-          );
+          if (includeSystemMsg) {
+            sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
+          }
+          const parts = [];
+          if (includeIdentity) parts.push('id');
+          if (includeMemEntries) parts.push(`${composed.injectedCount} mem`);
+          if (includeRules) parts.push(`rules ${composed.rulesInjected ? 'on' : 'off'}`);
+          if (includeSystemMsg) parts.push('sys');
+          if (useStructuredOutput) parts.push('struct');
+          updateSDKMemorySummary(`Packet: ${parts.join(', ')}`);
         } catch (memoryErr) {
-          console.warn('[SidePilot] Memory injection failed:', memoryErr);
-          updateSDKMemorySummary('Memory injection unavailable');
-          showToast('Memory 載入失敗，本次僅送出原始訊息', 'warning');
+          console.warn('[SidePilot] Context injection failed:', memoryErr);
+          updateSDKMemorySummary('Context injection unavailable');
+          showToast('Context 載入失敗，本次僅送出原始訊息', 'warning');
         }
       }
 
-      const response = await sendSDKMessageViaBackground({
+      const sendPayload = {
         type: 'chat',
         content: promptToSend,
         systemMessage: sandboxSystemMessage,
         model: getSelectedSDKModel()
-      });
+      };
+      // Attach pending screenshots
+      if (state.pendingChatImages.length > 0) {
+        sendPayload.images = [...state.pendingChatImages];
+        state.pendingChatImages = [];
+        updatePendingImagesBadge();
+      }
+
+      const response = await sendSDKMessageViaBackground(sendPayload);
       
       removeSDKTypingIndicator(typingId);
       
@@ -1952,6 +2308,9 @@ function setupEventListeners() {
       dom.sdkSendBtn?.click();
     }
   });
+
+  dom.sdkInputResizer?.addEventListener('mousedown', startSDKInputResizeDrag);
+  window.addEventListener('resize', handleSDKInputViewportResize);
 }
 
 // ============================================
@@ -2171,13 +2530,11 @@ function updatePageInfo(title, url) {
 // ============================================
 
 function toggleCapturePanel() {
-  if (!state.isCapturePanelOpen) {
+  if (state.isCapturePanelOpen) {
+    closeCapturePanel();
+  } else {
     openCapturePanel();
-    return;
   }
-
-  clearCaptureState();
-  loadPageContent();
 }
 
 async function openCapturePanel() {
@@ -2193,15 +2550,7 @@ function closeCapturePanel() {
 }
 
 function syncCapturePanelMode() {
-  // Capture panel now available in both modes
-}
-
-function clearCaptureState() {
-  state.currentPageContent = null;
-  state.currentPageScreenshot = null;
-  state.currentPartialScreenshot = null;
-  state.currentPageError = null;
-  renderCaptureLoading();
+  // Capture button works in both modes; only close panel if switching away from capture context
 }
 
 async function loadPageContent() {
@@ -2288,13 +2637,15 @@ function renderCaptureContent() {
 
   const fullShot = state.currentPageScreenshot;
   const partialShot = state.currentPartialScreenshot;
+  const isFullPage = !!state.currentFullPageScreenshot && state.currentPageScreenshot === state.currentFullPageScreenshot;
 
   const fullThumbAction = fullShot ? 'open-full' : 'refresh-full';
   const partialThumbAction = partialShot ? 'open-partial' : 'capture-partial';
+  const fullThumbLabel = isFullPage ? '整頁截圖' : '可見範圍';
 
   const fullThumbHtml = fullShot
     ? `<img src="${escapeAttr(fullShot)}" alt="頁面截圖">
-       <div class="capture-thumb-label">可見範圍</div>
+       <div class="capture-thumb-label">${fullThumbLabel}</div>
        <div class="capture-thumb-action" data-action="refresh-full">重新擷取</div>`
     : `<div>點擊擷取頁面縮圖</div>`;
 
@@ -2315,7 +2666,7 @@ function renderCaptureContent() {
           ${textBodyHtml}
         </div>
         <div class="capture-card-actions">
-          <button class="btn-soft" data-action="copy-text">複製文字</button>
+          <button class="btn-soft" data-action="copy-text">📋 複製到對話視窗</button>
           <button class="btn-soft" data-action="copy-structured">複製結構化</button>
         </div>
       </div>
@@ -2323,15 +2674,16 @@ function renderCaptureContent() {
       <div class="capture-card">
         <div class="capture-card-header">
           <div class="capture-card-title">B 頁面截圖</div>
-          <div class="capture-card-subtitle">自動擷取可見範圍</div>
+          <div class="capture-card-subtitle">${isFullPage ? '已擷取整頁' : '自動擷取可見範圍'}</div>
         </div>
         <div class="capture-card-body">
           <div class="capture-thumb" data-action="${fullThumbAction}">${fullThumbHtml}</div>
         </div>
         <div class="capture-card-actions">
+          <button class="btn-soft" data-action="fullpage-screenshot">📜 整頁截圖</button>
           <button class="btn-soft" data-action="refresh-full">重新擷取</button>
-          <button class="btn-soft" data-action="send-full">送出至聊天對話</button>
           <button class="btn-soft" data-action="download-full">下載截圖</button>
+          <button class="btn-soft" data-action="send-full-to-chat">💬 傳送到對話</button>
         </div>
       </div>
 
@@ -2345,8 +2697,8 @@ function renderCaptureContent() {
         </div>
         <div class="capture-card-actions">
           <button class="btn-soft" data-action="capture-partial">選取範圍</button>
-          <button class="btn-soft" data-action="send-partial">送出至聊天對話</button>
           <button class="btn-soft" data-action="download-partial">下載截圖</button>
+          <button class="btn-soft" data-action="send-partial-to-chat">💬 傳送到對話</button>
         </div>
       </div>
     </div>
@@ -2373,6 +2725,7 @@ function buildTextStats(content) {
   if (content.paragraphs?.length) parts.push(`${content.paragraphs.length} 段`);
   if (content.headings?.length) parts.push(`${content.headings.length} 標題`);
   if (content.codeBlocks?.length) parts.push(`${content.codeBlocks.length} 程式碼`);
+  if (content.extractor === 'defuddle') parts.push('✨ Defuddle');
   return parts.length > 0 ? parts.join(' · ') : '尚無文字';
 }
 
@@ -2400,11 +2753,8 @@ function handleCaptureContentClick(event) {
     case 'download-partial':
       downloadScreenshot(state.currentPartialScreenshot, 'sidepilot-partial.png');
       break;
-    case 'send-full':
-      sendScreenshotToChat(state.currentPageScreenshot, 'page-screenshot');
-      break;
-    case 'send-partial':
-      sendScreenshotToChat(state.currentPartialScreenshot, 'partial-screenshot');
+    case 'fullpage-screenshot':
+      refreshFullPageScreenshot();
       break;
     case 'open-full':
       openScreenshotInTab(state.currentPageScreenshot);
@@ -2412,9 +2762,51 @@ function handleCaptureContentClick(event) {
     case 'open-partial':
       openScreenshotInTab(state.currentPartialScreenshot);
       break;
+    case 'send-full-to-chat':
+      attachScreenshotToChat(state.currentPageScreenshot, '頁面截圖');
+      break;
+    case 'send-partial-to-chat':
+      attachScreenshotToChat(state.currentPartialScreenshot, '部分截圖');
+      break;
     default:
       break;
   }
+}
+
+function attachScreenshotToChat(dataUrl, label) {
+  if (!dataUrl) {
+    showToast('沒有可用的截圖', 'warning');
+    return;
+  }
+  // Strip dataURL prefix to get raw base64
+  const base64 = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+  const mimeMatch = dataUrl.match(/^data:(image\/\w+);base64,/);
+  const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
+  state.pendingChatImages.push({ mimeType, data: base64 });
+  showToast(`${label} 已附加，將隨下次訊息傳送 (${state.pendingChatImages.length} 張)`);
+  updatePendingImagesBadge();
+}
+
+function updatePendingImagesBadge() {
+  let badge = document.getElementById('pendingImagesBadge');
+  const count = state.pendingChatImages.length;
+  if (count === 0) {
+    if (badge) badge.remove();
+    return;
+  }
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.id = 'pendingImagesBadge';
+    badge.className = 'pending-images-badge';
+    badge.title = '點擊清除附加圖片';
+    badge.addEventListener('click', () => {
+      state.pendingChatImages = [];
+      updatePendingImagesBadge();
+      showToast('已清除附加圖片');
+    });
+    dom.sdkSendBtn?.parentElement?.insertBefore(badge, dom.sdkSendBtn);
+  }
+  badge.textContent = `📎 ${count}`;
 }
 
 async function setModeFromUI(mode) {
@@ -2515,6 +2907,31 @@ async function refreshPartialScreenshot() {
   }
 }
 
+function requestFullPageScreenshot() {
+  return new Promise(resolve => {
+    chrome.runtime.sendMessage({ action: 'captureFullPageScreenshot' }, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ success: false, error: chrome.runtime.lastError.message });
+        return;
+      }
+      resolve(response || { success: false, error: '無法擷取整頁截圖' });
+    });
+  });
+}
+
+async function refreshFullPageScreenshot() {
+  showToast('整頁截圖擷取中，請稍候...');
+  const result = await requestFullPageScreenshot();
+  if (result?.success && result.dataUrl) {
+    state.currentFullPageScreenshot = result.dataUrl;
+    state.currentPageScreenshot = result.dataUrl;
+    renderCaptureContent();
+    showToast('整頁截圖已完成');
+  } else {
+    showToast(result?.error || '整頁截圖失敗', 'error');
+  }
+}
+
 function openScreenshotInTab(dataUrl) {
   if (!dataUrl) {
     showToast('尚無截圖可開啟', 'error');
@@ -2523,82 +2940,18 @@ function openScreenshotInTab(dataUrl) {
   chrome.tabs.create({ url: dataUrl });
 }
 
-function sanitizeDownloadPath(path) {
-  const raw = String(path || '').trim();
-  if (!raw) return '';
-  let normalized = raw.replace(/\\/g, '/');
-  normalized = normalized.replace(/^[A-Za-z]:\/?/, '');
-  normalized = normalized.replace(/^\/+/, '');
-  normalized = normalized.replace(/\.\.(\/|\\)/g, '');
-  return normalized.replace(/\/+$/, '');
-}
-
-function buildDownloadFilename(folder, filename) {
-  const safeFolder = sanitizeDownloadPath(folder);
-  if (!safeFolder) return filename;
-  return `${safeFolder}/${filename}`;
-}
-
 function downloadScreenshot(dataUrl, filename) {
   if (!dataUrl) {
     showToast('尚無截圖可下載', 'error');
     return;
   }
-  const targetFolder = state.settings.sdkScreenshotSavePath;
-  const finalName = buildDownloadFilename(targetFolder, filename);
-  const saveAs = !sanitizeDownloadPath(targetFolder);
-  chrome.downloads.download({ url: dataUrl, filename: finalName, saveAs }, () => {
+  chrome.downloads.download({ url: dataUrl, filename, saveAs: true }, () => {
     if (chrome.runtime.lastError) {
       showToast('下載失敗: ' + chrome.runtime.lastError.message, 'error');
     } else {
       showToast('已開始下載');
     }
   });
-}
-
-async function copyImageToClipboard(dataUrl) {
-  if (!dataUrl || !navigator.clipboard?.write) return false;
-  try {
-    const response = await fetch(dataUrl);
-    const blob = await response.blob();
-    const item = new ClipboardItem({ [blob.type]: blob });
-    await navigator.clipboard.write([item]);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function sendScreenshotToChat(dataUrl, label) {
-  if (!dataUrl) {
-    showToast('尚無截圖可送出', 'error');
-    return;
-  }
-
-  if (state.detectedMode === 'sdk') {
-    if (!dom.sdkInput || !dom.sdkSendBtn) {
-      showToast('SDK 對話輸入框不可用', 'error');
-      return;
-    }
-    const filename = label === 'partial-screenshot' ? 'sidepilot-partial.png' : 'sidepilot-page.png';
-    const targetFolder = state.settings.sdkScreenshotSavePath;
-    const relativePath = buildDownloadFilename(targetFolder, filename);
-    downloadScreenshot(dataUrl, filename);
-    dom.sdkInput.value = `已儲存截圖：${relativePath}`;
-    dom.sdkSendBtn.click();
-    showToast('SDK 不支援圖片，已送出截圖路徑', 'warning');
-    return;
-  }
-
-  const copied = await copyImageToClipboard(dataUrl);
-  if (copied) {
-    showToast('圖片已複製，請貼到 Copilot 對話框', 'success');
-    dom.copilotFrame?.focus();
-    return;
-  }
-
-  openScreenshotInTab(dataUrl);
-  showToast('已開啟截圖，請拖曳到 Copilot 對話框', 'warning');
 }
 
 // ============================================
@@ -2679,6 +3032,7 @@ function normalizeMemoryEntries(entries) {
       type: entry.type || 'note',
       title: typeof entry.title === 'string' ? entry.title.trim() : '',
       content: typeof entry.content === 'string' ? entry.content.trim() : '',
+      source: normalizeEntrySource(entry),
       status: entry.status,
       updatedAt: Number(entry.updatedAt) || Number(entry.createdAt) || 0
     }))
@@ -2763,7 +3117,8 @@ function formatMemoryEntryForPrompt(entry) {
   };
 }
 
-function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') {
+function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '', options = {}) {
+  const { useStructuredOutput = true, identityText = '' } = options;
   const selectedEntries = pickMemoryEntriesForPrompt(memoryEntries, userInput);
 
   let usedMemoryLength = 0;
@@ -2786,15 +3141,11 @@ function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') 
   const packet = {
     schema: SIDEPILOT_PACKET_SCHEMA,
     context: {
+      identity: identityText || null,
       rules: rulesInjected ? normalizedRules : null,
-      memory: memoryPacket
+      memory: memoryPacket.length > 0 ? memoryPacket : null
     },
     user_message: userInput,
-    output_contract: {
-      schema: SIDEPILOT_SANDBOX_SCHEMA,
-      packet_tag: 'sidepilot_packet',
-      response_tag: 'assistant_response'
-    },
     instructions: [
       'Use memory and rules only when relevant.',
       'If context conflicts with the latest user message, prioritize the latest user message.',
@@ -2802,6 +3153,14 @@ function buildMemoryInjectedPrompt(userInput, memoryEntries, rulesContent = '') 
       'Do not reveal chain-of-thought.'
     ]
   };
+
+  if (useStructuredOutput) {
+    packet.output_contract = {
+      schema: SIDEPILOT_SANDBOX_SCHEMA,
+      packet_tag: 'sidepilot_packet',
+      response_tag: 'assistant_response'
+    };
+  }
 
   const lines = [
     '[[SIDEPILOT_TURN_PACKET]]',
@@ -2821,65 +3180,39 @@ function updateSDKMemorySummary(text) {
   dom.sdkMemorySummary.textContent = text;
 }
 
-function truncateText(text, maxLength) {
-  const value = String(text || '');
-  if (value.length <= maxLength) return value;
-  return value.slice(0, Math.max(0, maxLength - 1)) + '…';
-}
-
-function toFileUrl(path) {
-  const normalized = String(path || '').replace(/\\/g, '/');
-  return `file:///${encodeURI(normalized)}`;
-}
-
-function getConversationStorageLocation() {
-  if (state.detectedMode === 'sdk') {
-    const path = normalizeSessionStatePath(state.settings?.sdkSessionStatePath);
-    return {
-      label: '本機對話階段',
-      display: path,
-      url: toFileUrl(path)
-    };
+function syncContextChildToggles() {
+  const masterOn = !!dom.sdkIncludeMemory?.checked;
+  if (dom.contextChildToggles) {
+    dom.contextChildToggles.classList.toggle('disabled', !masterOn);
   }
-
-  return {
-    label: 'GitHub Copilot',
-    display: COPILOT_HOME_URL,
-    url: COPILOT_HOME_URL
-  };
-}
-
-function updateSDKStorageLocationDisplay() {
-  if (!dom.sdkStorageLocation || !dom.sdkStorageLink) return;
-
-  const enabled = state.settings.sdkShowStorageLocation === true;
-  dom.sdkStorageLocation.classList.toggle('hidden', !enabled);
-  if (!enabled) return;
-
-  const location = getConversationStorageLocation();
-  const displayText = truncateText(location.display || location.url, 42);
-  dom.sdkStorageLink.textContent = displayText;
-  dom.sdkStorageLink.href = location.url;
-  dom.sdkStorageLink.title = location.url;
 }
 
 function refreshSDKMemorySummary() {
-  const includeMemory = state.settings.sdkIncludeMemory !== false;
-  const includeRules = state.settings.sdkIncludeRules !== false;
-  if (!includeMemory && !includeRules) {
-    updateSDKMemorySummary('Memory/rules injection: off');
+  const masterOn = !!dom.sdkIncludeMemory?.checked;
+  if (!masterOn) {
+    updateSDKMemorySummary('Context: off');
     return;
   }
-  const memText = includeMemory ? 'mem on' : 'mem off';
-  const rulesText = includeRules ? 'rules on' : 'rules off';
-  updateSDKMemorySummary(`Memory/rules injection: ${memText}, ${rulesText}`);
+  const parts = [];
+  if (dom.sdkIncludeIdentity?.checked) parts.push('id');
+  if (dom.sdkIncludeMemoryEntries?.checked) parts.push('mem');
+  if (dom.sdkIncludeRules?.checked) parts.push('rules');
+  if (dom.sdkIncludeSystemMsg?.checked) parts.push('sys');
+  if (dom.sdkStructuredOutput?.checked) parts.push('struct');
+  updateSDKMemorySummary(parts.length > 0 ? `Context: ${parts.join(', ')}` : 'Context: on (none selected)');
 }
 
 function applySDKAssistantOnlyMode() {
-  const enabled = isAssistantOnlyTags(state.settings?.sdkDisplayTags);
+  const enabled = !!dom.sdkAssistantOnly?.checked;
 
   if (dom.sdkMessages) {
     dom.sdkMessages.classList.toggle('assistant-only', enabled);
+  }
+
+  try {
+    localStorage.setItem(STORAGE_KEY_SDK_ASSISTANT_ONLY, enabled ? 'true' : 'false');
+  } catch (err) {
+    console.warn('[SidePilot] Failed to persist assistant-only mode:', err?.message || err);
   }
 }
 
@@ -2894,42 +3227,16 @@ async function copyAllContent() {
   }
 
   const markdown = formatAsMarkdown(state.currentPageContent);
-  await copyToClipboard(markdown, '文字摘要已複製，可貼到 Copilot 對話中');
-}
 
-function buildPlainText(content) {
-  if (!content) return '';
-  if (content.text) return String(content.text).trim();
-  if (Array.isArray(content.paragraphs) && content.paragraphs.length) {
-    return content.paragraphs.join('\n\n').trim();
-  }
-  return '';
-}
-
-async function outputTextToChat() {
-  if (!state.currentPageContent) {
-    showToast('沒有可輸出的內容', 'error');
-    return;
-  }
-
-  const text = buildPlainText(state.currentPageContent);
-  if (!text) {
-    showToast('沒有可輸出的文字內容', 'error');
-    return;
-  }
-
-  if (state.detectedMode === 'sdk') {
-    if (dom.sdkInput) {
-      dom.sdkInput.value = text;
-      dom.sdkInput.focus();
-      showToast('文字已輸出到 SDK 對話輸入框');
-      return;
-    }
-  }
-
-  const copied = await copyToClipboard(text, '文字已複製，請貼到 Copilot 對話框');
-  if (copied) {
-    dom.copilotFrame?.focus();
+  // Paste into the active chat input
+  if (state.detectedMode === 'sdk' && dom.sdkInput) {
+    const existing = dom.sdkInput.value;
+    dom.sdkInput.value = existing ? `${existing}\n\n${markdown}` : markdown;
+    dom.sdkInput.focus();
+    showToast('已貼入對話輸入區');
+  } else {
+    // iframe mode: copy to clipboard as fallback
+    await copyToClipboard(markdown, '已複製，可貼到 Copilot 對話中');
   }
 }
 
@@ -2959,7 +3266,17 @@ function formatAsMarkdown(content) {
   if (description) {
     lines.push(`**描述:** ${description}`);
   }
+  if (content.extractor) {
+    lines.push(`**擷取:** ${content.extractor}`);
+  }
   lines.push('');
+
+  // If Defuddle produced markdown, use it directly — it's already clean
+  if (content.markdown && content.extractor === 'defuddle') {
+    lines.push('## 主要內容');
+    lines.push(content.markdown.substring(0, 8000));
+    return lines.join('\n');
+  }
 
   if (content.headings?.length > 0) {
     lines.push('## 頁面結構');
@@ -3036,7 +3353,487 @@ function handleBackgroundMessage(message, sender, sendResponse) {
 
   if (message.action === 'externalLinkRedirected') {
     showToast('連結超出 Sidecar 範圍，已改為新分頁開啟', 'warning');
+  }
+}
+
+// ============================================
+// Logs
+// ============================================
+
+function loadLogs() {
+  try {
+    const raw = localStorage.getItem(LOG_STORAGE_KEY);
+    if (!raw) {
+      state.logs = [];
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    state.logs = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    state.logs = [];
+  }
+}
+
+function persistLogs() {
+  try {
+    localStorage.setItem(LOG_STORAGE_KEY, JSON.stringify(state.logs.slice(-LOG_MAX_ENTRIES)));
+  } catch {
+    // ignore persistence failure
+  }
+}
+
+function addLog(level, message, detail = '') {
+  const normalizedLevel = level === 'error' || level === 'warn' ? level : 'info';
+  const safeMessage = String(message || '').trim();
+  if (!safeMessage) return;
+
+  const detailText = typeof detail === 'string'
+    ? detail.trim()
+    : (detail ? JSON.stringify(detail) : '');
+
+  state.logs.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ts: Date.now(),
+    level: normalizedLevel,
+    message: safeMessage,
+    detail: detailText
+  });
+
+  if (state.logs.length > LOG_MAX_ENTRIES) {
+    state.logs = state.logs.slice(-LOG_MAX_ENTRIES);
+  }
+
+  persistLogs();
+
+  const activeTab = Array.from(dom.tabs || []).find(tab => tab.classList.contains('active'));
+  if (activeTab?.dataset?.tab === 'logs') {
+    renderLogs();
+  }
+}
+
+function getFilteredLogs() {
+  const level = (dom.logLevelFilter?.value || '').trim();
+  const query = (dom.logSearch?.value || '').trim().toLowerCase();
+
+  return state.logs.filter((entry) => {
+    if (level && entry.level !== level) return false;
+    if (!query) return true;
+    const haystack = `${entry.message} ${entry.detail || ''}`.toLowerCase();
+    return haystack.includes(query);
+  });
+}
+
+function renderLogs() {
+  if (!dom.logList) return;
+
+  const entries = getFilteredLogs().slice().reverse();
+  if (entries.length === 0) {
+    dom.logList.innerHTML = '<div class="log-empty">目前沒有符合條件的 log</div>';
     return;
+  }
+
+  dom.logList.innerHTML = entries.map((entry) => {
+    const t = new Date(entry.ts);
+    const ts = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}:${String(t.getSeconds()).padStart(2,'0')}`;
+    const lvl = entry.level.toUpperCase().padEnd(5);
+    const detail = entry.detail ? `\n  ${escapeHtml(entry.detail)}` : '';
+    return `<div class="log-raw-line"><span class="log-raw-ts">${ts}</span> <span class="log-raw-lvl">${lvl}</span> ${escapeHtml(entry.message)}${detail}</div>`;
+  }).join('');
+}
+
+function clearLogs() {
+  state.logs = [];
+  persistLogs();
+  renderLogs();
+  showToast('Logs 已清空');
+}
+
+async function copyLogsToClipboard() {
+  const entries = getFilteredLogs();
+  if (entries.length === 0) {
+    showToast('沒有可複製的 log', 'warning');
+    return;
+  }
+
+  const lines = entries.map((entry) => {
+    const timeText = new Date(entry.ts).toLocaleString('zh-TW', { hour12: false });
+    const detail = entry.detail ? ` | ${entry.detail}` : '';
+    return `[${timeText}] [${entry.level.toUpperCase()}] ${entry.message}${detail}`;
+  });
+
+  await copyToClipboard(lines.join('\n'), 'Logs 已複製');
+}
+
+// Bridge real-time log SSE
+function connectBridgeLogSSE() {
+  disconnectBridgeLogSSE();
+  try {
+    state.bridgeLogSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/logs/stream`);
+    state.bridgeLogSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        addLog(data.level || 'info', `[Bridge] ${data.message || ''}`, '');
+      } catch { /* ignore parse errors */ }
+    };
+    state.bridgeLogSSE.onerror = () => {
+      // Will auto-reconnect; don't flood logs
+    };
+  } catch {
+    // Bridge not available
+  }
+}
+
+function disconnectBridgeLogSSE() {
+  if (state.bridgeLogSSE) {
+    state.bridgeLogSSE.close();
+    state.bridgeLogSSE = null;
+  }
+}
+
+// ============================================
+// Bridge History Log Tab
+// ============================================
+
+let logFileListEl = null;
+let refreshLogBtn = null;
+
+function updateHistoryTabMode() {
+  const sdkContainer = document.getElementById('logContainerSdk');
+  const iframeContainer = document.getElementById('logContainerIframe');
+  const iframeEl = document.getElementById('logIframeAgents');
+  if (!sdkContainer || !iframeContainer) return;
+
+  if (state.detectedMode === 'sdk') {
+    sdkContainer.classList.remove('hidden');
+    iframeContainer.classList.add('hidden');
+    if (iframeEl) iframeEl.style.display = 'none';
+  } else {
+    sdkContainer.classList.add('hidden');
+    iframeContainer.classList.remove('hidden');
+    if (iframeEl) {
+      iframeEl.src = 'https://github.com/copilot/agents';
+      iframeEl.style.display = 'block';
+    }
+  }
+}
+
+// ── History: parsing & labeling ──
+
+function extractUserMessage(content) {
+  if (typeof content !== 'string') return { text: String(content || ''), tags: [] };
+  const tags = [];
+  const packetMatch = content.match(/\[\[SIDEPILOT_TURN_PACKET\]\]([\s\S]*?)\[\[END_SIDEPILOT_TURN_PACKET\]\]/);
+  if (packetMatch) {
+    tags.push('packet');
+    try {
+      const pkt = JSON.parse(packetMatch[1]);
+      if (pkt.context?.memory?.length > 0) tags.push('mem');
+      if (pkt.context?.rules) tags.push('rules');
+      if (pkt.output_contract) tags.push('struct');
+      return { text: pkt.user_message || content, tags };
+    } catch { /* fall through */ }
+  }
+  return { text: content, tags };
+}
+
+function extractAssistantMessage(content) {
+  if (typeof content !== 'string') return { text: String(content || ''), tags: [] };
+  const tags = [];
+  const respMatch = content.match(/<assistant_response>([\s\S]*?)<\/assistant_response>/);
+  if (respMatch) {
+    tags.push('parsed');
+    return { text: respMatch[1].trim(), tags };
+  }
+  if (content.includes('<sidepilot_packet>')) tags.push('packet');
+  return { text: content, tags };
+}
+
+function groupMessagesBySession(messages) {
+  const sessions = new Map();
+  const orphans = [];
+  for (const msg of messages) {
+    const sid = msg.sessionId;
+    if (!sid) { orphans.push(msg); continue; }
+    if (!sessions.has(sid)) sessions.set(sid, []);
+    sessions.get(sid).push(msg);
+  }
+  const groups = [];
+  for (const [sid, msgs] of sessions) {
+    const models = [...new Set(msgs.filter(m => m.model).map(m => m.model))];
+    const userCount = msgs.filter(m => m.role === 'user').length;
+    const asstCount = msgs.filter(m => m.role === 'assistant').length;
+    const first = msgs[0];
+    const last = msgs[msgs.length - 1];
+    const firstUserMsg = msgs.find(m => m.role === 'user');
+    const preview = firstUserMsg ? extractUserMessage(firstUserMsg.content).text : '';
+    groups.push({
+      sessionId: sid,
+      messages: msgs,
+      models,
+      userCount,
+      assistantCount: asstCount,
+      startTime: first.timestamp,
+      endTime: last.timestamp,
+      preview: preview.length > 60 ? preview.slice(0, 60) + '…' : preview,
+      tags: buildSessionTags(msgs, models)
+    });
+  }
+  if (orphans.length > 0) {
+    groups.push({
+      sessionId: null,
+      messages: orphans,
+      models: [...new Set(orphans.filter(m => m.model).map(m => m.model))],
+      userCount: orphans.filter(m => m.role === 'user').length,
+      assistantCount: orphans.filter(m => m.role === 'assistant').length,
+      startTime: orphans[0]?.timestamp,
+      endTime: orphans[orphans.length - 1]?.timestamp,
+      preview: '',
+      tags: ['orphan']
+    });
+  }
+  return groups;
+}
+
+function buildSessionTags(msgs, models) {
+  const tags = [];
+  if (models.length > 0) tags.push(...models);
+  const hasPacket = msgs.some(m => m.role === 'user' && typeof m.content === 'string' && m.content.includes('SIDEPILOT_TURN_PACKET'));
+  if (hasPacket) tags.push('context');
+  const hasMem = msgs.some(m => {
+    if (m.role !== 'user' || typeof m.content !== 'string') return false;
+    const match = m.content.match(/\[\[SIDEPILOT_TURN_PACKET\]\]([\s\S]*?)\[\[END_SIDEPILOT_TURN_PACKET\]\]/);
+    if (!match) return false;
+    try { const p = JSON.parse(match[1]); return p.context?.memory?.length > 0; } catch { return false; }
+  });
+  if (hasMem) tags.push('memory');
+  return tags;
+}
+
+function renderTagBadges(tags) {
+  if (!tags || tags.length === 0) return '';
+  return tags.map(t => `<span class="hist-tag hist-tag-${tagClass(t)}">${escapeHtml(t)}</span>`).join('');
+}
+
+function tagClass(tag) {
+  if (['gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'gpt-5-mini'].includes(tag)) return 'model-gpt';
+  if (tag.startsWith('gpt-')) return 'model-gpt';
+  if (tag.startsWith('claude-')) return 'model-claude';
+  if (tag.startsWith('gemini-')) return 'model-gemini';
+  if (['context', 'packet', 'struct'].includes(tag)) return 'context';
+  if (['memory', 'mem', 'rules'].includes(tag)) return 'inject';
+  if (tag === 'parsed') return 'parsed';
+  if (tag === 'orphan') return 'orphan';
+  return 'default';
+}
+
+// ── History: file list & rendering ──
+
+async function loadLogFiles() {
+  logFileListEl = logFileListEl || document.getElementById('logFileList');
+  if (!logFileListEl) return;
+
+  logFileListEl.innerHTML = '<div class="log-empty">載入中...</div>';
+
+  try {
+    const resp = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/history`);
+    const data = await resp.json();
+
+    if (!data.success || !data.files || data.files.length === 0) {
+      logFileListEl.innerHTML = '<div class="log-empty">尚無對話歷史紀錄</div>';
+      return;
+    }
+
+    renderLogFiles(data.files);
+    connectLogSSE();
+  } catch (err) {
+    logFileListEl.innerHTML = `<div class="log-empty">無法連線 Bridge：${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function renderLogFiles(files) {
+  if (!logFileListEl) return;
+  logFileListEl.innerHTML = '';
+
+  files.forEach(file => {
+    const item = document.createElement('div');
+    item.className = 'log-file-item';
+
+    const header = document.createElement('div');
+    header.className = 'log-file-header';
+    const filePath = file.path || '';
+    const pathHtml = filePath
+      ? `<span class="log-file-path" title="${escapeHtml(filePath)}">${escapeHtml(filePath)}</span>`
+      : '';
+    header.innerHTML = `
+      <span class="log-file-date">📅 ${escapeHtml(file.date)}</span>
+      ${pathHtml}
+      <span class="log-file-badge">▸</span>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'log-file-body';
+    body.style.display = 'none';
+
+    header.addEventListener('click', () => {
+      const isExpanded = item.classList.toggle('expanded');
+      body.style.display = isExpanded ? 'block' : 'none';
+      header.querySelector('.log-file-badge').textContent = isExpanded ? '▾' : '▸';
+      if (isExpanded && body.children.length === 0) {
+        loadLogFileContent(file.name, body);
+      }
+    });
+
+    item.appendChild(header);
+    item.appendChild(body);
+    logFileListEl.appendChild(item);
+  });
+}
+
+async function loadLogFileContent(filename, container) {
+  container.innerHTML = '<div class="log-empty">載入中...</div>';
+  try {
+    const resp = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/history/${encodeURIComponent(filename)}`);
+    const data = await resp.json();
+
+    if (!data.success || !data.messages || data.messages.length === 0) {
+      container.innerHTML = '<div class="log-empty">此日誌沒有訊息</div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    const groups = groupMessagesBySession(data.messages);
+
+    if (groups.length <= 1 && groups[0]?.sessionId === null) {
+      // No sessions — render flat
+      data.messages.forEach(msg => container.appendChild(createLogMessageEl(msg)));
+      return;
+    }
+
+    groups.forEach(group => {
+      const section = document.createElement('div');
+      section.className = 'hist-session';
+
+      const sHeader = document.createElement('div');
+      sHeader.className = 'hist-session-header';
+      const timeRange = formatTimeRange(group.startTime, group.endTime);
+      const stats = `${group.userCount + group.assistantCount} msgs`;
+      sHeader.innerHTML = `
+        <span class="hist-session-toggle">▸</span>
+        <span class="hist-session-time">${timeRange}</span>
+        <span class="hist-session-stats">${stats}</span>
+        ${renderTagBadges(group.tags)}
+        ${group.preview ? `<span class="hist-session-preview">${escapeHtml(group.preview)}</span>` : ''}
+      `;
+
+      const sBody = document.createElement('div');
+      sBody.className = 'hist-session-body';
+      sBody.style.display = 'none';
+
+      sHeader.addEventListener('click', () => {
+        const open = section.classList.toggle('expanded');
+        sBody.style.display = open ? 'block' : 'none';
+        sHeader.querySelector('.hist-session-toggle').textContent = open ? '▾' : '▸';
+        if (open && sBody.children.length === 0) {
+          group.messages.forEach(msg => sBody.appendChild(createLogMessageEl(msg)));
+        }
+      });
+
+      section.appendChild(sHeader);
+      section.appendChild(sBody);
+      container.appendChild(section);
+    });
+  } catch (err) {
+    container.innerHTML = `<div class="log-empty">讀取失敗：${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function formatTimeRange(startIso, endIso) {
+  const fmt = (iso) => {
+    if (!iso) return '';
+    return new Date(iso).toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+  };
+  const s = fmt(startIso);
+  const e = fmt(endIso);
+  return s === e ? s : `${s} – ${e}`;
+}
+
+function createLogMessageEl(msg) {
+  const el = document.createElement('div');
+  const role = msg.role || 'system';
+  el.className = `log-message log-msg-${role}`;
+
+  const roleBadge = role === 'user' ? '👤' : (role === 'assistant' ? '🤖' : '⚙️');
+  const timeStr = msg.timestamp
+    ? new Date(msg.timestamp).toLocaleTimeString('zh-TW', { hour12: false })
+    : '';
+
+  // Extract clean content & per-message tags
+  let extracted;
+  if (role === 'user') {
+    extracted = extractUserMessage(msg.content);
+  } else if (role === 'assistant') {
+    extracted = extractAssistantMessage(msg.content);
+  } else {
+    extracted = { text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content || ''), tags: [] };
+  }
+
+  const allTags = [...extracted.tags];
+  if (msg.model) allTags.unshift(msg.model);
+
+  el.innerHTML = `
+    <div class="log-message-header">
+      <span class="log-role-badge">${roleBadge} ${escapeHtml(role)}</span>
+      ${renderTagBadges(allTags)}
+      <span class="log-timestamp">${timeStr}</span>
+    </div>
+    <div class="log-message-content collapsed" title="點擊展開">
+      ${escapeHtml(extracted.text)}
+    </div>
+  `;
+
+  const contentDiv = el.querySelector('.log-message-content');
+  contentDiv.addEventListener('click', () => {
+    contentDiv.classList.toggle('collapsed');
+  });
+
+  return el;
+}
+
+function connectLogSSE() {
+  disconnectLogSSE();
+
+  try {
+    state.logSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/history/stream`);
+    state.logSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        appendLiveLogMessage(data);
+      } catch { /* ignore parse errors */ }
+    };
+    state.logSSE.onerror = () => {
+      disconnectLogSSE();
+    };
+  } catch {
+    // SSE not available
+  }
+}
+
+function disconnectLogSSE() {
+  if (state.logSSE) {
+    state.logSSE.close();
+    state.logSSE = null;
+  }
+}
+
+function appendLiveLogMessage(msg) {
+  if (!logFileListEl) return;
+  // Append to the first (most recent) expanded file body, or create a live section
+  const expandedBody = logFileListEl.querySelector('.log-file-item.expanded .log-file-body');
+  if (expandedBody) {
+    expandedBody.appendChild(createLogMessageEl(msg));
+    expandedBody.scrollTop = expandedBody.scrollHeight;
   }
 }
 
@@ -3044,15 +3841,16 @@ function handleBackgroundMessage(message, sender, sendResponse) {
 // Toast 通知
 // ============================================
 
-function showToast(message, type = 'success') {
+function showToast(message, type = 'success', duration = 3000) {
   if (!dom.toast) return;
 
   dom.toast.textContent = message;
   dom.toast.className = 'toast visible' + (type !== 'success' ? ` ${type}` : '');
+  addLog(type === 'warning' ? 'warn' : (type === 'error' ? 'error' : 'info'), message);
 
   setTimeout(() => {
     dom.toast.classList.remove('visible');
-  }, 3000);
+  }, duration);
 }
 
 // ============================================
@@ -3305,11 +4103,6 @@ function parseSDKSandboxResponse(rawContent) {
   };
 }
 
-function getSdkDisplayTags() {
-  const tags = normalizeSdkDisplayTags(state.settings?.sdkDisplayTags);
-  return tags;
-}
-
 function addSDKStructuredAssistantMessage(parsedResponse) {
   if (!dom.sdkMessages) return;
 
@@ -3317,26 +4110,13 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
     ? parsedResponse
     : parseSDKSandboxResponse(parsedResponse);
 
-  const displayTags = getSdkDisplayTags();
-  const visibleBlocks = parsed.blocks.filter((block) => {
-    if (block.type === 'assistant') return displayTags.assistant;
-    if (block.type === 'packet') return displayTags.packet;
-    if (block.type === 'raw') return displayTags.raw;
-    return false;
-  });
-
-  if (visibleBlocks.length === 0) {
-    addSDKMessage('assistant', '（此回覆已被標籤設定隱藏）');
-    return;
-  }
-
   const msgEl = document.createElement('div');
   msgEl.className = 'sdk-message assistant';
 
   const contentEl = document.createElement('div');
   contentEl.className = 'sdk-message-content sdk-structured-content';
 
-  visibleBlocks.forEach((block) => {
+  parsed.blocks.forEach((block) => {
     let format = null;
     if (block.type === 'packet') {
       const packetValue = block.parsed && typeof block.parsed === 'object'
@@ -3387,23 +4167,39 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
 
 function addSDKMessage(role, content) {
   if (!dom.sdkMessages) return;
-  
+
   const msgEl = document.createElement('div');
   msgEl.className = `sdk-message ${role}`;
-  
+
+  // Extract clean content & tags
+  let displayText = content;
+  let tags = [];
+  if (role === 'user') {
+    const ex = extractUserMessage(content);
+    displayText = ex.text;
+    tags = ex.tags;
+  }
+
+  if (tags.length > 0) {
+    const tagBar = document.createElement('div');
+    tagBar.className = 'sdk-message-tags';
+    tagBar.innerHTML = renderTagBadges(tags);
+    msgEl.appendChild(tagBar);
+  }
+
   const contentEl = document.createElement('div');
   contentEl.className = 'sdk-message-content';
-  contentEl.textContent = content;
-  
+  contentEl.textContent = displayText;
+
   const timeEl = document.createElement('div');
   timeEl.className = 'sdk-message-time';
   const time = new Date();
   timeEl.textContent = time.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
-  
+
   msgEl.appendChild(contentEl);
   msgEl.appendChild(timeEl);
   dom.sdkMessages.appendChild(msgEl);
-  
+
   dom.sdkMessages.scrollTop = dom.sdkMessages.scrollHeight;
 }
 
@@ -3437,11 +4233,169 @@ function removeSDKTypingIndicator(id) {
 }
 
 // ============================================
+// WP-01: Permission SSE & Modal
+// ============================================
+
+function connectPermissionSSE() {
+  disconnectPermissionSSE();
+  try {
+    state.permissionSSE = new EventSource(`http://localhost:${SDK_BRIDGE_PORT}/api/permissions/stream`);
+    state.permissionSSE.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.connected) return;
+        if (data.id && data.scope) {
+          showPermissionModal(data);
+        }
+      } catch { /* ignore parse errors */ }
+    };
+    state.permissionSSE.onerror = () => {
+      // Will auto-reconnect
+    };
+  } catch {
+    // Bridge not available
+  }
+}
+
+function disconnectPermissionSSE() {
+  if (state.permissionSSE) {
+    state.permissionSSE.close();
+    state.permissionSSE = null;
+  }
+}
+
+let _currentPermissionId = null;
+let _currentPermissionOptions = [];
+let _selectedOptionId = null;
+
+function showPermissionModal(permission) {
+  if (!dom.permissionModal) return;
+  _currentPermissionId = permission.id;
+  _currentPermissionOptions = permission.options || [];
+  _selectedOptionId = _currentPermissionOptions.length > 0 ? _currentPermissionOptions[0].optionId : null;
+
+  if (dom.permissionScope) dom.permissionScope.textContent = permission.scope || '(unknown)';
+  if (dom.permissionReason) dom.permissionReason.textContent = permission.reason || '';
+
+  // 渲染 permission options 供使用者選擇
+  if (dom.permissionOptions) {
+    dom.permissionOptions.innerHTML = '';
+    _currentPermissionOptions.forEach((opt, idx) => {
+      const label = document.createElement('label');
+      label.className = 'permission-option-label';
+      const radio = document.createElement('input');
+      radio.type = 'radio';
+      radio.name = 'permissionOption';
+      radio.value = opt.optionId;
+      if (idx === 0) radio.checked = true;
+      radio.addEventListener('change', () => { _selectedOptionId = opt.optionId; });
+      label.appendChild(radio);
+      label.appendChild(document.createTextNode(` ${opt.label || opt.optionId}`));
+      dom.permissionOptions.appendChild(label);
+    });
+  }
+
+  dom.permissionModal.classList.remove('hidden');
+  startPermissionCountdown(60);
+  addLog('info', `[Permission] 收到權限請求: ${permission.scope} (options: ${_currentPermissionOptions.length})`);
+}
+
+function hidePermissionModal() {
+  if (dom.permissionModal) dom.permissionModal.classList.add('hidden');
+  stopPermissionCountdown();
+  _currentPermissionId = null;
+  _currentPermissionOptions = [];
+  _selectedOptionId = null;
+}
+
+function startPermissionCountdown(seconds) {
+  stopPermissionCountdown();
+  let remaining = seconds;
+  if (dom.permissionCountdown) dom.permissionCountdown.textContent = remaining;
+  state.permissionCountdownTimer = setInterval(() => {
+    remaining--;
+    if (dom.permissionCountdown) dom.permissionCountdown.textContent = remaining;
+    if (remaining <= 0) {
+      resolvePermission('deny');
+    }
+  }, 1000);
+}
+
+function stopPermissionCountdown() {
+  if (state.permissionCountdownTimer) {
+    clearInterval(state.permissionCountdownTimer);
+    state.permissionCountdownTimer = null;
+  }
+}
+
+async function resolvePermission(decision) {
+  const permId = _currentPermissionId;
+  const optionId = _selectedOptionId;
+  hidePermissionModal();
+  if (!permId) return;
+
+  const approved = decision === 'allow';
+  try {
+    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: permId, approved, optionId: approved ? optionId : undefined })
+    });
+    addLog('info', `[Permission] ${approved ? '已允許' : '已拒絕'}: ${permId}${approved && optionId ? ` (option: ${optionId})` : ''}`);
+  } catch (err) {
+    addLog('error', `[Permission] 解析失敗: ${err.message}`);
+  }
+}
+
+// ============================================
+// WP-07: Prompt Strategy
+// ============================================
+
+async function setPromptStrategy(strategy) {
+  // Update UI immediately
+  dom.promptStrategyBtns?.querySelectorAll('.strategy-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.strategy === strategy);
+  });
+
+  try {
+    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy })
+    });
+    addLog('info', `[Prompt] 策略已切換: ${strategy}`);
+  } catch (err) {
+    addLog('error', `[Prompt] 策略切換失敗: ${err.message}`);
+    showToast('Prompt 策略切換失敗', 'error');
+  }
+}
+
+async function loadPromptStrategy() {
+  try {
+    const res = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const strategy = data.strategy || 'normal';
+    dom.promptStrategyBtns?.querySelectorAll('.strategy-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.strategy === strategy);
+    });
+  } catch {
+    // Bridge not available, keep default
+  }
+}
+
+// ============================================
 // 啟動
 // ============================================
 
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => {
+    init().catch((err) => {
+      console.error('[SidePilot] init failed:', err);
+    });
+  });
 } else {
-  init();
+  init().catch((err) => {
+    console.error('[SidePilot] init failed:', err);
+  });
 }

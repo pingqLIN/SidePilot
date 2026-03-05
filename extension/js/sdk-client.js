@@ -96,11 +96,11 @@ async function checkHealth() {
 }
 
 /**
- * Start health check interval (every 30s)
+ * Start health check interval (every 3s)
  */
 function startHealthCheck() {
   stopHealthCheck();
-  healthCheckIntervalId = setInterval(checkHealth, 30000);
+  healthCheckIntervalId = setInterval(checkHealth, 3000);
 }
 
 /**
@@ -216,14 +216,6 @@ function cleanup() {
   currentSessionId = null;
   currentSessionProfileKey = null;
   connectionListeners.clear();
-}
-
-/**
- * Reset current session so next send creates a new one.
- */
-function resetSession() {
-  currentSessionId = null;
-  currentSessionProfileKey = null;
 }
 
 /**
@@ -358,78 +350,9 @@ async function listModels() {
 }
 
 /**
- * Get Copilot CLI config from bridge server.
- * @returns {Promise<{path: string, exists: boolean, config: object}>}
- */
-async function getConfig() {
-  if (!connected) {
-    const healthy = await checkHealth();
-    if (!healthy) {
-      throw new Error('Bridge server not available');
-    }
-  }
-
-  const response = await fetch(`${getBaseUrl()}/api/config`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/config)`);
-  }
-
-  const data = await response.json();
-  if (!data?.success) {
-    throw new Error(data?.error || 'Failed to load config');
-  }
-
-  return {
-    path: data.path,
-    exists: !!data.exists,
-    config: data.config || {},
-  };
-}
-
-/**
- * Patch Copilot CLI config via bridge server.
- * @param {object} patch
- * @returns {Promise<{path: string, config: object}>}
- */
-async function updateConfig(patch = {}) {
-  if (!connected) {
-    const healthy = await checkHealth();
-    if (!healthy) {
-      throw new Error('Bridge server not available');
-    }
-  }
-
-  const response = await fetch(`${getBaseUrl()}/api/config`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch || {}),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/config)`);
-  }
-
-  const data = await response.json();
-  if (!data?.success) {
-    throw new Error(data?.error || 'Failed to update config');
-  }
-
-  return {
-    path: data.path,
-    config: data.config || {},
-  };
-}
-
-/**
  * Send a chat message to the bridge server.
  * Returns the full response (non-streaming).
- * @param {{type?: string, content: string, model?: string, systemMessage?: string}} msg
+ * @param {{type?: string, content: string, model?: string, systemMessage?: string, images?: Array<{mimeType: string, data: string}>}} msg
  * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
 async function sendMessage(msg) {
@@ -445,14 +368,19 @@ async function sendMessage(msg) {
     systemMessage: msg.systemMessage,
   });
 
+  const payload = {
+    sessionId: ensuredSessionId || currentSessionId,
+    prompt: msg.content,
+    model: msg.model,
+  };
+  if (msg.images && msg.images.length > 0) {
+    payload.images = msg.images;
+  }
+
   const response = await fetch(`${getBaseUrl()}/api/chat/sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      sessionId: ensuredSessionId || currentSessionId,
-      prompt: msg.content,
-      model: msg.model,
-    }),
+    body: JSON.stringify(payload),
   });
 
   // Backward compatibility:
@@ -614,14 +542,11 @@ function onConnectionChange(callback) {
 export {
   init,
   cleanup,
-  resetSession,
   getStatus,
   isConnected,
   connect,
   disconnect,
   listModels,
-  getConfig,
-  updateConfig,
   sendMessage,
   sendMessageStreaming,
   onConnectionChange

@@ -1,4 +1,5 @@
-import * as VSCodeConnector from '../../js/vscode-connector.js';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
+import * as VSCodeConnector from '../../extension/js/vscode-connector.js';
 
 describe('VSCode Connector Module', () => {
   beforeEach(() => {

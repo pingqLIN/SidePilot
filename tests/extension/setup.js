@@ -1,3 +1,5 @@
+import { jest, beforeEach, afterEach } from '@jest/globals';
+
 // Mock Chrome API for testing
 global.chrome = {
   runtime: {
