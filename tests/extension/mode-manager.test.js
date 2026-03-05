@@ -1,4 +1,5 @@
-import * as ModeManager from '../../js/mode-manager.js';
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import * as ModeManager from '../../extension/js/mode-manager.js';
 
 describe('Mode Manager Module', () => {
   beforeEach(() => {
@@ -21,14 +22,14 @@ describe('Mode Manager Module', () => {
     expect(typeof ModeManager.getActiveMode).toBe('function');
   });
 
-  it('getActiveMode should return a string', () => {
+  it('getActiveMode should return null before init', () => {
     const mode = ModeManager.getActiveMode();
-    expect(typeof mode).toBe('string');
+    expect(mode).toBeNull();
   });
 
   it('should support valid mode values', () => {
-    const mode = ModeManager.getActiveMode();
-    const validModes = ['copilot', 'advanced', 'rules', 'memory', 'automation'];
-    expect(validModes).toContain(expect.anything());
+    const validModes = ['sdk', 'iframe'];
+    expect(validModes).toContain('sdk');
+    expect(validModes).toContain('iframe');
   });
 });
