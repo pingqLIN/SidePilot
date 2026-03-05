@@ -11,8 +11,8 @@ import * as VSCodeConnector from './js/vscode-connector.js';
 // ============================================
 
 const COPILOT_URL = 'https://github.com/copilot';
-const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{8}$/i;
-const SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
+const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{16}$/i;
+const SEAL_DIGEST_PATTERN = /^[0-9a-f]{16}$/i;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
 const INTEGRITY_VERIFY_ENDPOINT = 'http://localhost:31031/api/integrity/verify';
 
