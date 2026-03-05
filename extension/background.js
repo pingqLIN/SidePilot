@@ -732,17 +732,21 @@ async function handleCaptureFullPageScreenshot(message, sendResponse) {
       return;
     }
 
-    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr } = dims;
+    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr, origScrollBehavior } = dims;
 
     if (fullHeight <= viewportHeight) {
       // Page fits in one viewport — restore and capture once
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        function: (hideClass) => {
-          document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
-          document.getElementById(hideClass)?.remove();
+        function: (hideClass, scrollBehavior) => {
+          try {
+            document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+            document.getElementById(hideClass)?.remove();
+          } finally {
+            document.documentElement.style.scrollBehavior = scrollBehavior || '';
+          }
         },
-        args: [FIXED_HIDE_CLASS]
+        args: [FIXED_HIDE_CLASS, origScrollBehavior]
       });
       const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
       sendResponse({ success: true, dataUrl });
