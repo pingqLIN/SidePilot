@@ -1,11 +1,23 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { describe, it, expect, beforeEach } from '@jest/globals';
+import * as PermissionManager from '../../extension/js/permission-manager.js';
 
 /**
  * Permission System Tests
  * 測試前後端 permission 欄位匹配、options 選擇、scope 解析
+ *
+ * The "Frontend resolvePermission" and "End-to-end" suites import and exercise
+ * the real PermissionManager module (extension/js/permission-manager.js).
+ *
+ * The createMockSessionManager() helper below is a self-contained behavioral
+ * specification for the bridge server's permission protocol: it documents the
+ * expected pending-permission map, whitelist auto-approve logic, and
+ * resolve/deny flow that the backend should implement. These contract tests
+ * are intentional — the production backend (scripts/copilot-bridge/src/
+ * session-manager.ts) uses a simpler inline implementation and a fuller
+ * implementation would mirror this spec.
  */
 
-// -- Helper: 模擬 SessionManager 的 permission 邏輯 --
+// -- Helper: 模擬 SessionManager 的 permission 邏輯（backend 行為規格）--
 
 function createMockSessionManager() {
   const pendingPermissions = new Map();
@@ -93,52 +105,6 @@ function createMockSessionManager() {
     requestPermissionAsync,
     logs,
     get permissionWhitelist() { return [...permissionWhitelist]; },
-  };
-}
-
-// -- Helper: 模擬前端 resolvePermission 行為 --
-
-function createFrontendResolver(bridgePort = 31031) {
-  let _currentPermissionId = null;
-  let _currentPermissionOptions = [];
-  let _selectedOptionId = null;
-  const sentRequests = [];
-
-  function showPermissionModal(permission) {
-    _currentPermissionId = permission.id;
-    _currentPermissionOptions = permission.options || [];
-    _selectedOptionId = _currentPermissionOptions.length > 0 ? _currentPermissionOptions[0].optionId : null;
-  }
-
-  function hidePermissionModal() {
-    _currentPermissionId = null;
-    _currentPermissionOptions = [];
-    _selectedOptionId = null;
-  }
-
-  function selectOption(optionId) {
-    _selectedOptionId = optionId;
-  }
-
-  function resolvePermission(decision) {
-    const permId = _currentPermissionId;
-    const optionId = _selectedOptionId;
-    hidePermissionModal();
-    if (!permId) return null;
-
-    const approved = decision === 'allow';
-    const payload = { id: permId, approved, optionId: approved ? optionId : undefined };
-    sentRequests.push(payload);
-    return payload;
-  }
-
-  return {
-    showPermissionModal,
-    selectOption,
-    resolvePermission,
-    sentRequests,
-    get currentId() { return _currentPermissionId; },
-    get selectedOptionId() { return _selectedOptionId; },
   };
 }
 
@@ -246,20 +212,28 @@ describe('Permission System', () => {
     });
 
     it('should fallback to params.resource.uri', async () => {
-      sm.requestPermissionAsync('sess1', {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         resource: { uri: '/some/path' },
         options: [{ optionId: 'opt1' }],
       });
-      const pending = [...sm.pendingPermissions.values()][0];
+      const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('/some/path');
+      sm.resolvePermission(permissionId, true, 'opt1');
+      const result = await permissionPromise;
+      expect(result.outcome.outcome).toBe('selected');
+      expect(result.outcome.optionId).toBe('opt1');
     });
 
     it('should default to "unknown" when no scope info', async () => {
-      sm.requestPermissionAsync('sess1', {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         options: [{ optionId: 'opt1' }],
       });
-      const pending = [...sm.pendingPermissions.values()][0];
+      const [permissionId, pending] = [...sm.pendingPermissions.entries()][0];
       expect(pending.scope).toBe('unknown');
+      sm.resolvePermission(permissionId, true, 'opt1');
+      const result = await permissionPromise;
+      expect(result.outcome.outcome).toBe('selected');
+      expect(result.outcome.optionId).toBe('opt1');
     });
 
     it('should auto-cancel when options array is empty', async () => {
@@ -296,12 +270,15 @@ describe('Permission System', () => {
       expect(result.outcome.optionId).toBe('opt1'); // always first
     });
 
-    it('should NOT auto-approve non-whitelisted scope', () => {
-      sm.requestPermissionAsync('sess1', {
+    it('should NOT auto-approve non-whitelisted scope', async () => {
+      const permissionPromise = sm.requestPermissionAsync('sess1', {
         scope: 'writeFile',
         options: [{ optionId: 'opt1' }],
       });
       expect(sm.pendingPermissions.size).toBe(1);
+      const [permissionId] = sm.pendingPermissions.keys();
+      sm.resolvePermission(permissionId, false);
+      await permissionPromise;
     });
 
     it('should NOT auto-approve whitelisted scope with no options', async () => {
@@ -314,20 +291,19 @@ describe('Permission System', () => {
   });
 
   describe('Frontend resolvePermission — payload format', () => {
-    let frontend;
 
     beforeEach(() => {
-      frontend = createFrontendResolver();
+      PermissionManager.hidePermissionModal();
     });
 
     it('should send { approved: true, optionId } on allow', () => {
-      frontend.showPermissionModal({
+      PermissionManager.showPermissionModal({
         id: 'perm_1',
         scope: 'writeFile',
         options: [{ optionId: 'allow_once' }, { optionId: 'allow_always' }],
       });
 
-      const payload = frontend.resolvePermission('allow');
+      const payload = PermissionManager.resolvePermission('allow');
       expect(payload).toEqual({
         id: 'perm_1',
         approved: true,
@@ -336,14 +312,14 @@ describe('Permission System', () => {
     });
 
     it('should send selected optionId when user picks one', () => {
-      frontend.showPermissionModal({
+      PermissionManager.showPermissionModal({
         id: 'perm_2',
         scope: 'writeFile',
         options: [{ optionId: 'allow_once' }, { optionId: 'allow_always' }],
       });
-      frontend.selectOption('allow_always');
+      PermissionManager.selectOption('allow_always');
 
-      const payload = frontend.resolvePermission('allow');
+      const payload = PermissionManager.resolvePermission('allow');
       expect(payload).toEqual({
         id: 'perm_2',
         approved: true,
@@ -352,13 +328,13 @@ describe('Permission System', () => {
     });
 
     it('should send { approved: false, optionId: undefined } on deny', () => {
-      frontend.showPermissionModal({
+      PermissionManager.showPermissionModal({
         id: 'perm_3',
         scope: 'deleteFile',
         options: [{ optionId: 'opt1' }],
       });
 
-      const payload = frontend.resolvePermission('deny');
+      const payload = PermissionManager.resolvePermission('deny');
       expect(payload).toEqual({
         id: 'perm_3',
         approved: false,
@@ -367,26 +343,30 @@ describe('Permission System', () => {
     });
 
     it('should return null if no permission is active', () => {
-      const payload = frontend.resolvePermission('allow');
+      const payload = PermissionManager.resolvePermission('allow');
       expect(payload).toBeNull();
     });
 
     it('should clear state after resolve', () => {
-      frontend.showPermissionModal({
+      PermissionManager.showPermissionModal({
         id: 'perm_4',
         scope: 'writeFile',
         options: [{ optionId: 'opt1' }],
       });
-      frontend.resolvePermission('allow');
-      expect(frontend.currentId).toBeNull();
-      expect(frontend.selectedOptionId).toBeNull();
+      PermissionManager.resolvePermission('allow');
+      expect(PermissionManager.getCurrentPermissionId()).toBeNull();
+      expect(PermissionManager.getSelectedOptionId()).toBeNull();
     });
   });
 
   describe('End-to-end: frontend → backend field matching', () => {
+
+    beforeEach(() => {
+      PermissionManager.hidePermissionModal();
+    });
+
     it('should correctly approve permission through full flow', async () => {
       const sm = createMockSessionManager();
-      const frontend = createFrontendResolver();
 
       // Backend: create pending permission
       const promise = sm.requestPermissionAsync('sess1', {
@@ -397,11 +377,11 @@ describe('Permission System', () => {
 
       // Simulate SSE push to frontend
       const pending = [...sm.pendingPermissions.values()][0];
-      frontend.showPermissionModal(pending);
+      PermissionManager.showPermissionModal(pending);
 
       // User selects second option and approves
-      frontend.selectOption('allow_always');
-      const payload = frontend.resolvePermission('allow');
+      PermissionManager.selectOption('allow_always');
+      const payload = PermissionManager.resolvePermission('allow');
 
       // Backend resolves with frontend payload
       sm.resolvePermission(payload.id, payload.approved, payload.optionId);
@@ -413,7 +393,6 @@ describe('Permission System', () => {
 
     it('should correctly deny permission through full flow', async () => {
       const sm = createMockSessionManager();
-      const frontend = createFrontendResolver();
 
       const promise = sm.requestPermissionAsync('sess1', {
         scope: 'deleteFile',
@@ -421,8 +400,8 @@ describe('Permission System', () => {
       });
 
       const pending = [...sm.pendingPermissions.values()][0];
-      frontend.showPermissionModal(pending);
-      const payload = frontend.resolvePermission('deny');
+      PermissionManager.showPermissionModal(pending);
+      const payload = PermissionManager.resolvePermission('deny');
 
       sm.resolvePermission(payload.id, payload.approved, payload.optionId);
 
