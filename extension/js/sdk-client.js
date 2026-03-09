@@ -23,6 +23,15 @@ let currentSessionProfileKey = null;
 let healthCheckIntervalId = null;
 
 const connectionListeners = new Set();
+const SESSION_RECOVERY_PATTERNS = [
+  /api key not found/i,
+  /invalid_argument/i,
+  /rpcstreamexception/i,
+  /request timeout/i,
+  /session not found/i,
+  /transport closed/i,
+  /connection (?:closed|lost|reset)/i,
+];
 
 // ============================================
 // Private Functions
@@ -125,6 +134,48 @@ function getSessionProfileKey(profile = {}) {
   return `${model}::${systemMessage}`;
 }
 
+function shouldRetryWithFreshSession(errorMessage) {
+  const text = typeof errorMessage === 'string' ? errorMessage : '';
+  return SESSION_RECOVERY_PATTERNS.some(pattern => pattern.test(text));
+}
+
+async function forgetCurrentSession(reason = '') {
+  const staleSessionId = currentSessionId;
+  currentSessionId = null;
+  currentSessionProfileKey = null;
+
+  if (!staleSessionId) return;
+
+  if (reason) {
+    console.warn(`[SDKClient] Resetting stale session ${staleSessionId}: ${reason}`);
+  }
+
+  try {
+    await fetch(`${getBaseUrl()}/api/sessions/${encodeURIComponent(staleSessionId)}`, {
+      method: 'DELETE',
+    });
+  } catch (err) {
+    console.warn('[SDKClient] Failed to delete stale session:', err?.message || err);
+  }
+}
+
+async function readErrorMessage(response, endpoint) {
+  const fallback = `HTTP ${response.status} (${endpoint})`;
+
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json().catch(() => null);
+      return data?.error || fallback;
+    }
+
+    const text = await response.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 /**
  * Create a new session with optional model/systemMessage.
  * @param {{model?: string, systemMessage?: string}} profile
@@ -152,6 +203,14 @@ async function createSession(profile = {}) {
   }
 
   return data.sessionId;
+}
+
+async function createFreshSession(profile = {}) {
+  await forgetCurrentSession('fresh session requested');
+  const sessionId = await createSession(profile);
+  currentSessionId = sessionId;
+  currentSessionProfileKey = getSessionProfileKey(profile);
+  return sessionId;
 }
 
 /**
@@ -355,7 +414,7 @@ async function listModels() {
  * @param {{type?: string, content: string, model?: string, systemMessage?: string, images?: Array<{mimeType: string, data: string}>}} msg
  * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
-async function sendMessage(msg) {
+async function sendMessage(msg, attempt = 0) {
   if (!connected) {
     const healthy = await checkHealth();
     if (!healthy) {
@@ -390,7 +449,7 @@ async function sendMessage(msg) {
       content: msg.content,
       model: msg.model,
       systemMessage: msg.systemMessage,
-    });
+    }, undefined, undefined, attempt);
 
     return {
       success: true,
@@ -400,8 +459,17 @@ async function sendMessage(msg) {
   }
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/chat/sync)`);
+    const errorMessage = await readErrorMessage(response, '/api/chat/sync');
+
+    if (attempt === 0 && shouldRetryWithFreshSession(errorMessage)) {
+      await createFreshSession({
+        model: msg.model,
+        systemMessage: msg.systemMessage,
+      });
+      return sendMessage(msg, attempt + 1);
+    }
+
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -428,7 +496,7 @@ async function sendMessage(msg) {
  * @param {function(object): void} [onTool] - Called with tool execution events
  * @returns {Promise<string>} - Final complete response
  */
-async function sendMessageStreaming(msg, onDelta, onTool) {
+async function sendMessageStreaming(msg, onDelta, onTool, attempt = 0) {
   if (!connected) {
     const healthy = await checkHealth();
     if (!healthy) {
@@ -453,9 +521,31 @@ async function sendMessageStreaming(msg, onDelta, onTool) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,
-    }).then(response => {
+    }).then(async response => {
       if (!response.ok) {
-        reject(new Error(`HTTP ${response.status} (/api/chat)`));
+        const errorMessage = await readErrorMessage(response, '/api/chat');
+
+        if (attempt === 0 && shouldRetryWithFreshSession(errorMessage)) {
+          try {
+            await createFreshSession({
+              model: msg.model,
+              systemMessage: msg.systemMessage,
+            });
+            const retriedContent = await sendMessageStreaming(
+              msg,
+              onDelta,
+              onTool,
+              attempt + 1,
+            );
+            resolve(retriedContent);
+            return;
+          } catch (retryErr) {
+            reject(retryErr);
+            return;
+          }
+        }
+
+        reject(new Error(errorMessage));
         return;
       }
 

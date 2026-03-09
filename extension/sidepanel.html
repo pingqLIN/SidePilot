@@ -148,20 +148,26 @@
                 <textarea
                   id="sdkInput"
                   class="sdk-chat-input"
-                  placeholder="Ask Copilot anything..."
+                  placeholder="Ask Copilot anything... (/clear /help)"
                   rows="3"
                 ></textarea>
-                <button id="sdkSendBtn" class="btn btn-primary sdk-send-btn">
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    fill="currentColor"
+                <div class="sdk-input-actions">
+                  <button id="sdkSendBtn" class="btn btn-primary sdk-send-btn">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                      <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                    Send
+                  </button>
+                  <button
+                    id="sdkClearBtn"
+                    class="btn btn-secondary sdk-clear-btn"
+                    title="清空對話紀錄 (或輸入 /clear)"
                   >
-                    <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                  </svg>
-                  Send
-                </button>
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor">
+                      <path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75ZM4.496 6.675l.66 6.6a.25.25 0 0 0 .249.225h5.19a.25.25 0 0 0 .249-.225l.66-6.6a.75.75 0 0 1 1.492.149l-.66 6.6A1.75 1.75 0 0 1 10.595 15h-5.19a1.75 1.75 0 0 1-1.741-1.575l-.66-6.6a.75.75 0 1 1 1.492-.15ZM6.5 6.5a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75Zm3 0a.75.75 0 0 0-.75.75v4.5a.75.75 0 0 0 1.5 0v-4.5a.75.75 0 0 0-.75-.75Z"/>
+                    </svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
