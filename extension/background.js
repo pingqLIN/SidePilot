@@ -767,36 +767,43 @@ async function handleCaptureFullPageScreenshot(message, sendResponse) {
 
     // 3. Scroll-and-capture loop (fixed/sticky elements are already hidden)
     const captures = [];
-    for (let i = 0; i < scrollPositions.length; i++) {
-      const targetY = scrollPositions[i];
+    try {
+      for (let i = 0; i < scrollPositions.length; i++) {
+        const targetY = scrollPositions[i];
 
-      const scrollResults = await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        function: (y) => {
-          window.scrollTo({ top: y, behavior: 'instant' });
-          return window.scrollY;
-        },
-        args: [targetY]
-      });
+        const scrollResults = await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: (y) => {
+            window.scrollTo({ top: y, behavior: 'instant' });
+            return window.scrollY;
+          },
+          args: [targetY]
+        });
 
-      const actualScrollY = scrollResults?.[0]?.result ?? targetY;
-      await new Promise(r => setTimeout(r, CAPTURE_DELAY));
+        const actualScrollY = scrollResults?.[0]?.result ?? targetY;
+        await new Promise(r => setTimeout(r, CAPTURE_DELAY));
 
-      const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
-      captures.push({ dataUrl, scrollY: actualScrollY, index: i });
+        const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
+        captures.push({ dataUrl, scrollY: actualScrollY, index: i });
+      }
+    } finally {
+      // 4. Restore: unhide fixed/sticky elements, scroll position, scroll behavior
+      // Wrapped in try/catch so a cleanup failure never masks the original capture error.
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          function: (y, origBehavior, hideClass) => {
+            document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+            document.getElementById(hideClass)?.remove();
+            window.scrollTo({ top: y, behavior: 'instant' });
+            document.documentElement.style.scrollBehavior = origBehavior;
+          },
+          args: [origScrollY, dims.origScrollBehavior, FIXED_HIDE_CLASS]
+        });
+      } catch (restoreErr) {
+        console.warn('[SidePilot] Failed to restore page state after full-page capture:', restoreErr);
+      }
     }
-
-    // 4. Restore: unhide fixed/sticky elements, scroll position, scroll behavior
-    await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      function: (y, origBehavior, hideClass) => {
-        document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
-        document.getElementById(hideClass)?.remove();
-        window.scrollTo({ top: y, behavior: 'instant' });
-        document.documentElement.style.scrollBehavior = origBehavior;
-      },
-      args: [origScrollY, dims.origScrollBehavior, FIXED_HIDE_CLASS]
-    });
 
     // 5. Deduplicate by rounded scrollY, keep order
     const uniqueCaptures = [];
