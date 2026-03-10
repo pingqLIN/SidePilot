@@ -48,7 +48,7 @@ const CRITICAL_FILES = [
 ].map(f => join(EXT, f));
 
 // 摘要長度（從 SHA-256 hex 取前 N 字元）
-const DIGEST_LENGTH = 8;
+const DIGEST_LENGTH = 16;
 
 // ── 計算封印 ──
 
