@@ -11,8 +11,8 @@ import * as VSCodeConnector from './js/vscode-connector.js';
 // ============================================
 
 const COPILOT_URL = 'https://github.com/copilot';
-const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{8}$/i;
-const SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
+const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{16}$/i;
+const SEAL_DIGEST_PATTERN = /^[0-9a-f]{16}$/i;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
 const INTEGRITY_VERIFY_ENDPOINT = 'http://localhost:31031/api/integrity/verify';
 
@@ -732,18 +732,21 @@ async function handleCaptureFullPageScreenshot(message, sendResponse) {
       return;
     }
 
-    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr } = dims;
+    const { fullHeight, viewportHeight, scrollY: origScrollY, devicePixelRatio: dpr, origScrollBehavior } = dims;
 
     if (fullHeight <= viewportHeight) {
       // Page fits in one viewport — restore and capture once
       await chrome.scripting.executeScript({
         target: { tabId: tab.id },
-        function: (hideClass, origBehavior) => {
-          document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
-          document.getElementById(hideClass)?.remove();
-          document.documentElement.style.scrollBehavior = origBehavior;
+        function: (hideClass, scrollBehavior) => {
+          try {
+            document.querySelectorAll(`.${hideClass}`).forEach(el => el.classList.remove(hideClass));
+            document.getElementById(hideClass)?.remove();
+          } finally {
+            document.documentElement.style.scrollBehavior = scrollBehavior || '';
+          }
         },
-        args: [FIXED_HIDE_CLASS, dims.origScrollBehavior]
+        args: [FIXED_HIDE_CLASS, origScrollBehavior]
       });
       const dataUrl = await captureVisibleTabDataUrl(tab.windowId);
       sendResponse({ success: true, dataUrl });
@@ -795,7 +798,7 @@ async function handleCaptureFullPageScreenshot(message, sendResponse) {
             window.scrollTo({ top: y, behavior: 'instant' });
             document.documentElement.style.scrollBehavior = origBehavior;
           },
-          args: [origScrollY, dims.origScrollBehavior, FIXED_HIDE_CLASS]
+          args: [origScrollY, origScrollBehavior, FIXED_HIDE_CLASS]
         });
       } catch (restoreErr) {
         console.warn('[SidePilot] Failed to restore page state after full-page capture:', restoreErr);
