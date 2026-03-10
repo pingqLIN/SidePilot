@@ -25,7 +25,7 @@ const SIDEPILOT_PACKET_SCHEMA = 'sidepilot.turn-packet.v1';
 const SIDEPILOT_SANDBOX_SCHEMA = 'sidepilot.sandbox.v1';
 const LOG_STORAGE_KEY = 'sidepilot.logs.v1';
 const LOG_MAX_ENTRIES = 300;
-const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
+const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{16})$/i;
 const SDK_INPUT_CONTAINER_MIN_HEIGHT = 120;
 const SDK_INPUT_CONTAINER_DEFAULT_SCALE = 1.5;
 const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
@@ -727,7 +727,7 @@ function normalizeSettings(raw = {}) {
   const digestCandidate = typeof source.selfIterationLastSealDigest === 'string'
     ? source.selfIterationLastSealDigest.trim().toLowerCase()
     : '';
-  const selfIterationLastSealDigest = /^[0-9a-f]{8}$/.test(digestCandidate)
+  const selfIterationLastSealDigest = /^[0-9a-f]{16}$/.test(digestCandidate)
     ? digestCandidate
     : '';
 

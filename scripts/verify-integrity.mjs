@@ -44,7 +44,7 @@ const CRITICAL_FILES = [
   'styles.css',
 ].map(f => join(EXT, f));
 
-const DIGEST_LENGTH = 8;
+const DIGEST_LENGTH = 16;
 
 // ── 計算封印（與 seal 腳本邏輯完全一致）──
 
