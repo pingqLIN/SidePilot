@@ -27,6 +27,7 @@ SidePilot bridge 跑在 `http://localhost:31031`，主要負責：
 ## 快速檢查
 
 - 用 `GET /health` 確認 bridge 是否活著
+- 測試受保護端點前，先用 `SIDEPILOT_EXTENSION_ID=<你的 extension id>` 啟動 bridge
 - 在呼叫受保護的 `/api/*` 前先執行 `POST /api/auth/bootstrap`
 - 在高風險本地調整前，先用 backup 端點做備份
 

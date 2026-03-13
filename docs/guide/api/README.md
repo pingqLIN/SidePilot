@@ -27,6 +27,7 @@ The SidePilot bridge runs locally at `http://localhost:31031` and powers:
 ## Fast checks
 
 - Use `GET /health` to verify the bridge is alive
+- Start the bridge with `SIDEPILOT_EXTENSION_ID=<your extension id>` before testing protected endpoints
 - Use `POST /api/auth/bootstrap` before protected `/api/*` calls
 - Use backup endpoints before risky local experimentation
 

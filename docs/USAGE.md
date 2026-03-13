@@ -31,6 +31,7 @@
 - [Keyboard Shortcuts](#-keyboard-shortcuts)
 - [Storage & Data](#-storage--data)
 - [Bridge Server API](#-bridge-server-api)
+- [Development](#%EF%B8%8F-development)
 
 ---
 
@@ -161,15 +162,19 @@ If not installed, follow [GitHub Copilot CLI documentation](https://docs.github.
 ```bash
 cd scripts/copilot-bridge
 npm install          # First time only
-npm start            # Starts Supervisor + Worker
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
+npm start            # Starts Supervisor + Worker bound to that extension
 ```
 
 **Development mode** (worker-only hot reload):
 
 ```bash
 cd scripts/copilot-bridge
-npm run dev          # Starts worker-only hot-reload
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
+npm run dev          # Starts worker-only hot-reload bound to that extension
 ```
+
+> **Important:** `SIDEPILOT_EXTENSION_ID` is required for secure loopback auth. The one-click launcher sets it automatically; if you start the bridge manually, set it yourself first.
 
 #### Verifying the Connection
 
@@ -189,9 +194,15 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
 
@@ -583,9 +594,15 @@ Health check endpoint.
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
 
@@ -661,6 +678,91 @@ Send a chat message and wait for the complete response (blocking).
 }
 ```
 
+#### `POST /api/auth/bootstrap`
+
+Bootstrap a loopback auth token for the current session. Must be called once before any protected `/api/*` request. The extension calls this automatically on first connection, but the bridge must already be started with `SIDEPILOT_EXTENSION_ID=<your extension id>`.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "token": "<loopback-token>"
+}
+```
+
+All subsequent `/api/*` requests must include the returned token in `X-SidePilot-Token`, and the request must still come from the bound `chrome-extension://<id>` origin:
+
+```
+X-SidePilot-Token: <loopback-token>
+```
+
+#### `GET /api/backup`
+
+List all available backups.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "backups": [
+    {
+      "id": "abc12345",
+      "type": "full",
+      "timestamp": 1712345678000,
+      "size": 204800,
+      "filename": "SidePilot-full-2026-03-13-abc12345.zip",
+      "status": "success"
+    }
+  ]
+}
+```
+
+#### `POST /api/backup`
+
+Trigger a manual backup. Two types are supported:
+
+| Type | Contents |
+|------|----------|
+| `full` | Entire `extension/` folder (excludes `node_modules`, `dist`) |
+| `settings` | Rules JSON, all rule templates |
+
+**Request:**
+
+```json
+{ "mode": "full" }
+```
+
+Backups are saved as `.zip` files in the configured backup directory (default: `../../../SidePilot-Backups/` relative to the bridge server).
+
+#### `POST /api/backup/schedule`
+
+Enable or disable automatic scheduled backups.
+
+**Request:**
+
+```json
+{
+  "mode": "settings",
+  "frequency": "d",
+  "interval": 1,
+  "savePath": "/path/to/backups",
+  "enabled": true
+}
+```
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `mode` | `full` \| `settings` | What to back up |
+| `frequency` | `h` `d` `w` `m` | Hourly / daily / weekly / monthly |
+| `interval` | `1`, `2`, … | Every N units |
+| `enabled` | `true` \| `false` | Turn scheduler on/off |
+
+#### `DELETE /api/backup/:id`
+
+Delete a backup by ID.
+
 ---
 
 ## 🛠️ Development
@@ -678,37 +780,75 @@ SidePilot/
 │   ├── rules.json           # Declarative Net Request rules
 │   ├── icons/               # Extension icons
 │   ├── assets/              # Media files
+│   ├── templates/           # Built-in rule templates (.md)
 │   └── js/                  # JavaScript modules
-│       ├── sdk-client.js    # Bridge communication
-│       ├── sdk-chat.js      # SDK mode UI
-│       ├── mode-manager.js  # Mode switching
-│       ├── memory-bank.js   # Memory CRUD
-│       ├── rules-manager.js # Rules management
-│       ├── link-guard.js    # iframe link control
-│       ├── vscode-connector.js
-│       ├── automation.js    # Page capture
-│       └── storage-manager.js
+│       ├── sdk-client.js             # Bridge HTTP/SSE communication
+│       ├── sdk-chat.js               # SDK mode chat UI
+│       ├── mode-manager.js           # iframe ↔ SDK mode switching
+│       ├── memory-bank.js            # Memory CRUD and injection
+│       ├── rules-manager.js          # Rules management
+│       ├── link-guard.js             # iframe link allow/denylist
+│       ├── automation.js             # Page capture (text, code, screenshot)
+│       ├── connection-controller.js  # Bridge connection health management
+│       ├── storage-manager.js        # Chrome storage abstraction
+│       ├── vendor-content-cleaner.js # Strips noisy vendor markup from captures
+│       └── vscode-connector.js       # Opens memory entries in VS Code / Cursor
 │
-├── scripts/copilot-bridge/  # Bridge server
+├── scripts/copilot-bridge/  # Bridge server (TypeScript)
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
-│       ├── server.ts        # Express app + routes
-│       ├── supervisor.ts    # Process supervision
-│       ├── session-manager.ts
-│       └── ipc-types.ts
+│       ├── server.ts           # Express app + all API routes
+│       ├── supervisor.ts       # Process supervision + auto-restart
+│       ├── session-manager.ts  # ACP session lifecycle
+│       ├── backup-manager.ts   # Backup/restore + scheduler
+│       └── ipc-types.ts        # Supervisor ↔ Worker message types
+│
+├── scripts/bridge-launcher/  # Auto-launch helpers
+│   ├── windows/               # PowerShell installer + protocol handler
+│   └── wsl/                   # WSL launcher
 │
 ├── docs/                    # Documentation
 │   ├── USAGE.md             # This file
-│   ├── USAGE.zh-TW.md      # Chinese version
+│   ├── USAGE.zh-TW.md       # Chinese version
+│   ├── FEATURES.md          # Full feature tour
 │   ├── DEVELOPMENT_PLAN.md  # Public roadmap
-│   └── screenshots/         # UI screenshots
+│   └── guide/               # Structured guide hub
 │
 ├── package.json             # Extension dev dependencies
 ├── README.md                # Project overview (English)
 ├── README.zh-TW.md          # Project overview (Chinese)
 └── LICENSE                  # MIT License
 ```
+
+### Bridge Auto-Launcher (Windows)
+
+The bridge launcher registers a custom URI protocol (`sidepilot://start-bridge`) so the extension can trigger bridge startup with one click in the UI — no terminal required.
+
+**Install (run once):**
+
+```powershell
+cd scripts/bridge-launcher/windows
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-launcher.ps1
+```
+
+**Verify install:**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test-launcher.ps1
+```
+
+**Uninstall:**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-launcher.ps1 -RemoveFiles
+```
+
+After installation, the **Start Bridge** button in the extension's Settings > Bridge Setup panel can launch the bridge server directly. The launcher is registered under `HKCU:\Software\Classes\sidepilot` and does not require admin privileges.
+
+> **WSL users:** A shell launcher is available at `scripts/bridge-launcher/wsl/`.
+
+---
 
 ### Running Tests
 
@@ -728,12 +868,18 @@ npm run test:coverage
 ```bash
 cd scripts/copilot-bridge
 
-# Recommended: build + start Supervisor
+# Recommended: build + start Supervisor (production)
 npm start
 
-# Development (worker-only hot-reload)
+# Development — worker only, hot-reload
 npm run dev
 
-# Build TypeScript only
+# Development — supervisor + worker, hot-reload
+npm run dev:supervisor
+
+# Build TypeScript to dist/ only
 npm run build
+
+# Clean dist/ output
+npm run clean
 ```

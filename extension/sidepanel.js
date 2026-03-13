@@ -541,6 +541,7 @@ const DEFAULT_SETTINGS = {
   captureButtonTopPercent: DEFAULT_CAPTURE_BUTTON_TOP_PERCENT,
   antigravityBaseUrl: ANTIGRAVITY_DEFAULT_BASE_URL,
   antigravityToken: "",
+  iframeEnabled: false,
   linkGuardMode: "allow",
   linkAllowlist: [
     "https://github.com/copilot/*",
@@ -851,6 +852,7 @@ async function init() {
   dom.settingCaptureButtonTop = document.getElementById(
     "settingCaptureButtonTop",
   );
+  dom.settingIframeEnabled = document.getElementById("settingIframeEnabled");
   dom.settingLinkGuardMode = document.getElementById("settingLinkGuardMode");
   dom.settingLinkAllowlist = document.getElementById("settingLinkAllowlist");
   dom.captureBtnWidthValue = document.getElementById("captureBtnWidthValue");
@@ -1347,6 +1349,7 @@ function normalizeSettings(raw = {}) {
     source.antigravityBaseUrl,
   );
   const antigravityToken = normalizeAntigravityToken(source.antigravityToken);
+  const iframeEnabled = source.iframeEnabled === true;
   const linkGuardMode = source.linkGuardMode === "deny" ? "deny" : "allow";
   const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist, {
     allowEmpty: linkGuardMode === "deny",
@@ -1392,6 +1395,7 @@ function normalizeSettings(raw = {}) {
     captureButtonTopPercent,
     antigravityBaseUrl,
     antigravityToken,
+    iframeEnabled,
     linkGuardMode,
     linkAllowlist,
     iframeHistoryUrl: source.iframeHistoryUrl || "https://github.com/copilot",
@@ -1834,6 +1838,10 @@ function applySettingsToUI() {
   if (dom.settingAntigravityToken) {
     dom.settingAntigravityToken.value = settings.antigravityToken;
   }
+  if (dom.settingIframeEnabled) {
+    dom.settingIframeEnabled.checked = settings.iframeEnabled === true;
+  }
+  updateIframeModeBtnState(settings.iframeEnabled === true);
   if (dom.settingLinkGuardMode) {
     dom.settingLinkGuardMode.value = settings.linkGuardMode || "allow";
   }
@@ -1900,6 +1908,7 @@ function collectSettingsFromUI() {
     captureButtonTopPercent: dom.settingCaptureButtonTop?.value,
     antigravityBaseUrl: dom.settingAntigravityBaseUrl?.value,
     antigravityToken: dom.settingAntigravityToken?.value,
+    iframeEnabled: !!dom.settingIframeEnabled?.checked,
     linkGuardMode: dom.settingLinkGuardMode?.value,
     linkAllowlist: dom.settingLinkAllowlist?.value,
     iframeHistoryUrl: document.getElementById("settingIframeHistoryUrl")?.value,
@@ -4101,6 +4110,10 @@ function setupEventListeners() {
   dom.settingShowWarningOverlay?.addEventListener("change", markSettingsDirty);
   dom.settingAntigravityBaseUrl?.addEventListener("input", markSettingsDirty);
   dom.settingAntigravityToken?.addEventListener("input", markSettingsDirty);
+  dom.settingIframeEnabled?.addEventListener("change", () => {
+    updateIframeModeBtnState(!!dom.settingIframeEnabled.checked);
+    markSettingsDirty();
+  });
   dom.settingLinkGuardMode?.addEventListener("change", markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener("input", markSettingsDirty);
   document
@@ -4944,9 +4957,40 @@ function updatePendingImagesBadge() {
   badge.textContent = `📎 ${count}`;
 }
 
+function updateIframeModeBtnState(enabled) {
+  dom.modeSwitchBtns?.forEach((btn) => {
+    if (btn.dataset.mode === "iframe") {
+      btn.classList.toggle("mode-btn-locked", !enabled);
+      btn.title = enabled ? "" : "請先至「設定 › iframe 模式」開啟此功能";
+    }
+  });
+}
+
+function navigateToSettingsSection(sectionI18nKey) {
+  switchTab("settings");
+  requestAnimationFrame(() => {
+    const title = document.querySelector(
+      `.settings-section-title[data-i18n="settings.section.${sectionI18nKey}"]`,
+    );
+    if (!title) return;
+    const section = title.closest(".settings-section");
+    if (!section) return;
+    if (section.classList.contains("collapsed")) {
+      section.classList.remove("collapsed");
+    }
+    section.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+}
+
 async function setModeFromUI(mode) {
   if (!["iframe", "sdk"].includes(mode)) return;
   if (state.detectedMode === mode) return;
+
+  if (mode === "iframe" && !state.settings?.iframeEnabled) {
+    showToast("請先至「設定 › iframe 模式」手動開啟 iframe 模式", "warning");
+    navigateToSettingsSection("iframe");
+    return;
+  }
 
   dom.modeSwitchBtns?.forEach((btn) => {
     btn.disabled = true;

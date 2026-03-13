@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.5.1] — 2026-03-13
+
+### Added
+
+- **iframe Opt-in Gate** — iframe 模式預設鎖定，需於「設定 › iframe 模式」手動開啟
+  - 新增 `iframeEnabled` 設定項（預設 `false`）
+  - iframe 模式按鈕顯示 🔒 鎖定標示，點擊時自動導引至設定區塊
+  - 符合 ToS 灰色地帶的知情同意原則
+
+### Changed
+
+- **Legal Notice** — README 拆分 SDK / iframe 模式的法律聲明，更精確描述安全標頭移除行為與風險範疇
+- **Third-Party Licenses** — README 新增第三方授權聲明（extension vendor bundle + bridge runtime）
+- **USAGE.md** — 補全文件缺口：`vendor-content-cleaner.js`、`connection-controller.js`、`backup-manager.ts`、Bridge Launcher、Backup/Restore API 端點、Bridge 開發指令
+- **Bridge README** — 加入 `SIDEPILOT_EXTENSION_ID` 環境變數說明與手動啟動指引
+
+### Fixed
+
+- `.env.example` PORT 錯誤值 `3000` 修正為 `31031`
+- `GET /health` 文件回應範例與實際 bridge 輸出一致（`service`、`backend`、`auth` 欄位）
+
+### Removed
+
+- `docs/COPILOT_API_SPECIFICATION_ZH-TW_.md` — 移除內部研究文件（含 GitHub 非公開 API 端點說明，不適合公開倉庫）
+- `docs/banner.png` — 舊版 banner（已由 `banner.webp` 取代）
+
+---
+
 ## [0.5.0] — 2026-03-04
 
 ### Added

@@ -965,6 +965,17 @@
               iframe 模式
             </div>
             <div class="settings-section-body">
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title" data-i18n="settings.iframe.enabled.title">
+                    啟用 iframe 模式
+                  </div>
+                  <div class="settings-item-desc" data-i18n="settings.iframe.enabled.desc">
+                    iframe 模式會移除 GitHub 的安全標頭（X-Frame-Options / CSP）以嵌入頁面，屬 ToS 灰色地帶，需手動開啟。
+                  </div>
+                </div>
+                <input type="checkbox" id="settingIframeEnabled" />
+              </label>
               <div class="settings-item settings-item-vertical">
                 <div class="settings-item-text">
                   <div class="settings-item-title" data-i18n="settings.iframe.mode.title">

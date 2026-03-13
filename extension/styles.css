@@ -452,6 +452,21 @@ body {
   cursor: wait;
 }
 
+.mode-switch-btn.mode-btn-locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+  position: relative;
+}
+
+.mode-switch-btn.mode-btn-locked::after {
+  content: "🔒";
+  font-size: 9px;
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  line-height: 1;
+}
+
 /* SDK text color as status indicator */
 .mode-switch-btn[data-mode="sdk"][data-status="success"] {
   color: #2ea043;

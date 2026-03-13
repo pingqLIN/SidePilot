@@ -20,7 +20,7 @@ import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } fr
 const PORT = parseInt(process.env.PORT || '31031', 10);
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const isForked = !!process.send;
-const EXTENSION_ID = String(process.env.SIDEPILOT_EXTENSION_ID || '').trim();
+const EXTENSION_ID = String(process.env.SIDEPILOT_EXTENSION_ID || '').trim().toLowerCase();
 const BRIDGE_AUTH_TOKEN = randomUUID().replace(/-/g, '');
 
 const app = express();
@@ -56,35 +56,55 @@ function getExpectedExtensionOrigin(): string {
   return EXTENSION_ID ? `chrome-extension://${EXTENSION_ID}` : '';
 }
 
+function isExtensionBindingConfigured(): boolean {
+  return isLikelyExtensionId(EXTENSION_ID);
+}
+
+function getRequestedExtensionId(req: Request): string {
+  return String(req.headers['x-sidepilot-extension-id'] || '').trim().toLowerCase();
+}
+
 function isExtensionRequest(req: Request): boolean {
   const origin = String(req.headers.origin || '');
-  const requestedExtensionId = String(req.headers['x-sidepilot-extension-id'] || '').trim();
   const expectedOrigin = getExpectedExtensionOrigin();
+  const requestedExtensionId = getRequestedExtensionId(req);
+
+  if (!isExtensionBindingConfigured()) {
+    return false;
+  }
 
   if (origin) {
-    if (!origin.startsWith('chrome-extension://')) {
-      return false;
-    }
-    if (expectedOrigin) {
-      return origin === expectedOrigin;
-    }
+    if (origin !== expectedOrigin) return false;
+    return !requestedExtensionId || requestedExtensionId === EXTENSION_ID;
+  }
+
+  return requestedExtensionId === EXTENSION_ID;
+}
+
+function ensureExtensionBindingConfigured(res: Response): boolean {
+  if (isExtensionBindingConfigured()) {
     return true;
   }
 
-  if (EXTENSION_ID) {
-    return requestedExtensionId === EXTENSION_ID;
-  }
-
-  return isLikelyExtensionId(requestedExtensionId);
+  res.status(503).json({
+    success: false,
+    error: 'extension binding not configured',
+    detail: 'Set SIDEPILOT_EXTENSION_ID to the Chrome extension id before starting the bridge.',
+  });
+  return false;
 }
 
 function ensureExtensionOrigin(req: Request, res: Response): boolean {
+  if (!ensureExtensionBindingConfigured(res)) {
+    return false;
+  }
   if (!isExtensionRequest(req)) {
     res.status(403).json({
       success: false,
       error: 'forbidden origin',
       origin: String(req.headers.origin || ''),
-      extensionId: String(req.headers['x-sidepilot-extension-id'] || ''),
+      extensionId: getRequestedExtensionId(req),
+      expectedOrigin: getExpectedExtensionOrigin(),
     });
     return false;
   }
@@ -216,7 +236,8 @@ app.get('/health', (_req, res) => {
     auth: {
       required: true,
       bootstrapPath: '/api/auth/bootstrap',
-      extensionOrigin: getExpectedExtensionOrigin() || 'chrome-extension://<extension-id>',
+      extensionBindingConfigured: isExtensionBindingConfigured(),
+      extensionOrigin: getExpectedExtensionOrigin() || null,
     }
   });
 });
@@ -232,6 +253,10 @@ app.post('/api/auth/bootstrap', (req, res) => {
 app.use('/api', (req, res, next) => {
   if (req.path === '/auth/bootstrap') {
     next();
+    return;
+  }
+
+  if (!ensureExtensionOrigin(req, res)) {
     return;
   }
 
@@ -881,10 +906,10 @@ const server = app.listen(PORT, () => {
   console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
   console.log(`   Auth bootstrap: http://localhost:${PORT}/api/auth/bootstrap`);
-  if (EXTENSION_ID) {
+  if (isExtensionBindingConfigured()) {
     console.log(`   Allowed extension: chrome-extension://${EXTENSION_ID}`);
   } else {
-    console.warn('   Allowed extension: any chrome-extension:// origin (SIDEPILOT_EXTENSION_ID not set)');
+    console.warn('   Allowed extension: none (set SIDEPILOT_EXTENSION_ID to enable bootstrap and protected APIs)');
   }
 
   // Notify supervisor that worker is ready

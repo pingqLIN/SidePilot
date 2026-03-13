@@ -193,13 +193,39 @@ Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) 
 
 ## ⚠️ Legal Notice
 
-> This extension embeds the GitHub Copilot web interface (iframe mode) and uses the official Copilot CLI SDK (SDK mode). Use at your own risk and ensure you comply with [GitHub's Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service).
+**SDK mode** uses the official `@github/copilot-sdk` and requires a valid GitHub Copilot subscription. This is the recommended path for sustained use.
+
+**iframe mode** embeds `github.com/copilot` by removing `X-Frame-Options` and `Content-Security-Policy` response headers via the Chrome `declarativeNetRequest` API. A Copilot subscription is still required — GitHub continues to serve all content and process all requests normally. However, bypassing security headers is a gray area under [GitHub's Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service). GitHub retains the right to take action against accounts or tools that circumvent their technical safeguards, even if no direct revenue harm occurs. Use at your own risk.
 
 ---
 
 ## 📜 License
 
 This project is licensed under the [MIT License](LICENSE).
+
+---
+
+## 📦 Third-Party Licenses
+
+### Bundled in the extension (`extension/js/vendor-content-cleaner.js`)
+
+| Library | Version | License | Author |
+| --- | --- | --- | --- |
+| [Defuddle](https://github.com/kepano/defuddle) | 0.8.x | MIT | Steph Ango |
+| [Turndown](https://github.com/mixmark-io/turndown) | 7.2.x | MIT | Dom Christie |
+
+### Bridge server runtime dependencies (`scripts/copilot-bridge`)
+
+| Library | Version | License | Notes |
+| --- | --- | --- | --- |
+| [@github/copilot-sdk](https://www.npmjs.com/package/@github/copilot-sdk) | 0.1.x | MIT | Official GitHub Copilot SDK |
+| [@agentclientprotocol/sdk](https://www.npmjs.com/package/@agentclientprotocol/sdk) | 0.14.x | MIT | Agent Client Protocol SDK |
+| [Express](https://expressjs.com/) | 5.x | MIT | HTTP server framework |
+| [cors](https://github.com/expressjs/cors) | 2.8.x | MIT | CORS middleware |
+| [archiver](https://www.archiverjs.com/) | 7.x | MIT | ZIP archive creation |
+| [node-schedule](https://github.com/node-schedule/node-schedule) | 2.1.x | MIT | Cron-style scheduler |
+
+> All third-party libraries retain their original licenses. See each library's repository for full license text.
 
 ---
 

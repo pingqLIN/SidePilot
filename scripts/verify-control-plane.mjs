@@ -96,6 +96,16 @@ function buildAuthHeaders({ includeExtensionOrigin = false, includeJson = false 
   return headers;
 }
 
+function buildProtectedHeaders(token, { includeJson = false } = {}) {
+  return {
+    ...buildAuthHeaders({
+      includeExtensionOrigin: true,
+      includeJson,
+    }),
+    'X-SidePilot-Token': token,
+  };
+}
+
 async function bootstrapBridgeAuth() {
   const response = await fetchJson('/api/auth/bootstrap', {
     method: 'POST',
@@ -144,6 +154,9 @@ async function main() {
   if (healthBody.auth?.required !== true) {
     fail('health.auth.required should be true');
   }
+  if (healthBody.auth?.extensionBindingConfigured !== true) {
+    fail('health.auth.extensionBindingConfigured should be true');
+  }
   if (!validSdkStates.has(String(healthBody.sdk))) {
     fail(`health.sdk must be one of ${Array.from(validSdkStates).join(', ')}, got "${healthBody.sdk}"`);
   }
@@ -159,9 +172,7 @@ async function main() {
   }
 
   const protectedHeaders = bridgeToken
-    ? {
-        'X-SidePilot-Token': bridgeToken,
-      }
+    ? buildProtectedHeaders(bridgeToken)
     : {};
 
   // 2) Config

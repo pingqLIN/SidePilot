@@ -10,6 +10,8 @@
 2. 取得暫時性的 bridge token
 3. 在後續請求帶上 `X-SidePilot-Token`
 
+Bridge 啟動時必須帶入 `SIDEPILOT_EXTENSION_ID=<你的 extension id>`。如果 bridge 沒有綁定特定的 SidePilot extension origin，bootstrap 與受保護的 `/api/*` 都會被拒絕。
+
 ## 主要端點
 
 ### 健康檢查與驗證
@@ -62,5 +64,6 @@
 ## 備註
 
 - Bridge 僅在本機使用，設計上就是給 SidePilot 擴充呼叫。
+- `POST /api/auth/bootstrap` 與受保護的 `/api/*` 路由都要求請求來自已綁定的 `chrome-extension://<id>`。
 - `GET /health` 是判斷 SDK 模式可不可用的最快方式。
 - Backup API 主要用於本機匯出、備份與還原工作流。

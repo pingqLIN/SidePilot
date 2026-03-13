@@ -161,15 +161,19 @@ copilot auth status  # 驗證驗證狀態
 ```bash
 cd scripts/copilot-bridge
 npm install          # 僅首次需要
-npm start            # 啟動 Supervisor + Worker
+export SIDEPILOT_EXTENSION_ID=<你的 Chrome extension id>
+npm start            # 啟動並綁定到該 extension
 ```
 
 **開發模式**（僅 Worker 熱重載）：
 
 ```bash
 cd scripts/copilot-bridge
-npm run dev          # 啟動僅 Worker 的熱重載
+export SIDEPILOT_EXTENSION_ID=<你的 Chrome extension id>
+npm run dev          # 啟動僅 Worker 的熱重載，並綁定到該 extension
 ```
+
+> **重要：** `SIDEPILOT_EXTENSION_ID` 是 loopback 驗證的一部分。使用一鍵 launcher 會自動帶入；若手動啟動 bridge，請先自行設定。
 
 #### 驗證連線
 
@@ -189,9 +193,15 @@ curl http://localhost:31031/health
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<你的-chrome-extension-id>"
+  }
 }
 ```
 
@@ -583,9 +593,15 @@ http://localhost:31031
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<你的-chrome-extension-id>"
+  }
 }
 ```
 

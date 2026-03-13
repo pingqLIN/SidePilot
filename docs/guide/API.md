@@ -10,6 +10,8 @@ Before calling most protected `/api/*` endpoints, the extension:
 2. Receives a temporary bridge token
 3. Sends that token in `X-SidePilot-Token`
 
+The bridge must be started with `SIDEPILOT_EXTENSION_ID=<your extension id>`. Bootstrap and protected `/api/*` calls are rejected if the bridge is not bound to a specific SidePilot extension origin.
+
 ## Core endpoints
 
 ### Health & auth
@@ -62,5 +64,6 @@ Before calling most protected `/api/*` endpoints, the extension:
 ## Notes
 
 - The bridge is local-only and intended for SidePilot extension use.
+- `POST /api/auth/bootstrap` and protected `/api/*` routes require the request to come from the bound `chrome-extension://<id>` origin.
 - `GET /health` is the fastest way to determine whether SDK mode can be used.
 - Backup APIs are designed for local export / restore workflows.

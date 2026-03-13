@@ -36,6 +36,9 @@
 # 安裝依賴
 npm install
 
+# 手動啟動前，先綁定 SidePilot extension id
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
+
 # 建議：直接 build + 啟動 Supervisor
 npm start
 
@@ -61,6 +64,7 @@ npm run dev
 | 變數             | 預設值    | 說明                              |
 | ---------------- | --------- | --------------------------------- |
 | `PORT`           | `31031`   | HTTP 伺服器監聽埠                 |
+| `SIDEPILOT_EXTENSION_ID` | — | 允許存取 bridge 的 Chrome extension id |
 | `COPILOT_MODEL`  | `gpt-4.1` | 預設 AI 模型                     |
 | `COPILOT_MODELS` | —         | 自訂模型清單（逗號分隔）          |
 | `LOG_LEVEL`      | `info`    | 日誌等級（debug/info/warn/error） |
@@ -78,13 +82,18 @@ npm run dev
   "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
   "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
-  "auth": { "required": true, "bootstrapPath": "/api/auth/bootstrap" }
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
 
 ### `POST /api/auth/bootstrap`
 
-由 SidePilot extension bootstrap loopback token。之後所有 `/api/*` 請求都必須帶 token。
+由已綁定的 SidePilot extension bootstrap loopback token。若 bridge 啟動時沒有設定 `SIDEPILOT_EXTENSION_ID`，或請求不是來自對應的 `chrome-extension://<id>`，會直接拒絕。之後所有 `/api/*` 請求都必須同時符合 extension origin 與 token 驗證。
 
 ---
 
