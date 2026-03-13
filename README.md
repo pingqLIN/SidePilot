@@ -65,35 +65,37 @@ Instead of bouncing between tabs, apps, and terminals, you can keep Copilot besi
 
 <table>
   <tr>
-    <td width="33%" align="center">
-      <img src="pic/14-header-tabs.png" width="280" alt="SidePilot header with all tabs"><br>
+    <td width="50%" align="center">
+      <img src="pic/14-header-tabs.png" width="420" alt="SidePilot header with all tabs"><br>
       <b>Instant side-panel access</b><br>
       <sub>Open Copilot inside the browser side panel — switch IFRAME / SDK with one click.</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/15-sdk-model-select.png" width="280" alt="SDK model selector"><br>
-      <b>Streaming SDK chat</b><br>
-      <sub>Switch to the local bridge for richer control, models, and streaming.</sub>
-    </td>
-    <td width="33%" align="center">
-      <img src="pic/16-rules-templates.png" width="280" alt="Rules templates picker"><br>
+    <td width="50%" align="center">
+      <img src="pic/16-rules-templates.png" width="420" alt="Rules templates picker"><br>
       <b>Rules that shape behavior</b><br>
       <sub>Use built-in templates (TypeScript, React, Safety…) or write custom instructions.</sub>
     </td>
   </tr>
   <tr>
-    <td width="33%" align="center">
-      <img src="pic/19-page-capture.png" width="280" alt="Page capture panel"><br>
+    <td width="50%" align="center">
+      <img src="pic/19-page-capture.png" width="420" alt="Page capture panel"><br>
       <b>Capture what you're seeing</b><br>
       <sub>Pull text, code blocks, and screenshots straight from the page.</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/18-settings-bridge.png" width="280" alt="Bridge setup panel"><br>
+    <td width="50%" align="center">
+      <img src="pic/15-sdk-model-select.png" width="420" alt="SDK model selector"><br>
+      <b>Streaming SDK chat</b><br>
+      <sub>Switch to the local bridge for richer control, models, and streaming.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="pic/18-settings-bridge.png" width="420" alt="Bridge setup panel"><br>
       <b>Bridge auto-start</b><br>
       <sub>SidePilot detects and launches the local bridge automatically when SDK mode is entered.</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/13-welcome-screen.png" width="280" alt="Welcome onboarding screen"><br>
+    <td width="50%" align="center">
+      <img src="pic/13-welcome-screen.png" width="420" alt="Welcome onboarding screen"><br>
       <b>Guided onboarding</b><br>
       <sub>Move from quick start to advanced mode without leaving the panel.</sub>
     </td>

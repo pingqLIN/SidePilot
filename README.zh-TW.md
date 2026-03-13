@@ -65,35 +65,37 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 
 <table>
   <tr>
-    <td width="33%" align="center">
-      <img src="pic/14-header-tabs.png" width="280" alt="SidePilot 頂列與分頁"><br>
+    <td width="50%" align="center">
+      <img src="pic/14-header-tabs.png" width="420" alt="SidePilot 頂列與分頁"><br>
       <b>側邊欄立即可用</b><br>
       <sub>把 Copilot 放進瀏覽器側邊欄，一鍵切換 IFRAME / SDK 模式。</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/15-sdk-model-select.png" width="280" alt="SDK 模型選擇器"><br>
-      <b>SDK 串流對話</b><br>
-      <sub>切到本地 bridge 後，取得更完整的模型、串流與控制力。</sub>
-    </td>
-    <td width="33%" align="center">
-      <img src="pic/16-rules-templates.png" width="280" alt="Rules 樣板選擇器"><br>
+    <td width="50%" align="center">
+      <img src="pic/16-rules-templates.png" width="420" alt="Rules 樣板選擇器"><br>
       <b>規則可塑形</b><br>
       <sub>內建 TypeScript、React、安全等樣板，或自訂指令讓 AI 回應風格更一致。</sub>
     </td>
   </tr>
   <tr>
-    <td width="33%" align="center">
-      <img src="pic/19-page-capture.png" width="280" alt="頁面擷取面板"><br>
+    <td width="50%" align="center">
+      <img src="pic/19-page-capture.png" width="420" alt="頁面擷取面板"><br>
       <b>所見即所擷取</b><br>
       <sub>直接從網頁抓文字、程式碼區塊與截圖。</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/18-settings-bridge.png" width="280" alt="Bridge 設定面板"><br>
+    <td width="50%" align="center">
+      <img src="pic/15-sdk-model-select.png" width="420" alt="SDK 模型選擇器"><br>
+      <b>SDK 串流對話</b><br>
+      <sub>切到本地 bridge 後，取得更完整的模型、串流與控制力。</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="pic/18-settings-bridge.png" width="420" alt="Bridge 設定面板"><br>
       <b>Bridge 自動啟動</b><br>
       <sub>進入 SDK 模式時自動偵測並啟動本地 bridge，不用手動拉起。</sub>
     </td>
-    <td width="33%" align="center">
-      <img src="pic/13-welcome-screen.png" width="280" alt="歡迎 Onboarding 畫面"><br>
+    <td width="50%" align="center">
+      <img src="pic/13-welcome-screen.png" width="420" alt="歡迎 Onboarding 畫面"><br>
       <b>引導式 Onboarding</b><br>
       <sub>從快速上手自然過渡到 bridge 進階工作流，不需離開側邊欄。</sub>
     </td>
