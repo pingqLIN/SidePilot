@@ -4,23 +4,18 @@
 
 ## 架構總覽
 
-```
-┌─────────────────────────────┐
-│  Chrome Extension           │
-│  (sdk-client.js)            │
-└──────────┬──────────────────┘
-           │ HTTP / SSE
-           ▼
-┌─────────────────────────────┐
-│  Supervisor (supervisor.ts) │  ← 進程管理：心跳監控、自動重啟
-│    └─ Worker (server.ts)    │  ← Express HTTP 伺服器
-│         └─ SessionManager   │  ← ACP 連線管理
-└──────────┬──────────────────┘
-           │ JSON-RPC (stdio)
-           ▼
-┌─────────────────────────────┐
-│  copilot --acp --stdio      │  ← GitHub Copilot CLI
-└─────────────────────────────┘
+```mermaid
+graph TD
+    Ext["Chrome Extension<br>(sdk-client.js)"] -- "HTTP / SSE" --> Sup
+    
+    subgraph Sup["Supervisor (supervisor.ts) - 進程管理：心跳監控、自動重啟"]
+        direction TB
+        Worker["Worker (server.ts)<br>Express HTTP 伺服器"]
+        Session["SessionManager<br>ACP 連線管理"]
+        Worker --> Session
+    end
+    
+    Session -- "JSON-RPC (stdio)" --> CLI["copilot --acp --stdio<br>GitHub Copilot CLI"]
 ```
 
 **Supervisor / Worker 模式：** 生產環境透過 Supervisor 管理 Worker 生命週期，包含心跳偵測（10 秒間隔）、指數退避重啟（最大 30 秒）及快速重啟保護（60 秒內最多 5 次）。開發環境可直接啟動 Worker。

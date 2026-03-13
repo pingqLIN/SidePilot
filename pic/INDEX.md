@@ -10,16 +10,44 @@
 
 | 檔名 | 狀態 | 建議用途 |
 | --- | --- | --- |
-| `螢幕擷取畫面 2026-03-13 145550.png` | 新增 | 候選 README / release screenshot |
-| `螢幕擷取畫面 2026-03-13 145619.png` | 新增 | 候選 README / release screenshot |
-| `螢幕擷取畫面 2026-03-13 145648.png` | 新增 | 候選 README / release screenshot |
-| `螢幕擷取畫面 2026-03-13 145703.png` | 新增 | 候選 README / release screenshot |
-| `螢幕擷取畫面 2026-03-13 145719.png` | 新增 | 候選 README / release screenshot |
-| `螢幕擷取畫面 2026-03-13 145750.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145550.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145619.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145648.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145703.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145719.png` | 新增 | 候選 README / release screenshot |
+| `raw-2026-03-13-145750.png` | 新增 | 候選 README / release screenshot |
+
+## 批次匯入（來自根目錄整理）
+
+> 從根目錄整理時移入，原始批次 webp 截圖，尚未命名分類。
+
+| 檔名 | 狀態 | 建議用途 |
+| --- | --- | --- |
+| `raw-batch-001.webp` | 待分類 | 需確認內容後命名 |
+| `raw-batch-002.webp` | 待分類 | 需確認內容後命名 |
+| `raw-batch-003.webp` | 待分類 | 需確認內容後命名 |
 
 ---
 
-## 實際截圖（Extension UI）
+## 最新版 UI 截圖（2026-03-14，已裁切）
+
+> 從 `.bak/` 整理的最新 GUI 截圖，已裁切移除 Chrome 邊框，可直接用於 README。
+
+| #   | 檔名                            | 功能區域             | 說明                                        |
+| --- | ------------------------------- | -------------------- | ------------------------------------------- |
+| 13  | `13-welcome-screen.png`         | 歡迎 / 首次啟動      | Onboarding 畫面：功能摘要、使用方式、免責聲明 |
+| 14  | `14-header-tabs.png`            | 主 UI 頂列           | Logo + IFRAME/SDK 切換 + 6 個分頁標籤       |
+| 15  | `15-sdk-model-select.png`       | SDK 模式 — 模型選擇  | 模型下拉選單（gpt-4.1、gpt-5、claude 等）    |
+| 16  | `16-rules-templates.png`        | Rules 分頁           | 樣板選擇下拉（TypeScript、自我疊代、絕對安全等）|
+| 17  | `17-settings-language.png`      | Settings — Language  | UI 語言選擇 + Display Scale 滑桿 + Startup 開關 |
+| 18  | `18-settings-bridge.png`        | Settings — Bridge    | Bridge Setup 狀態列 + Auto-start + Provider Probe |
+| 19  | `19-page-capture.png`           | Page Capture 面板    | A 文字擷取 + B 頁面截圖 雙欄面板              |
+| 20  | `20-history-tab.png`            | History 分頁         | 對話歷史瀏覽（含 memory/context 標籤）        |
+| 21  | `21-logs-tab.png`               | Logs 分頁            | 即時 INFO 日誌串流                            |
+
+---
+
+## 舊版截圖（Extension UI）
 
 | #   | 檔名                                                                 | 功能區域          | 使用情境                                        | 引用文件         |
 | --- | -------------------------------------------------------------------- | ----------------- | ----------------------------------------------- | ---------------- |

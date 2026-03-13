@@ -1,36 +1,36 @@
-# 擴充端開發模式 (Extension Development Mode)
+# Extension Development Mode
 
-## 專案結構
-- `extension/` — Chrome Extension 主體（MV3）
-  - `sidepanel.js` — 主要前端邏輯
+## Project Structure
+- `extension/` — Chrome Extension core (MV3)
+  - `sidepanel.js` — Main frontend logic
   - `sidepanel.html` — Side Panel UI
-  - `styles.css` — 全域樣式（GitHub Dark 主題）
+  - `styles.css` — Global styles (GitHub Dark theme)
   - `background.js` — Service Worker
-  - `js/` — 模組（sdk-client, rules-manager, memory-bank 等）
-- `scripts/copilot-bridge/` — Bridge Server（TypeScript → dist/）
-- `templates/` — 規則樣板檔案
-- `tests/` — Jest 測試
+  - `js/` — Modules (sdk-client, rules-manager, memory-bank, etc.)
+- `scripts/copilot-bridge/` — Bridge Server (TypeScript → dist/)
+- `templates/` — Rules template files
+- `tests/` — Jest tests
 
-## 開發指令
-- 測試：`$env:NODE_OPTIONS="--experimental-vm-modules"; npx jest --no-cache`
-- Bridge 編譯：`cd scripts/copilot-bridge && npm run build`
-- Vendor 打包：`npm run build:vendor`
+## Dev Commands
+- Test: `$env:NODE_OPTIONS="--experimental-vm-modules"; npx jest --no-cache`
+- Build Bridge: `cd scripts/copilot-bridge && npm run build`
+- Bundle vendor: `npm run build:vendor`
 
-## 編碼慣例
-- 使用 CSS 變數（`--bg-primary`, `--accent-blue` 等）
-- DOM 參照統一存放於 `dom` 物件
-- 事件監聽集中於 `setupEventListeners()`
-- 模組匯出使用 named export
-- Bridge API 路徑：`/api/chat`, `/api/chat/sync`, `/api/permissions/*`, `/api/prompt/strategy`
+## Coding Conventions
+- Use CSS variables (`--bg-primary`, `--accent-blue`, etc.)
+- Centralize DOM references in the `dom` object
+- Register event listeners inside `setupEventListeners()`
+- Use named exports for modules
+- Bridge API paths: `/api/chat`, `/api/chat/sync`, `/api/permissions/*`, `/api/prompt/strategy`
 
-## 修改檢查清單
-- [ ] 修改 server.ts 後必須重新 `npm run build`
-- [ ] 新增 HTML 元素後在 `init()` 加入 DOM ref
-- [ ] CSS 新增遵循既有區塊結構（有標題分隔）
-- [ ] Windows 環境 spawn 外部命令需 `shell: true`
-- [ ] iframe 切換用 `display:none` 不用 `visibility:hidden`
+## Modification Checklist
+- [ ] After editing `server.ts`, always re-run `npm run build`
+- [ ] After adding HTML elements, add the DOM ref in `init()`
+- [ ] New CSS must follow the existing block structure (section comments as dividers)
+- [ ] Windows `spawn` for external commands requires `shell: true`
+- [ ] Use `display:none` (not `visibility:hidden`) when toggling iframe visibility
 
-## 測試要求
-- 修改後執行完整測試套件確認不破壞既有功能
-- 新功能應有對應測試案例
-- 使用 `jest.fn()` mock Chrome API
+## Test Requirements
+- Run the full test suite after any change to confirm no regressions
+- New features should have corresponding test cases
+- Use `jest.fn()` to mock Chrome APIs

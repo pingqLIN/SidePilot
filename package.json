@@ -8,6 +8,7 @@
     "test:watch": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --watch --runInBand --no-coverage",
     "test:coverage": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand --coverage",
     "build:vendor": "node scripts/build-vendor.mjs",
+    "package:extension": "node scripts/package-extension.mjs",
     "version:bump": "node scripts/bump-version.mjs",
     "integrity:seal": "node scripts/seal-integrity.mjs",
     "integrity:verify": "node scripts/verify-integrity.mjs",

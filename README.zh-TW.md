@@ -66,41 +66,39 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 <table>
   <tr>
     <td width="33%" align="center">
-      <img src="pic/01-iframe-mode.png" width="280" alt="iframe 模式預覽"><br>
+      <img src="pic/14-header-tabs.png" width="280" alt="SidePilot 頂列與分頁"><br>
       <b>側邊欄立即可用</b><br>
-      <sub>把 Copilot 放進瀏覽器側邊欄，快速開始。</sub>
+      <sub>把 Copilot 放進瀏覽器側邊欄，一鍵切換 IFRAME / SDK 模式。</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/02-sdk-chat.png" width="280" alt="SDK 對話預覽"><br>
+      <img src="pic/15-sdk-model-select.png" width="280" alt="SDK 模型選擇器"><br>
       <b>SDK 串流對話</b><br>
       <sub>切到本地 bridge 後，取得更完整的模型、串流與控制力。</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/03-rules-tab.png" width="280" alt="Rules 預覽"><br>
+      <img src="pic/16-rules-templates.png" width="280" alt="Rules 樣板選擇器"><br>
       <b>規則可塑形</b><br>
-      <sub>用樣板與自訂指令，讓 AI 回應更貼近你的工作方式。</sub>
+      <sub>內建 TypeScript、React、安全等樣板，或自訂指令讓 AI 回應風格更一致。</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center">
-      <img src="pic/06-page-capture-text.png" width="280" alt="頁面擷取預覽"><br>
+      <img src="pic/19-page-capture.png" width="280" alt="頁面擷取面板"><br>
       <b>所見即所擷取</b><br>
       <sub>直接從網頁抓文字、程式碼區塊與截圖。</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/08-sdk-context.png" width="280" alt="上下文注入預覽"><br>
-      <b>上下文更黏著</b><br>
-      <sub>把記憶、規則與擷取內容一起帶進每次 SDK 提示。</sub>
+      <img src="pic/18-settings-bridge.png" width="280" alt="Bridge 設定面板"><br>
+      <b>Bridge 自動啟動</b><br>
+      <sub>進入 SDK 模式時自動偵測並啟動本地 bridge，不用手動拉起。</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/09-sdk-initial.png" width="280" alt="Bridge 引導預覽"><br>
-      <b>進階模式也不難</b><br>
-      <sub>從快速上手自然過渡到 bridge 工作流。</sub>
+      <img src="pic/13-welcome-screen.png" width="280" alt="歡迎 Onboarding 畫面"><br>
+      <b>引導式 Onboarding</b><br>
+      <sub>從快速上手自然過渡到 bridge 進階工作流，不需離開側邊欄。</sub>
     </td>
   </tr>
 </table>
-
-> 2026-03-13 新補的最新版 UI 截圖，已登錄在 [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) 與 [pic/INDEX.md](pic/INDEX.md)。
 
 ---
 
@@ -108,11 +106,11 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 
 | 功能 | 你會得到什麼 | 對應截圖 |
 | --- | --- | --- |
-| **雙模式** | iframe 免設定、SDK 進階串流與上下文能力 | `pic/01-iframe-mode.png`, `pic/02-sdk-chat.png` |
-| **記憶庫** | 任務、筆記、參考與上下文可重複利用 | `pic/08-sdk-context.png` |
-| **規則與樣板** | 用 Markdown 指令穩定 AI 回應風格 | `pic/03-rules-tab.png` |
-| **頁面擷取** | 直接從瀏覽器抓文字、程式碼、截圖 | `pic/06-page-capture-text.png` |
-| **Bridge 自動啟動** | SDK 模式更容易拉起本地 bridge | `pic/09-sdk-initial.png` |
+| **雙模式** | iframe 免設定、SDK 進階串流與上下文能力 | `pic/14-header-tabs.png`, `pic/15-sdk-model-select.png` |
+| **記憶庫** | 任務、筆記、參考與上下文可重複利用 | `pic/20-history-tab.png` |
+| **規則與樣板** | 用 Markdown 指令穩定 AI 回應風格 | `pic/16-rules-templates.png` |
+| **頁面擷取** | 直接從瀏覽器抓文字、程式碼、截圖 | `pic/19-page-capture.png` |
+| **Bridge 自動啟動** | SDK 模式更容易拉起本地 bridge | `pic/18-settings-bridge.png` |
 
 > 想看完整巡覽，請打開 [docs/FEATURES.md](docs/FEATURES.md)。
 
@@ -120,7 +118,34 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 
 ## 🚀 快速安裝
 
-### 1. 安裝
+### 我需要 Bridge 嗎？
+
+**Bridge** 是一個跑在本機的小型伺服器，就放在這個 repo 裡面。你**不需要它**就能先試用 SidePilot。
+
+| 我想要… | 需要 Bridge 嗎？ |
+| --- | --- |
+| 先快速試用 SidePilot | **不需要** — 只裝 extension，打開就能用 |
+| 使用串流對話、記憶庫或規則 | **需要** — 先從 repo 裡啟動 Bridge |
+
+> **Bridge 是什麼（一句話版）：** 它不是獨立產品，也不需要另外下載。它就在這個 repo 的 `scripts/copilot-bridge/` 裡。你把 repo clone 到哪裡，Bridge 就在那裡。
+
+---
+
+### 路線 A — 立即開始（不需要 Bridge）
+
+**更簡單的方式 — 下載封裝擴充包**
+
+如果你只是想安裝，不想先 clone repo，可以直接到 GitHub Releases 下載 `SidePilot-extension-v*.zip`。
+
+1. 下載並解壓縮封裝包
+2. 開啟 `chrome://extensions/`
+3. 啟用 **開發人員模式**
+4. 點擊 **載入未封裝項目**
+5. 選取解壓後的資料夾
+
+> 維護者可在 repo 根目錄執行 `npm run package:extension` 產生這個封裝包。
+
+**第一步 — Clone 並建置**
 
 ```bash
 git clone https://github.com/pingqLIN/SidePilot.git
@@ -129,51 +154,69 @@ npm install
 npm run build:vendor
 ```
 
-### 2. 載入到 Chrome
+**第二步 — 載入 Chrome**
 
 1. 開啟 `chrome://extensions/`
-2. 啟用 **開發人員模式**
+2. 啟用 **開發人員模式**（右上角切換）
 3. 點擊 **載入未封裝項目**
-4. 選擇 `extension/` 資料夾
+4. 選擇 repo 裡的 `extension/` 資料夾
 
-### 3. 選擇模式
+**第三步 — 開啟側邊欄**
 
-| 模式 | 設定成本 | 最適合 |
-| --- | --- | --- |
-| **iframe** | 幾乎零設定 | 想快速開始使用 Copilot |
-| **SDK** | 需要本地 bridge | 需要串流、記憶、規則與進階控制 |
+點擊工具列的 SidePilot 圖示，或按 `Alt + Shift + P`。
 
-> 詳細設定請看 [docs/USAGE.zh-TW.md](docs/USAGE.zh-TW.md)。
+側邊欄會以 **iframe 模式** 開啟 — Copilot 立即可用。不需要 Bridge、不需要終端機、不需要額外設定。
 
 ---
 
-## 🗂️ 文件分頁
+### 路線 B — 完整功能（需要 Bridge）
 
-README 現在刻意維持精簡，定位成入口頁。真正的詳細內容請往 `docs/` 走。
+完成路線 A 之後，執行一次：
 
-| 分頁 | 適合用途 | 連結 |
-| --- | --- | --- |
-| 使用手冊 | 安裝、設定與日常操作 | [docs/USAGE.zh-TW.md](docs/USAGE.zh-TW.md) |
-| 快速開始 | 安裝、載入擴充與第一次選模式 | [docs/guide/getting-started/README.zh-TW.md](docs/guide/getting-started/README.zh-TW.md) |
-| 核心觀念 | 理解 modes、memory、rules 與本地 bridge 模型 | [docs/guide/concepts/README.zh-TW.md](docs/guide/concepts/README.zh-TW.md) |
-| API | bridge 的 auth、chat、permission、backup 端點 | [docs/guide/api/README.zh-TW.md](docs/guide/api/README.zh-TW.md) |
-| 功能總覽 | 模式、模組與能力拆解 | [docs/FEATURES.md](docs/FEATURES.md) |
-| 文件導覽中心 | 文件首頁與分類索引 | [docs/guide/README.zh-TW.md](docs/guide/README.zh-TW.md) |
-| 截圖導覽 | UI 走讀與視覺展示 | [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) |
-| 截圖索引 | 精選截圖與最新版原始擷圖 | [pic/INDEX.md](pic/INDEX.md) |
+**第一步 — 安裝 Bridge 啟動器**（Windows，在 repo 根目錄執行）
 
-## 🧩 先選模式
+```powershell
+npm run bridge-launcher:install:win
+```
 
-- **iframe 模式**：你想一分鐘內開始用，就選它。
-- **SDK 模式**：你想把功能開滿，就選它。
+這會在系統層級註冊一個背景啟動器，讓 extension 切模式時自動把 Bridge 拉起來。
+
+**第二步 — 切換到 SDK 模式**
+
+點擊側邊欄右上角的模式切換按鈕。extension 會自動：
+1. 偵測 Bridge 是否已在執行
+2. 透過剛安裝的啟動器自動拉起 Bridge
+3. 顯示一次性的登入引導對話框
+
+**第三步 — 登入 GitHub**
+
+在引導對話框中點擊 **Open GitHub Login**，以 GitHub 帳號登入。需要 [GitHub Copilot 訂閱](https://github.com/features/copilot)。
+
+**第四步 — 完成**
+
+初次設定完成後，每次切到 SDK 模式都會自動啟動 Bridge，不需要再開終端機。
+
+> **如果 Bridge 沒有自動啟動**，請到 **設定 → Bridge Setup → Copy Quick Setup**，把指令貼到終端機執行。完整說明：[docs/guide/getting-started/README.zh-TW.md](docs/guide/getting-started/README.zh-TW.md)
+
+---
+
+## 🗂️ 文件
+
+| 文件 | 適合用途 |
+| --- | --- |
+| [快速開始](docs/guide/getting-started/README.zh-TW.md) | 詳細步驟、路徑範例、常見問題排查 |
+| [使用手冊](docs/USAGE.zh-TW.md) | 設定、設定參考、API 細節 |
+| [核心觀念](docs/guide/concepts/README.zh-TW.md) | 模式、記憶庫、規則、Bridge 的心智模型 |
+| [功能總覽](docs/FEATURES.md) | 完整功能巡覽 |
+| [API 參考](docs/guide/api/README.zh-TW.md) | Bridge 端點 |
+| [截圖導覽](docs/SCREENSHOTS.md) | UI 視覺展示 |
 
 ## 🔎 建議閱讀順序
 
 1. 先看這份 README，理解產品定位
-2. 打開 [docs/guide/getting-started/README.zh-TW.md](docs/guide/getting-started/README.zh-TW.md) 走最快設定路線
-3. 打開 [docs/guide/concepts/README.zh-TW.md](docs/guide/concepts/README.zh-TW.md) 建立心智模型
-4. 打開 [docs/FEATURES.md](docs/FEATURES.md) 看完整功能巡覽
-5. 若要碰 bridge 或工具整合，再看 [docs/guide/api/README.zh-TW.md](docs/guide/api/README.zh-TW.md)
+2. 打開[快速開始](docs/guide/getting-started/README.zh-TW.md) — 它回答了新手最常見的問題
+3. 打開[核心觀念](docs/guide/concepts/README.zh-TW.md)建立心智模型
+4. 打開[使用手冊](docs/USAGE.zh-TW.md)看設定與進階配置
 
 ---
 

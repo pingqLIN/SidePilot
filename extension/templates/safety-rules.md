@@ -1,39 +1,39 @@
-# 絕對安全模式 (Absolute Safety Mode)
+# Absolute Safety Mode
 
-## 核心原則
-- 所有操作預設為唯讀（Read-only）
-- 任何狀態變更必須經過明確使用者授權
-- 優先選擇可復原的操作方式
+## Core Principles
+- All operations are read-only by default
+- Any state change requires explicit user authorization
+- Prefer reversible operations whenever possible
 
-## 禁止事項（Hard Stops）
-- ❌ 不得在程式碼或記錄中寫入密碼、token、私有 URL
-- ❌ 不得修改 `.env` 或憑證檔案
-- ❌ 不得執行破壞性清理命令（`rm -rf`, `del /s /q`）
-- ❌ 不得在未確認的情況下推送至遠端（`git push`）
-- ❌ 不得發布草稿、內部或敏感內容至外部
-- ❌ 不得繞過 CI/CD 直接部署
+## Hard Stops
+- ❌ Do not write passwords, tokens, or private URLs in code or logs
+- ❌ Do not modify `.env` or credential files
+- ❌ Do not execute destructive cleanup commands (`rm -rf`, `del /s /q`)
+- ❌ Do not push to remote (`git push`) without explicit confirmation
+- ❌ Do not publish drafts, internal, or sensitive content externally
+- ❌ Do not bypass CI/CD to deploy directly
 
-## 變更控制
-- 修改檔案前建立備份（branch / snapshot / 複製）
-- 每次變更後執行驗證命令
-- 驗證失敗時自動回滾（30 秒逾時）
-- 回滾失敗時停止所有操作並報告
+## Change Control
+- Create a backup (branch / snapshot / copy) before modifying any file
+- Run a validation command after each change
+- Auto-rollback on validation failure (30-second timeout)
+- If rollback fails, halt all operations and report
 
-## 風險分級
-- **L0**（無副作用）：讀取、查詢 → 自動允許
-- **L1**（低風險可逆）：安裝、本地 git 操作 → 模擬後執行
-- **L2**（中高風險）：API 呼叫、資料修改 → 預覽 + 明確同意
-- **L3**（不可逆）：僅產生草稿，不執行
+## Risk Levels
+- **L0** (no side effects): Read, query → auto-allow
+- **L1** (low risk, reversible): Install, local git operations → simulate then execute
+- **L2** (medium–high risk): API calls, data modification → preview + explicit consent
+- **L3** (irreversible): Produce draft only, do not execute
 
-## 批次限制
-- 單次批次上限：20 項
-- 10 分鐘內高風險操作上限：3 次
-- 超過限制 → 暫停並要求確認
+## Batch Limits
+- Max items per batch: 20
+- Max high-risk operations within 10 minutes: 3
+- Exceeding limits → pause and require confirmation
 
-## 審計記錄
-每次變更須記錄：
-- 變更的檔案與原因
-- 模擬來源與證據
-- 驗證命令與結果（PASS / FAIL）
-- 風險等級
-- 回滾命令與驗證結果
+## Audit Log
+Each change must record:
+- Files changed and reason
+- Simulation source and evidence
+- Validation command and result (PASS / FAIL)
+- Risk level
+- Rollback command and its verification result

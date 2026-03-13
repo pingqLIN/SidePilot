@@ -206,15 +206,120 @@ Expected response:
 }
 ```
 
-### First-Time Login
+### Automated Guidance Flow
 
-1. Switch to **SDK** mode in the side panel
-2. A login guide dialog appears automatically
-3. Click **Open GitHub Login Page** to authenticate via OAuth
-4. Return to the side panel and click **Test Bridge Connection**
-5. Once connected, the guide dismisses automatically
+When you switch to SDK mode for the first time, SidePilot runs a **three-stage automated sequence** that handles login, bridge launch, and connection — with no manual steps required in the happy path.
 
-> **Tip:** You can re-trigger the login guide from Settings > SDK Mode.
+#### Stage 1 — Login Guide Modal (one-time)
+
+On the **first SDK switch**, a login guide dialog appears automatically (`maybeShowSDKLoginGuideOnFirstUse`). It will not appear again once dismissed.
+
+What the modal does:
+- Explains that SDK mode requires a GitHub Copilot subscription
+- Provides a **"Open GitHub Login"** button that opens the Copilot authentication page directly:
+  `https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot`
+- Provides a **"Test Bridge Connection"** button to verify the bridge is reachable after login
+- Dismisses automatically once the bridge connects successfully
+
+> **Re-trigger:** You can reopen the login guide at any time from **Settings › SDK Mode**.
+
+#### Stage 2 — Bridge Auto-Start (automatic on every SDK switch)
+
+Every time you switch to SDK mode, SidePilot checks whether the bridge is running (`ensureSDKBridgeReadyWithAutoStart`):
+
+1. **Checks** `http://localhost:31031/health` — if the bridge is already up, proceeds immediately
+2. **If not running** — sends a `sidepilot://` custom URI to the OS, which triggers the Bridge Launcher (Windows: registered via the PowerShell installer) to start the bridge in the background
+3. **Polls** for up to ~10 seconds for the bridge to become available
+4. **If auto-start succeeds** — the side panel connects transparently with no user action required
+5. **If auto-start fails** — shows an in-chat help message with manual commands (see Stage 3)
+
+> **Prerequisite:** The Bridge Launcher must be installed for auto-start to work. See [Bridge Auto-Launcher (Windows)](#bridge-auto-launcher-windows) below.
+
+#### Stage 3 — Manual Fallback (when auto-start is unavailable)
+
+If the bridge is not running and auto-start cannot launch it, SidePilot displays a help message in chat with the exact commands needed:
+
+**Option A — Quick Setup (recommended, single command)**
+
+Copy the one-click command from **Settings › Bridge Setup › Copy Quick Setup**, then run it in your terminal. It installs Node dependencies, sets `SIDEPILOT_EXTENSION_ID`, and starts the supervisor in one step.
+
+**Option B — Manual startup**
+
+```bash
+cd scripts/copilot-bridge
+npm install                                     # First time only
+export SIDEPILOT_EXTENSION_ID=<your-extension-id>   # macOS / Linux
+# $env:SIDEPILOT_EXTENSION_ID="<your-extension-id>" # Windows PowerShell
+npm start                                       # Builds and starts Supervisor + Worker
+```
+
+> **Find your Extension ID:** Go to `chrome://extensions/` → find SidePilot → copy the ID shown below the name.
+
+After the bridge is running, switch to **SDK** mode again — the connection is established automatically.
+
+#### Stage 4 — GitHub CLI Authentication
+
+The bridge communicates with `copilot --acp --stdio`. If the CLI is not authenticated, conversations will fail with an auth error. Authenticate once with:
+
+```bash
+copilot auth login
+```
+
+Or open the Copilot login page directly:
+
+```
+https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot
+```
+
+> For CLI installation, see [GitHub Copilot in the CLI documentation](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line).
+
+---
+
+### Bridge Auto-Launcher (Windows)
+
+The Bridge Launcher registers a `sidepilot://` URI handler at the OS level so the extension can start the bridge with a single click — no terminal required.
+
+**Install**
+
+```powershell
+npm run bridge-launcher:install:win
+```
+
+This registers the `sidepilot://` protocol in the Windows registry and creates a launcher script.
+
+**Verify**
+
+```powershell
+npm run bridge-launcher:test:win
+```
+
+**Uninstall**
+
+```powershell
+npm run bridge-launcher:uninstall:win
+```
+
+> Run all commands from the project root (where `package.json` lives), not from `scripts/copilot-bridge/`.
+
+For full details, see [`scripts/bridge-launcher/`](../scripts/bridge-launcher/).
+
+---
+
+### First-Time Checklist
+
+| # | Step | How |
+|---|------|-----|
+| 1 | Install extension | Load `extension/` folder in `chrome://extensions/` |
+| 2 | Install Bridge Launcher (Windows) | `npm run bridge-launcher:install:win` |
+| 3 | Switch to SDK mode | Mode toggle in the side panel top-right |
+| 4 | Complete login guide | Click **Open GitHub Login**, sign in, return |
+| 5 | Bridge starts automatically | Wait ~5–10 s for auto-start; or run Quick Setup manually |
+| 6 | Authenticate Copilot CLI | `copilot auth login` (once per machine) |
+| 7 | Start chatting | Type in the SDK chat box |
+
+> **Tip:** After initial setup, daily use requires no terminal — just open Chrome and switch to SDK mode.
+
+See also: [Bridge Server README](../scripts/copilot-bridge/README.md) · [Getting Started Guide](guide/getting-started/README.md)
 
 ### Chatting in SDK Mode
 

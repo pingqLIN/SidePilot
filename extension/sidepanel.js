@@ -23,6 +23,10 @@ const SDK_BRIDGE_PORT = 31031;
 const COPILOT_HOME_URL = "https://github.com/copilot";
 const DEFAULT_CAPTURE_BUTTON_WIDTH = 42;
 const DEFAULT_CAPTURE_BUTTON_TOP_PERCENT = 38;
+const DISPLAY_SCALE_MIN_PERCENT = 85;
+const DISPLAY_SCALE_MAX_PERCENT = 120;
+const DISPLAY_SCALE_STEP_PERCENT = 5;
+const DEFAULT_DISPLAY_SCALE_PERCENT = 100;
 const ANTIGRAVITY_DEFAULT_BASE_URL = "http://127.0.0.1:47619";
 const BRIDGE_WORKDIR_HINT =
   "C:\\Projects\\SidePilot\\scripts\\copilot-bridge";
@@ -46,6 +50,13 @@ const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
 const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
 const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
 const BRIDGE_AUTO_START_COOLDOWN_MAX_MS = 300000;
+const SETTINGS_MAX_OPEN_SECTIONS = 3;
+const IFRAME_RISK_DOC_URLS = {
+  [UI_LANGUAGE_ZH_TW]:
+    "https://github.com/pingqLIN/SidePilot/blob/main/docs/USAGE.zh-TW.md#-iframe-模式",
+  [UI_LANGUAGE_EN]:
+    "https://github.com/pingqLIN/SidePilot/blob/main/docs/USAGE.md#-iframe-mode",
+};
 // Settings-page i18n scaffold (phase-1): key-based now, full coverage later.
 const SETTINGS_I18N = {
   [UI_LANGUAGE_ZH_TW]: {
@@ -54,6 +65,9 @@ const SETTINGS_I18N = {
     "settings.language.desc": "僅影響設定分頁顯示文字（i18n 後續擴充）",
     "settings.language.option.zh-TW": "繁體中文",
     "settings.language.option.en": "English",
+    "settings.displayScale.title": "顯示字級",
+    "settings.displayScale.desc":
+      "放大或縮小整體顯示比例，會同步影響文字與控制項尺寸",
     "settings.section.install": "Bridge 設定",
     "settings.section.providers": "Provider Probe",
     "settings.bridge.status.title": "Bridge 狀態",
@@ -129,6 +143,14 @@ const SETTINGS_I18N = {
     "settings.sdk.prompt.concise.title": "輸出精簡模式",
     "settings.sdk.prompt.concise.desc": "控制 AI 回覆的詳細程度",
     "settings.section.iframe": "iframe 模式",
+    "settings.iframe.enabled.title": "啟用 iframe 模式",
+    "settings.iframe.enabled.desc":
+      "iframe 模式會移除 GitHub 的安全標頭（X-Frame-Options / CSP）以嵌入頁面，屬 ToS 灰色地帶，需手動開啟。",
+    "settings.iframe.enabled.helpLabel": "顯示 iframe 模式高風險說明",
+    "settings.iframe.enabled.learnMore": "開啟說明",
+    "settings.iframe.enabled.tooltipTitle": "為什麼這是高風險功能？",
+    "settings.iframe.enabled.tooltipBody":
+      "iframe 模式會主動移除 GitHub 的 X-Frame-Options 與 CSP 回應標頭，讓 github.com/copilot 可以嵌入側邊欄。這不是 GitHub 官方支援的整合方式，屬於 ToS 灰色地帶；若你需要穩定、低風險的工作流，建議改用 SDK 模式。",
     "settings.iframe.mode.title": "Link Guard 模式",
     "settings.iframe.mode.desc":
       "allow = 僅匹配 URL 留在 Sidecar；deny = 匹配 URL 改在新分頁開啟",
@@ -174,6 +196,9 @@ const SETTINGS_I18N = {
       "Currently affects text in Settings tab only (i18n expansion planned).",
     "settings.language.option.zh-TW": "Chinese (Traditional)",
     "settings.language.option.en": "English",
+    "settings.displayScale.title": "Display Scale",
+    "settings.displayScale.desc":
+      "Zoom the overall interface so text and controls scale together.",
     "settings.section.install": "Bridge Setup",
     "settings.section.providers": "Provider Probe",
     "settings.bridge.status.title": "Bridge Status",
@@ -253,6 +278,14 @@ const SETTINGS_I18N = {
     "settings.sdk.prompt.concise.desc":
       "Controls how detailed AI responses should be.",
     "settings.section.iframe": "iframe Mode",
+    "settings.iframe.enabled.title": "Enable iframe Mode",
+    "settings.iframe.enabled.desc":
+      "iframe mode removes GitHub security headers (X-Frame-Options / CSP) to embed the page. This is a gray area under the ToS and must be enabled manually.",
+    "settings.iframe.enabled.helpLabel": "Show iframe mode risk details",
+    "settings.iframe.enabled.learnMore": "Open docs",
+    "settings.iframe.enabled.tooltipTitle": "Why is this considered high risk?",
+    "settings.iframe.enabled.tooltipBody":
+      "iframe mode actively strips GitHub's X-Frame-Options and CSP response headers so github.com/copilot can be embedded inside the side panel. This is not an officially supported GitHub integration path and sits in a Terms-of-Service gray area; if you want the lower-risk workflow, use SDK mode instead.",
     "settings.iframe.mode.title": "Link Guard Mode",
     "settings.iframe.mode.desc":
       "allow = only matching URLs stay in the sidecar; deny = matching URLs open in a new tab",
@@ -304,31 +337,31 @@ const SIDEPILOT_SYSTEM_IDENTITY = {
   type: "system",
   title: "SidePilot — Extension Self-Description",
   content: [
-    "【自我認知】",
-    "SidePilot 是一個 Chrome 擴充功能側邊面板 AI 助手。",
-    "我運行在瀏覽器 Side Panel 中，透過 SDK Bridge（localhost:31031）與 GitHub Copilot CLI 通訊。",
+    "[Identity]",
+    "SidePilot is a Chrome Extension side-panel AI assistant.",
+    "It runs inside the browser Side Panel and communicates with GitHub Copilot CLI via the SDK Bridge (localhost:31031).",
     "",
-    "【目標任務】",
-    "• 提供即時 AI 對話（SDK 模式：直接 API / iframe 模式：嵌入 Copilot UI）",
-    "• 擷取當前頁面內容（文字、可見截圖、整頁截圖、區域截圖）",
-    "• 管理記憶庫（Memory Bank）：儲存 task / note / context / reference 條目",
-    "• 管理規則（Rules）：自訂 Instructions 注入對話",
-    "• 結構化輸出：使用 sidepilot_packet / assistant_response 協議",
+    "[Objectives]",
+    "• Provide real-time AI conversation (SDK mode: direct API / iframe mode: embedded Copilot UI)",
+    "• Capture current page content (text, visible screenshot, full-page screenshot, region screenshot)",
+    "• Manage Memory Bank: store task / note / context / reference entries",
+    "• Manage Rules: inject custom Instructions into conversations",
+    "• Structured output: uses sidepilot_packet / assistant_response protocol",
     "",
-    "【所在環境】",
+    "[Environment]",
     "• Chrome Extension Manifest V3, Side Panel API",
     "• Background Service Worker + Content Script (link-guard)",
-    "• SDK Bridge: Node.js 本機服務 (port 31031), 橋接 GitHub Copilot CLI",
+    "• SDK Bridge: Node.js local service (port 31031), bridging GitHub Copilot CLI",
     "",
-    "【具備工具】",
-    "• 頁面擷取：文字提取、可見範圍截圖、整頁滾動拼接截圖、區域選取截圖",
-    "• 記憶系統：CRUD、搜尋、相關性評分、自動注入 Prompt",
-    "• 規則引擎：自訂規則模板、即時載入注入",
-    "• 對話格式：Context 開關（Memory / Rules / System / Structured Output）",
-    "• 歷史紀錄：按日期分檔、按 Session 分組、標籤分類",
-    "• 即時 Log：Bridge SSE 串流、等級過濾、搜尋",
+    "[Capabilities]",
+    "• Page capture: text extraction, visible-area screenshot, full-page scroll-stitch screenshot, region selection screenshot",
+    "• Memory system: CRUD, search, relevance scoring, auto-inject into Prompt",
+    "• Rules engine: custom rule templates, real-time load and inject",
+    "• Conversation format: Context toggles (Memory / Rules / System / Structured Output)",
+    "• History log: split by date, grouped by session, tag-based categorization",
+    "• Live log: Bridge SSE stream, level filtering, search",
     "",
-    "【權限】",
+    "[Permissions]",
     "sidePanel, activeTab, scripting, tabs, storage, downloads,",
     "declarativeNetRequest (CSP bypass for github.com)",
   ].join("\n"),
@@ -476,6 +509,11 @@ function applySettingsI18n(languageOverride) {
     if (!key) return;
     node.innerHTML = translateSettingsKey(key, language);
   });
+  settingsRoot.querySelectorAll("[data-i18n-aria-label]").forEach((node) => {
+    const key = node.dataset.i18nAriaLabel;
+    if (!key) return;
+    node.setAttribute("aria-label", translateSettingsKey(key, language));
+  });
 
   if (dom.settingUiLanguage) {
     const zhOption = dom.settingUiLanguage.querySelector(
@@ -495,6 +533,8 @@ function applySettingsI18n(languageOverride) {
       );
     }
   }
+
+  updateIframeRiskDocLink(language);
 }
 
 const SIDEPILOT_SANDBOX_SYSTEM_MESSAGE = [
@@ -520,6 +560,7 @@ const MEMORY_TYPE_WEIGHT = {
 
 const DEFAULT_SETTINGS = {
   uiLanguage: UI_LANGUAGE_ZH_TW,
+  displayScalePercent: DEFAULT_DISPLAY_SCALE_PERCENT,
   autoStartBridgeEnabled: true,
   autoStartBridgeCooldownMs: BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS,
   autoStartBridgeLastAttemptAt: 0,
@@ -827,6 +868,10 @@ async function init() {
   dom.saveSettingsBtn = document.getElementById("saveSettingsBtn");
   dom.settingsStatus = document.getElementById("settingsStatus");
   dom.settingUiLanguage = document.getElementById("settingUiLanguage");
+  dom.settingDisplayScale = document.getElementById("settingDisplayScale");
+  dom.displayScaleValue = document.getElementById("displayScaleValue");
+  dom.iframeRiskHelpBtn = document.getElementById("iframeRiskHelpBtn");
+  dom.iframeRiskDocLink = document.getElementById("iframeRiskDocLink");
   dom.settingAutoStartBridge = document.getElementById(
     "settingAutoStartBridge",
   );
@@ -1062,6 +1107,7 @@ function updateModeBadge() {
     dom.sdkChat?.classList.add("hidden");
     stopSdkHealthPolling();
     updateSdkStatusDot("");
+    ensureIframeFrameReady({ recoverIfBlank: true });
   }
 
   syncCapturePanelMode();
@@ -1304,6 +1350,9 @@ function normalizeSettings(raw = {}) {
   const uiLanguage = normalizeUiLanguage(
     source.uiLanguage || DEFAULT_SETTINGS.uiLanguage,
   );
+  const displayScalePercent = clampDisplayScalePercent(
+    source.displayScalePercent,
+  );
   const bridgeManualRuntime =
     source.bridgeManualRuntime === "windows" ||
     source.bridgeManualRuntime === "wsl"
@@ -1374,6 +1423,7 @@ function normalizeSettings(raw = {}) {
 
   return {
     uiLanguage,
+    displayScalePercent,
     autoStartBridgeEnabled: source.autoStartBridgeEnabled !== false,
     autoStartBridgeCooldownMs,
     autoStartBridgeLastAttemptAt,
@@ -1400,6 +1450,20 @@ function normalizeSettings(raw = {}) {
     linkAllowlist,
     iframeHistoryUrl: source.iframeHistoryUrl || "https://github.com/copilot",
   };
+}
+
+function clampDisplayScalePercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return DEFAULT_DISPLAY_SCALE_PERCENT;
+  }
+  return Math.min(
+    DISPLAY_SCALE_MAX_PERCENT,
+    Math.max(
+      DISPLAY_SCALE_MIN_PERCENT,
+      Math.round(number / DISPLAY_SCALE_STEP_PERCENT) * DISPLAY_SCALE_STEP_PERCENT,
+    ),
+  );
 }
 
 function clampCaptureButtonWidth(value) {
@@ -1801,6 +1865,9 @@ function applySettingsToUI() {
   if (dom.settingUiLanguage) {
     dom.settingUiLanguage.value = settings.uiLanguage;
   }
+  if (dom.settingDisplayScale) {
+    dom.settingDisplayScale.value = String(settings.displayScalePercent);
+  }
   if (dom.settingAutoStartBridge) {
     dom.settingAutoStartBridge.checked =
       settings.autoStartBridgeEnabled !== false;
@@ -1852,6 +1919,8 @@ function applySettingsToUI() {
     );
   }
   applySettingsI18n(settings.uiLanguage);
+  applyDisplayScale(settings.displayScalePercent);
+  updateDisplayScaleLabel(settings.displayScalePercent);
   updateCaptureWidthLabel(settings.captureButtonWidth);
   updateCaptureTopLabel(settings.captureButtonTopPercent);
   updateSelfIterationSealBadge(settings.uiLanguage);
@@ -1881,6 +1950,8 @@ function collectSettingsFromUI() {
     uiLanguage: normalizeUiLanguage(
       dom.settingUiLanguage?.value || state.settings?.uiLanguage,
     ),
+    displayScalePercent:
+      dom.settingDisplayScale?.value || state.settings?.displayScalePercent,
     autoStartBridgeEnabled: !!dom.settingAutoStartBridge?.checked,
     autoStartBridgeCooldownMs:
       state.settings?.autoStartBridgeCooldownMs ||
@@ -2032,6 +2103,25 @@ function updateCaptureWidthLabel(width) {
     normalized < 20 ? `${normalized}px (僅色塊)` : `${normalized}px`;
 }
 
+function updateDisplayScaleLabel(value) {
+  if (!dom.displayScaleValue) return;
+  const normalized = clampDisplayScalePercent(value);
+  const isEnglish = getCurrentUiLanguage() === UI_LANGUAGE_EN;
+  dom.displayScaleValue.textContent = isEnglish
+    ? `Current: ${normalized}%`
+    : `目前：${normalized}%`;
+}
+
+function updateIframeRiskDocLink(languageOverride) {
+  if (!dom.iframeRiskDocLink) return;
+  const language = getCurrentUiLanguage(languageOverride);
+  const href =
+    IFRAME_RISK_DOC_URLS[language] ||
+    IFRAME_RISK_DOC_URLS[UI_LANGUAGE_FALLBACK] ||
+    IFRAME_RISK_DOC_URLS[UI_LANGUAGE_EN];
+  dom.iframeRiskDocLink.href = href;
+}
+
 function updateCaptureTopLabel(value) {
   if (!dom.captureBtnTopValue) return;
   const normalized = clampCaptureButtonTopPercent(value);
@@ -2071,6 +2161,14 @@ function applyCaptureButtonTop(value) {
   document.documentElement.style.setProperty(
     "--capture-button-top",
     `${normalized}%`,
+  );
+}
+
+function applyDisplayScale(value) {
+  const normalized = clampDisplayScalePercent(value);
+  document.documentElement.style.setProperty(
+    "--display-scale",
+    (normalized / 100).toFixed(2),
   );
 }
 
@@ -3318,6 +3416,13 @@ async function goCopilotHome() {
   }
 
   if (dom.copilotFrame) {
+    if (state.loadTimeout) {
+      clearTimeout(state.loadTimeout);
+      state.loadTimeout = null;
+    }
+    state.frameLoaded = false;
+    dom.loadingOverlay?.classList.remove("hidden");
+    dom.errorOverlay?.classList.add("hidden");
     dom.copilotFrame.src = COPILOT_HOME_URL;
     showToast("已回到 Copilot 首頁");
   }
@@ -3501,18 +3606,18 @@ function updateRulesOriginBadge(meta = {}) {
   const version = Number(meta?.version) || 0;
 
   if (source === RULES_SOURCE_SYSTEM_BASELINE) {
-    dom.rulesOriginBadge.textContent = "系統 baseline";
+    dom.rulesOriginBadge.textContent = "System baseline";
     dom.rulesOriginBadge.dataset.origin = "baseline";
-    dom.rulesOriginDetail.textContent = `來源：預設樣板${templateId ? ` (${templateId})` : ""} · version ${version || "-"}`;
+    dom.rulesOriginDetail.textContent = `Source: default template${templateId ? ` (${templateId})` : ""} · version ${version || "-"}`;
     return;
   }
 
-  dom.rulesOriginBadge.textContent = "使用者自建";
+  dom.rulesOriginBadge.textContent = "User-defined";
   dom.rulesOriginBadge.dataset.origin = "user";
   if (templateId && templateId !== "custom") {
-    dom.rulesOriginDetail.textContent = `來源：使用者套用樣板 (${templateId}) · version ${version || "-"}`;
+    dom.rulesOriginDetail.textContent = `Source: applied template (${templateId}) · version ${version || "-"}`;
   } else {
-    dom.rulesOriginDetail.textContent = `來源：使用者編輯/匯入 · version ${version || "-"}`;
+    dom.rulesOriginDetail.textContent = `Source: user edit / import · version ${version || "-"}`;
   }
 }
 
@@ -4036,27 +4141,13 @@ function setupEventListeners() {
   document
     .querySelectorAll('.settings-section-title[data-toggle="section"]')
     .forEach((title) => {
+      const section = title.closest(".settings-section");
+      title.setAttribute(
+        "aria-expanded",
+        String(section && !section.classList.contains("collapsed")),
+      );
       title.addEventListener("click", () => {
-        const section = title.closest(".settings-section");
-        section.classList.toggle("collapsed");
-
-        // Start/stop section-specific polling when settings sections toggle
-        const isBridgeSection = section.querySelector("#bridgeStatusDot");
-        const isProviderSection = section.querySelector("#antigravityStatusDot");
-        if (isBridgeSection) {
-          if (section.classList.contains("collapsed")) {
-            stopBridgeSectionPolling();
-          } else {
-            startBridgeSectionPolling();
-          }
-        }
-        if (isProviderSection) {
-          if (section.classList.contains("collapsed")) {
-            stopAntigravitySectionPolling();
-          } else {
-            startAntigravitySectionPolling();
-          }
-        }
+        toggleSettingsSection(title.closest(".settings-section"));
       });
     });
 
@@ -4064,6 +4155,16 @@ function setupEventListeners() {
     const width = clampCaptureButtonWidth(e.target.value);
     updateCaptureWidthLabel(width);
     applyCaptureButtonWidth(width);
+    markSettingsDirty();
+  });
+  dom.settingDisplayScale?.addEventListener("input", (e) => {
+    const scalePercent = clampDisplayScalePercent(e.target.value);
+    state.settings = normalizeSettings({
+      ...state.settings,
+      displayScalePercent: scalePercent,
+    });
+    updateDisplayScaleLabel(scalePercent);
+    applyDisplayScale(scalePercent);
     markSettingsDirty();
   });
   dom.settingCaptureButtonTop?.addEventListener("input", (e) => {
@@ -4080,8 +4181,17 @@ function setupEventListeners() {
     });
     applySettingsI18n(nextLanguage);
     updateSelfIterationSealBadge(nextLanguage);
+    updateDisplayScaleLabel(state.settings.displayScalePercent);
     updateCaptureTopLabel(state.settings.captureButtonTopPercent);
     markSettingsDirty();
+  });
+  [dom.iframeRiskHelpBtn, dom.iframeRiskDocLink].forEach((control) => {
+    control?.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    control?.addEventListener("mousedown", (event) => {
+      event.stopPropagation();
+    });
   });
   dom.settingAutoStartBridge?.addEventListener("change", markSettingsDirty);
   dom.settingAutoSdkLogin?.addEventListener("change", markSettingsDirty);
@@ -4430,7 +4540,7 @@ function setupEventListeners() {
     const code = copyBtn.dataset.code || "";
     navigator.clipboard.writeText(code).then(() => {
       const original = copyBtn.textContent;
-      copyBtn.textContent = "✓ 已複製";
+      copyBtn.textContent = "✓ Copied";
       setTimeout(() => {
         copyBtn.textContent = original;
       }, 1500);
@@ -4506,6 +4616,35 @@ function refreshFrame() {
   }, FRAME_LOAD_TIMEOUT);
 }
 
+function ensureIframeFrameReady(options = {}) {
+  if (!dom.copilotFrame) return false;
+
+  const { recoverIfBlank = false, recoverIfError = false } = options;
+  const rawSrc = String(dom.copilotFrame.getAttribute("src") || "").trim();
+  const isBlankSrc = rawSrc === "" || rawSrc === "about:blank";
+  const hasVisibleError =
+    !!dom.errorOverlay && !dom.errorOverlay.classList.contains("hidden");
+
+  if (recoverIfBlank && isBlankSrc) {
+    if (state.loadTimeout) {
+      clearTimeout(state.loadTimeout);
+      state.loadTimeout = null;
+    }
+    state.frameLoaded = false;
+    dom.loadingOverlay?.classList.remove("hidden");
+    dom.errorOverlay?.classList.add("hidden");
+    dom.copilotFrame.src = COPILOT_HOME_URL;
+    return true;
+  }
+
+  if (recoverIfError && hasVisibleError) {
+    refreshFrame();
+    return true;
+  }
+
+  return false;
+}
+
 function openCopilotWindow() {
   chrome.runtime.sendMessage({ action: "openCopilotWindow" });
 }
@@ -4530,10 +4669,19 @@ function checkIntroVideo() {
 
   if (!introPlayed && dom.introContainer && dom.introVideo) {
     // Play video
+    dom.introContainer.classList.remove("fade-out");
     dom.introContainer.classList.remove("hidden");
+    dom.introVideo.controls = false;
+    dom.introVideo.removeAttribute("controls");
+    dom.introVideo.currentTime = 0;
+    dom.introVideo.load();
     dom.introVideo.play().catch((err) => {
       console.error("Video play failed", err);
-      finishIntro();
+      dom.introContainer.classList.remove("hidden");
+      dom.introContainer.classList.remove("fade-out");
+      dom.introVideo.controls = true;
+      dom.introVideo.setAttribute("controls", "controls");
+      showToast("Intro 無法自動播放，請手動播放或直接跳過", "warning");
     });
 
     dom.introVideo.onended = finishIntro;
@@ -4551,6 +4699,8 @@ function finishIntro() {
   // Stop video to save resources
   if (dom.introVideo) {
     dom.introVideo.pause();
+    dom.introVideo.controls = false;
+    dom.introVideo.removeAttribute("controls");
   }
 
   setTimeout(() => {
@@ -4957,6 +5107,84 @@ function updatePendingImagesBadge() {
   badge.textContent = `📎 ${count}`;
 }
 
+function getToggleableSettingsSections() {
+  return Array.from(
+    document.querySelectorAll('.settings-section[data-toggleable="true"]'),
+  );
+}
+
+function applySettingsSectionSideEffects(section, expanded) {
+  if (!section) return;
+
+  if (section.id === "settingsSectionInstall") {
+    if (expanded && state.currentTab === "settings") {
+      startBridgeSectionPolling();
+    } else {
+      stopBridgeSectionPolling();
+    }
+  }
+
+  if (section.id === "settingsSectionProviders") {
+    if (expanded && state.currentTab === "settings") {
+      startAntigravitySectionPolling();
+    } else {
+      stopAntigravitySectionPolling();
+    }
+  }
+}
+
+function setSettingsSectionExpanded(section, expanded, options = {}) {
+  if (!section) return;
+
+  const nextCollapsed = !expanded;
+  const wasCollapsed = section.classList.contains("collapsed");
+  if (wasCollapsed === nextCollapsed) return;
+
+  section.classList.toggle("collapsed", nextCollapsed);
+  const title = section.querySelector('.settings-section-title[data-toggle="section"]');
+  if (title) {
+    title.setAttribute("aria-expanded", String(expanded));
+  }
+
+  applySettingsSectionSideEffects(section, expanded);
+
+  if (expanded && options.enforceLimit !== false) {
+    const sections = getToggleableSettingsSections();
+    const anchorIndex = sections.indexOf(section);
+    while (
+      sections.filter((item) => !item.classList.contains("collapsed")).length >
+      SETTINGS_MAX_OPEN_SECTIONS
+    ) {
+      const openSections = sections.filter(
+        (item) => !item.classList.contains("collapsed") && item !== section,
+      );
+      if (openSections.length === 0) break;
+
+      let farthestSection = openSections[0];
+      let farthestDistance = Math.abs(
+        sections.indexOf(farthestSection) - anchorIndex,
+      );
+
+      openSections.forEach((item) => {
+        const distance = Math.abs(sections.indexOf(item) - anchorIndex);
+        if (distance > farthestDistance) {
+          farthestSection = item;
+          farthestDistance = distance;
+        }
+      });
+
+      setSettingsSectionExpanded(farthestSection, false, {
+        enforceLimit: false,
+      });
+    }
+  }
+}
+
+function toggleSettingsSection(section) {
+  if (!section) return;
+  setSettingsSectionExpanded(section, section.classList.contains("collapsed"));
+}
+
 function updateIframeModeBtnState(enabled) {
   dom.modeSwitchBtns?.forEach((btn) => {
     if (btn.dataset.mode === "iframe") {
@@ -4975,16 +5203,22 @@ function navigateToSettingsSection(sectionI18nKey) {
     if (!title) return;
     const section = title.closest(".settings-section");
     if (!section) return;
-    if (section.classList.contains("collapsed")) {
-      section.classList.remove("collapsed");
-    }
+    setSettingsSectionExpanded(section, true);
     section.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 }
 
 async function setModeFromUI(mode) {
   if (!["iframe", "sdk"].includes(mode)) return;
-  if (state.detectedMode === mode) return;
+  if (state.detectedMode === mode) {
+    if (mode === "iframe") {
+      ensureIframeFrameReady({
+        recoverIfBlank: true,
+        recoverIfError: true,
+      });
+    }
+    return;
+  }
 
   if (mode === "iframe" && !state.settings?.iframeEnabled) {
     showToast("請先至「設定 › iframe 模式」手動開啟 iframe 模式", "warning");

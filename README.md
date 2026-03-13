@@ -66,41 +66,39 @@ Instead of bouncing between tabs, apps, and terminals, you can keep Copilot besi
 <table>
   <tr>
     <td width="33%" align="center">
-      <img src="pic/01-iframe-mode.png" width="280" alt="iframe mode preview"><br>
+      <img src="pic/14-header-tabs.png" width="280" alt="SidePilot header with all tabs"><br>
       <b>Instant side-panel access</b><br>
-      <sub>Open Copilot inside the browser side panel and start fast.</sub>
+      <sub>Open Copilot inside the browser side panel — switch IFRAME / SDK with one click.</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/02-sdk-chat.png" width="280" alt="SDK chat preview"><br>
+      <img src="pic/15-sdk-model-select.png" width="280" alt="SDK model selector"><br>
       <b>Streaming SDK chat</b><br>
       <sub>Switch to the local bridge for richer control, models, and streaming.</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/03-rules-tab.png" width="280" alt="Rules tab preview"><br>
+      <img src="pic/16-rules-templates.png" width="280" alt="Rules templates picker"><br>
       <b>Rules that shape behavior</b><br>
-      <sub>Use templates and custom instructions to keep responses on-style.</sub>
+      <sub>Use built-in templates (TypeScript, React, Safety…) or write custom instructions.</sub>
     </td>
   </tr>
   <tr>
     <td width="33%" align="center">
-      <img src="pic/06-page-capture-text.png" width="280" alt="Page capture preview"><br>
+      <img src="pic/19-page-capture.png" width="280" alt="Page capture panel"><br>
       <b>Capture what you're seeing</b><br>
       <sub>Pull text, code blocks, and screenshots straight from the page.</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/08-sdk-context.png" width="280" alt="Context injection preview"><br>
-      <b>Context that stays sticky</b><br>
-      <sub>Memory, rules, and captured context can travel with each SDK prompt.</sub>
+      <img src="pic/18-settings-bridge.png" width="280" alt="Bridge setup panel"><br>
+      <b>Bridge auto-start</b><br>
+      <sub>SidePilot detects and launches the local bridge automatically when SDK mode is entered.</sub>
     </td>
     <td width="33%" align="center">
-      <img src="pic/09-sdk-initial.png" width="280" alt="Bridge onboarding preview"><br>
-      <b>Bridge onboarding flow</b><br>
+      <img src="pic/13-welcome-screen.png" width="280" alt="Welcome onboarding screen"><br>
+      <b>Guided onboarding</b><br>
       <sub>Move from quick start to advanced mode without leaving the panel.</sub>
     </td>
   </tr>
 </table>
-
-> For the latest raw UI captures added on 2026-03-13, see [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) or [pic/INDEX.md](pic/INDEX.md).
 
 ---
 
@@ -108,11 +106,11 @@ Instead of bouncing between tabs, apps, and terminals, you can keep Copilot besi
 
 | Feature | What it gives you | Screenshot |
 | --- | --- | --- |
-| **Dual Mode** | iframe for zero-config use, SDK for streaming + advanced context | `pic/01-iframe-mode.png`, `pic/02-sdk-chat.png` |
-| **Memory Bank** | reusable tasks, notes, references, and context injection | `pic/08-sdk-context.png` |
-| **Rules & Templates** | Markdown instructions with built-in templates | `pic/03-rules-tab.png` |
-| **Page Capture** | grab page text, code blocks, and screenshots without leaving the tab | `pic/06-page-capture-text.png` |
-| **Bridge Auto-Start** | easier SDK startup with local launcher flow | `pic/09-sdk-initial.png` |
+| **Dual Mode** | iframe for zero-config use, SDK for streaming + advanced context | `pic/14-header-tabs.png`, `pic/15-sdk-model-select.png` |
+| **Memory Bank** | reusable tasks, notes, references, and context injection | `pic/20-history-tab.png` |
+| **Rules & Templates** | Markdown instructions with built-in templates | `pic/16-rules-templates.png` |
+| **Page Capture** | grab page text, code blocks, and screenshots without leaving the tab | `pic/19-page-capture.png` |
+| **Bridge Auto-Start** | easier SDK startup with local launcher flow | `pic/18-settings-bridge.png` |
 
 > Want the full walkthrough? Open [docs/FEATURES.md](docs/FEATURES.md).
 
@@ -120,7 +118,34 @@ Instead of bouncing between tabs, apps, and terminals, you can keep Copilot besi
 
 ## 🚀 Quick Start
 
-### 1. Install
+### Do I need the Bridge?
+
+The **Bridge** is a small local server that lives inside this repo. You do **not** need it to try SidePilot.
+
+| I want to… | Do I need the Bridge? |
+| --- | --- |
+| Try SidePilot right now | **No** — just install the extension and open it |
+| Use streaming chat, Memory Bank, or Rules | **Yes** — start the Bridge from the repo first |
+
+> **What the Bridge is, in one sentence:** It is not a separate product or download. It lives at `scripts/copilot-bridge/` inside this repo. Wherever you cloned this repo, that is where the Bridge is.
+
+---
+
+### Path A — Instant start (no Bridge needed)
+
+**Simpler option — download the packaged extension**
+
+If you only want to install SidePilot and do not want to clone the repo first, download `SidePilot-extension-v*.zip` from GitHub Releases.
+
+1. Download and extract the packaged zip
+2. Open `chrome://extensions/`
+3. Enable **Developer mode**
+4. Click **Load unpacked**
+5. Select the extracted folder
+
+> Maintainers can generate this package from the repo root with `npm run package:extension`.
+
+**Step 1 — Clone and build**
 
 ```bash
 git clone https://github.com/pingqLIN/SidePilot.git
@@ -129,51 +154,69 @@ npm install
 npm run build:vendor
 ```
 
-### 2. Load into Chrome
+**Step 2 — Load into Chrome**
 
 1. Open `chrome://extensions/`
-2. Enable **Developer mode**
+2. Enable **Developer mode** (toggle, top-right)
 3. Click **Load unpacked**
-4. Select the `extension/` folder
+4. Select the `extension/` folder inside the repo
 
-### 3. Choose a mode
+**Step 3 — Open the panel**
 
-| Mode | Setup cost | Best for |
-| --- | --- | --- |
-| **iframe** | almost none | fast access to Copilot web UI |
-| **SDK** | local bridge required | streaming, memory, rules, advanced controls |
+Click the SidePilot icon in the toolbar, or press `Alt + Shift + P`.
 
-> Detailed setup lives in [docs/USAGE.md](docs/USAGE.md).
+The panel opens in **iframe mode** — Copilot is immediately accessible. No Bridge, no terminal, no extra configuration.
 
 ---
 
-## 🗂️ Documentation Tabs
+### Path B — Full features (Bridge required)
 
-The README is intentionally kept short. Treat it like the front desk; the rest of the building lives in `docs/`.
+After completing Path A, do this once:
 
-| Tab | Best for | Link |
-| --- | --- | --- |
-| Usage Manual | installation, configuration, and daily operation | [docs/USAGE.md](docs/USAGE.md) |
-| Getting Started | install, load the extension, and choose your first mode | [docs/guide/getting-started/README.md](docs/guide/getting-started/README.md) |
-| Concepts | understand modes, memory, rules, and the local bridge model | [docs/guide/concepts/README.md](docs/guide/concepts/README.md) |
-| API | bridge auth, chat, permission, and backup endpoints | [docs/guide/api/README.md](docs/guide/api/README.md) |
-| Feature Guide | modes, modules, and behavior details | [docs/FEATURES.md](docs/FEATURES.md) |
-| Guide Hub | organized doc landing page | [docs/guide/README.md](docs/guide/README.md) |
-| Screenshots | UI walkthrough and visual references | [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md) |
-| Screenshot Index | curated screenshots + latest raw captures | [pic/INDEX.md](pic/INDEX.md) |
+**Step 1 — Install the Bridge Launcher** (Windows, run from the repo root)
 
-## 🧩 Pick a mode
+```powershell
+npm run bridge-launcher:install:win
+```
 
-- **iframe mode** if you want SidePilot running in under a minute.
-- **SDK mode** if you want the real power features and don't mind a local bridge.
+This registers a background launcher so the extension can start the Bridge automatically when you switch modes.
+
+**Step 2 — Switch to SDK mode**
+
+Click the mode toggle in the side panel (top-right corner). The extension will:
+1. Detect that the Bridge is not running
+2. Automatically launch it via the launcher you just installed
+3. Show a one-time login guide
+
+**Step 3 — Sign in to GitHub**
+
+Click **Open GitHub Login** in the guide dialog and sign in with your GitHub account. A [GitHub Copilot subscription](https://github.com/features/copilot) is required.
+
+**Step 4 — Done**
+
+After initial setup, the Bridge starts automatically every time you switch to SDK mode. No terminal needed for daily use.
+
+> **If the Bridge doesn't start automatically**, go to **Settings → Bridge Setup → Copy Quick Setup**, paste the command into a terminal, and run it. Full details: [docs/guide/getting-started/README.md](docs/guide/getting-started/README.md)
+
+---
+
+## 🗂️ Documentation
+
+| Document | Best for |
+| --- | --- |
+| [Getting Started](docs/guide/getting-started/README.md) | step-by-step setup, path examples, troubleshooting |
+| [Usage Manual](docs/USAGE.md) | configuration, settings reference, API details |
+| [Concepts](docs/guide/concepts/README.md) | mental model for modes, memory, rules, and the bridge |
+| [Feature Guide](docs/FEATURES.md) | full feature tour |
+| [API Reference](docs/guide/api/README.md) | bridge endpoints |
+| [Screenshots](docs/SCREENSHOTS.md) | UI walkthrough |
 
 ## 🔎 Recommended reading path
 
-1. Read this page for product overview
-2. Open [docs/guide/getting-started/README.md](docs/guide/getting-started/README.md) for the fastest setup path
-3. Open [docs/guide/concepts/README.md](docs/guide/concepts/README.md) for the product mental model
-4. Open [docs/FEATURES.md](docs/FEATURES.md) for the full feature tour
-5. Open [docs/guide/api/README.md](docs/guide/api/README.md) if you work with the bridge or tooling integration
+1. Read this page for the product overview
+2. Open [Getting Started](docs/guide/getting-started/README.md) — it answers the most common first-timer questions
+3. Open [Concepts](docs/guide/concepts/README.md) for the product mental model
+4. Open [Usage Manual](docs/USAGE.md) for settings and advanced configuration
 
 ---
 
