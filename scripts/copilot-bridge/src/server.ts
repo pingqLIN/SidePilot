@@ -8,6 +8,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import cors from 'cors';
+import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -19,14 +20,22 @@ import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } fr
 const PORT = parseInt(process.env.PORT || '31031', 10);
 const HEARTBEAT_INTERVAL_MS = 10_000;
 const isForked = !!process.send;
+const EXTENSION_ID = String(process.env.SIDEPILOT_EXTENSION_ID || '').trim();
+const BRIDGE_AUTH_TOKEN = randomUUID().replace(/-/g, '');
 
 const app = express();
 
 // --- Middleware ---
 app.use(cors({
-  origin: '*', // Chrome extension context
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, origin.startsWith('chrome-extension://'));
+  },
   methods: ['GET', 'POST', 'DELETE'],
-  allowedHeaders: ['Content-Type'],
+  allowedHeaders: ['Content-Type', 'X-SidePilot-Extension-Id', 'X-SidePilot-Token'],
 }));
 app.use(express.json({ limit: '20mb' }));
 
@@ -39,13 +48,62 @@ const PROJECT_ROOT = resolve(BRIDGE_ROOT, '..', '..');
 const SEAL_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'seal-integrity.mjs');
 const VERIFY_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'verify-integrity.mjs');
 
-function ensureExtensionOrigin(req: Request, res: Response): boolean {
+function isLikelyExtensionId(value: string): boolean {
+  return /^[a-p]{32}$/i.test(String(value || '').trim());
+}
+
+function getExpectedExtensionOrigin(): string {
+  return EXTENSION_ID ? `chrome-extension://${EXTENSION_ID}` : '';
+}
+
+function isExtensionRequest(req: Request): boolean {
   const origin = String(req.headers.origin || '');
-  if (!origin.startsWith('chrome-extension://')) {
+  const requestedExtensionId = String(req.headers['x-sidepilot-extension-id'] || '').trim();
+  const expectedOrigin = getExpectedExtensionOrigin();
+
+  if (origin) {
+    if (!origin.startsWith('chrome-extension://')) {
+      return false;
+    }
+    if (expectedOrigin) {
+      return origin === expectedOrigin;
+    }
+    return true;
+  }
+
+  if (EXTENSION_ID) {
+    return requestedExtensionId === EXTENSION_ID;
+  }
+
+  return isLikelyExtensionId(requestedExtensionId);
+}
+
+function ensureExtensionOrigin(req: Request, res: Response): boolean {
+  if (!isExtensionRequest(req)) {
     res.status(403).json({
       success: false,
       error: 'forbidden origin',
-      origin
+      origin: String(req.headers.origin || ''),
+      extensionId: String(req.headers['x-sidepilot-extension-id'] || ''),
+    });
+    return false;
+  }
+  return true;
+}
+
+function extractBridgeToken(req: Request): string {
+  const headerToken = String(req.headers['x-sidepilot-token'] || '').trim();
+  if (headerToken) return headerToken;
+  const queryToken = String(req.query.token || '').trim();
+  return queryToken;
+}
+
+function ensureBridgeAuth(req: Request, res: Response): boolean {
+  const token = extractBridgeToken(req);
+  if (!token || token !== BRIDGE_AUTH_TOKEN) {
+    res.status(401).json({
+      success: false,
+      error: 'unauthorized',
     });
     return false;
   }
@@ -155,7 +213,32 @@ app.get('/health', (_req, res) => {
     service: 'sidepilot-copilot-bridge',
     sdk: state,
     backend,
+    auth: {
+      required: true,
+      bootstrapPath: '/api/auth/bootstrap',
+      extensionOrigin: getExpectedExtensionOrigin() || 'chrome-extension://<extension-id>',
+    }
   });
+});
+
+app.post('/api/auth/bootstrap', (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+  res.json({
+    success: true,
+    token: BRIDGE_AUTH_TOKEN,
+  });
+});
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/auth/bootstrap') {
+    next();
+    return;
+  }
+
+  if (!ensureBridgeAuth(req, res)) {
+    return;
+  }
+  next();
 });
 
 /**
@@ -557,6 +640,131 @@ app.get('/api/logs/stream', (req, res) => {
 });
 
 // ============================================
+// Backup API
+// ============================================
+
+import { BackupManager, type BackupConfig } from './backup-manager.js';
+
+const backupManager = new BackupManager();
+
+/**
+ * GET /api/backup/config
+ * 取得當前備份設定
+ */
+app.get('/api/backup/config', (_req, res) => {
+  const config = backupManager.getConfig();
+  res.json({ success: true, config });
+});
+
+/**
+ * POST /api/backup/config
+ * 設定備份配置並啟用排程
+ * Body: { mode: "full|settings", frequency?: "h|d|w|m", interval?: number, savePath: string, enabled?: boolean }
+ */
+app.post('/api/backup/config', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+
+  try {
+    const { mode, frequency, interval, savePath, enabled } = req.body as BackupConfig & { enabled?: boolean };
+
+    if (!mode || !savePath) {
+      res.status(400).json({ success: false, error: 'mode and savePath are required' });
+      return;
+    }
+
+    const config: BackupConfig = { mode, frequency, interval, savePath, enabled };
+    backupManager.setConfig(config);
+
+    let scheduleResult = { success: true, message: 'Config saved' };
+
+    if (enabled && frequency && interval !== undefined) {
+      scheduleResult = backupManager.startSchedule(config);
+    } else if (!enabled) {
+      backupManager.stopSchedule();
+    }
+
+    res.json({
+      success: true,
+      config,
+      schedule: scheduleResult,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/backup/full
+ * 執行完整備份
+ */
+app.post('/api/backup/full', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+
+  try {
+    const metadata = await backupManager.createFullBackup();
+    res.json({ success: true, backup: metadata });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/backup/settings
+ * 執行設定備份
+ */
+app.post('/api/backup/settings', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+
+  try {
+    const metadata = await backupManager.createSettingsBackup();
+    res.json({ success: true, backup: metadata });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/backup/list
+ * 列出所有備份
+ */
+app.get('/api/backup/list', (_req, res) => {
+  const backups = backupManager.listBackups();
+  res.json({ success: true, backups });
+});
+
+/**
+ * POST /api/backup/restore/:id
+ * 還原備份
+ */
+app.post('/api/backup/restore/:id', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+
+  try {
+    const backupId = req.params.id;
+    const result = await backupManager.restoreBackup(backupId);
+    res.json({ success: result.success, message: result.message });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/backup/:id
+ * 刪除備份
+ */
+app.delete('/api/backup/:id', async (req, res) => {
+  if (!ensureExtensionOrigin(req, res)) return;
+
+  try {
+    const backupId = req.params.id;
+    const result = await backupManager.deleteBackup(backupId);
+    res.json({ success: result.success, message: result.message });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================
 // History API
 // ============================================
 
@@ -672,6 +880,12 @@ app.post('/api/history', async (req, res) => {
 const server = app.listen(PORT, () => {
   console.log(`✈️  SidePilot Copilot Bridge running on http://localhost:${PORT}`);
   console.log(`   Health: http://localhost:${PORT}/health`);
+  console.log(`   Auth bootstrap: http://localhost:${PORT}/api/auth/bootstrap`);
+  if (EXTENSION_ID) {
+    console.log(`   Allowed extension: chrome-extension://${EXTENSION_ID}`);
+  } else {
+    console.warn('   Allowed extension: any chrome-extension:// origin (SIDEPILOT_EXTENSION_ID not set)');
+  }
 
   // Notify supervisor that worker is ready
   if (isForked && process.send) {

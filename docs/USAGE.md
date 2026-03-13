@@ -1,6 +1,20 @@
 # SidePilot — Detailed Usage Guide
 
-> This guide covers every feature in detail. For quick setup, see [README.md](../README.md).
+> This is the practical setup-and-operations guide. For the homepage view, see [README.md](../README.md).
+
+| You are here | Best for | Good next reads |
+| --- | --- | --- |
+| setup, configuration, and day-to-day operation | users who want to install SidePilot and actually use it | [guide/getting-started/README.md](guide/getting-started/README.md), [guide/concepts/README.md](guide/concepts/README.md), [FEATURES.md](FEATURES.md) |
+
+## Pick your route
+
+| If you want to... | Start here |
+| --- | --- |
+| install the extension fast | [📦 Installation](#-installation) |
+| understand iframe mode first | [🌐 iframe Mode](#-iframe-mode) |
+| unlock streaming + bridge features | [🔧 SDK Mode](#-sdk-mode) |
+| manage persistent context | [🧠 Memory Bank](#-memory-bank) |
+| tune behavior and storage | [⚙️ Settings Reference](#%EF%B8%8F-settings-reference) |
 
 ---
 
@@ -27,7 +41,7 @@
 | Requirement | Minimum |
 |-------------|---------|
 | Chrome | Version 114 or later |
-| Node.js | Version 18+ (SDK mode only) |
+| Node.js | Version 24+ (SDK mode only) |
 | GitHub Account | Copilot subscription required |
 | OS | Windows, macOS, or Linux |
 
@@ -125,10 +139,10 @@ Side Panel  ←──HTTP/SSE──→  Bridge Server  ←──JSON-RPC/stdio�
 
 #### Prerequisites
 
-1. **Node.js 18+**
+1. **Node.js 24+**
 
 ```bash
-node --version    # Should output v18.x.x or higher
+node --version    # Should output v24.x.x or higher
 ```
 
 2. **GitHub Copilot CLI**
@@ -142,20 +156,19 @@ If not installed, follow [GitHub Copilot CLI documentation](https://docs.github.
 
 #### Starting the Bridge Server
 
-**Development mode** (recommended for most use):
+**Recommended mode** (Supervisor + Worker):
 
 ```bash
 cd scripts/copilot-bridge
 npm install          # First time only
-npm run dev          # Starts with hot-reload
+npm start            # Starts Supervisor + Worker
 ```
 
-**Production mode** (with supervisor for auto-restart):
+**Development mode** (worker-only hot reload):
 
 ```bash
 cd scripts/copilot-bridge
-npm run build        # Compile TypeScript
-npm start            # Starts Supervisor + Worker
+npm run dev          # Starts worker-only hot-reload
 ```
 
 #### Verifying the Connection
@@ -688,7 +701,7 @@ SidePilot/
 ├── docs/                    # Documentation
 │   ├── USAGE.md             # This file
 │   ├── USAGE.zh-TW.md      # Chinese version
-│   ├── DEVELOPMENT_PLAN.md  # v2.0 roadmap
+│   ├── DEVELOPMENT_PLAN.md  # Public roadmap
 │   └── screenshots/         # UI screenshots
 │
 ├── package.json             # Extension dev dependencies
@@ -715,12 +728,12 @@ npm run test:coverage
 ```bash
 cd scripts/copilot-bridge
 
-# Development (hot-reload)
+# Recommended: build + start Supervisor
+npm start
+
+# Development (worker-only hot-reload)
 npm run dev
 
-# Build TypeScript
+# Build TypeScript only
 npm run build
-
-# Production (with Supervisor)
-npm start
 ```

@@ -57,16 +57,21 @@ Chrome Extension (sdk-client.js)
 - [x] **擷取功能**: 頁面內容、截圖、程式碼區塊擷取
 - [x] **Memory Bank**: 任務管理、VS Code 整合
 - [x] **Rules 管理**: 模板、匯入匯出
+- [x] **對話歷史**: SDK 對話歷史持久化、History 分頁分組顯示
+- [x] **Context Injection**: Identity / Memory / Rules / System / Structured Output 開關
+- [x] **Bridge 自動啟動（MVP）**: 偵測橋接器狀態並嘗試喚起啟動器
+- [x] **Permission UI**: Bridge 權限請求 SSE 與側欄同意彈窗
+- [x] **Link Guard**: iframe allowlist / denylist 邊界控制
+- [x] **Antigravity Provider Probe**: 設定頁可探測本機 bridge health / meta / detect
 
 ## 待完成
 
 - [ ] Bridge Server 實測（需 Copilot CLI）
-- [ ] `npm install` 依賴安裝（copilot-bridge）
-- [ ] 對話歷史持久化（SDK 模式）
-- [ ] 手動模式切換 UI 完善
-- [ ] Context Injection（Memory ↔ Copilot 整合）
+- [ ] sidepanel 模組化拆分（降低單檔複雜度）
+- [ ] 補齊 sidepanel / prompt orchestration 的自動化測試
+- [ ] iframe 模式相容性與 GitHub UI 變動的回歸驗證
 - [ ] Chrome Web Store 發布準備
 
 ---
 
-_最後更新: 2026-02-13_
+_最後更新: 2026-03-10_

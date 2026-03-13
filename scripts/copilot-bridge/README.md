@@ -27,7 +27,7 @@
 
 ## 前置需求
 
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 24.0.0
 - **GitHub Copilot CLI** 已安裝並加入 PATH（[安裝指南](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli)）
 
 ## 快速開始
@@ -36,12 +36,11 @@
 # 安裝依賴
 npm install
 
-# 開發模式（hot-reload）
-npm run dev
-
-# 建置並以生產模式啟動（含 Supervisor）
-npm run build
+# 建議：直接 build + 啟動 Supervisor
 npm start
+
+# 開發模式（hot-reload, worker only）
+npm run dev
 ```
 
 ## NPM Scripts
@@ -51,7 +50,7 @@ npm start
 | `npm run dev`      | 以 tsx watch 啟動 Worker（熱重載）   |
 | `npm run dev:supervisor` | 以 tsx watch 啟動 Supervisor   |
 | `npm run build`    | TypeScript 編譯至 `dist/`           |
-| `npm start`        | 生產模式：啟動 Supervisor            |
+| `npm start`        | 建議啟動方式：build 後啟動 Supervisor |
 | `npm run start:worker` | 直接啟動 Worker（不含 Supervisor）|
 | `npm run clean`    | 清除 `dist/` 輸出                    |
 
@@ -78,9 +77,14 @@ npm start
   "status": "ok",
   "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" }
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": { "required": true, "bootstrapPath": "/api/auth/bootstrap" }
 }
 ```
+
+### `POST /api/auth/bootstrap`
+
+由 SidePilot extension bootstrap loopback token。之後所有 `/api/*` 請求都必須帶 token。
 
 ---
 

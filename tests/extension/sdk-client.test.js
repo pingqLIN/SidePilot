@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import * as SDKClient from '../../extension/js/sdk-client.js';
 
 function createMockResponse({ ok = true, status = 200, jsonData = null, textData = '', contentType = 'application/json' } = {}) {
@@ -17,7 +17,13 @@ function createMockResponse({ ok = true, status = 200, jsonData = null, textData
       return jsonData;
     },
     async text() {
-      return textData;
+      if (textData) {
+        return textData;
+      }
+      if (contentType.includes('application/json') && jsonData !== null) {
+        return JSON.stringify(jsonData);
+      }
+      return '';
     }
   };
 }
@@ -28,6 +34,11 @@ describe('SDK Client Module', () => {
     jest.clearAllMocks();
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     global.fetch = jest.fn();
+  });
+
+  afterEach(() => {
+    SDKClient.cleanup();
+    delete global.fetch;
   });
 
   it('should export init function', () => {
@@ -61,6 +72,12 @@ describe('SDK Client Module', () => {
         jsonData: {
           status: 'ok',
           service: 'sidepilot-copilot-bridge'
+        }
+      }))
+      .mockResolvedValueOnce(createMockResponse({
+        jsonData: {
+          success: true,
+          token: 'bridge-token-1'
         }
       }))
       .mockResolvedValueOnce(createMockResponse({
@@ -103,11 +120,28 @@ describe('SDK Client Module', () => {
 
     expect(result.content).toBe('Recovered reply');
     expect(result.sessionId).toBe('sess-2');
-    expect(global.fetch).toHaveBeenCalledTimes(6);
-    expect(global.fetch.mock.calls[1][0]).toContain('/api/sessions');
-    expect(global.fetch.mock.calls[2][0]).toContain('/api/chat/sync');
-    expect(global.fetch.mock.calls[3][0]).toContain('/api/sessions/sess-1');
-    expect(global.fetch.mock.calls[4][0]).toContain('/api/sessions');
-    expect(global.fetch.mock.calls[5][0]).toContain('/api/chat/sync');
+    expect(global.fetch).toHaveBeenCalledTimes(7);
+    expect(global.fetch.mock.calls[1][0]).toContain('/api/auth/bootstrap');
+    expect(global.fetch.mock.calls[2][0]).toContain('/api/sessions');
+    expect(global.fetch.mock.calls[3][0]).toContain('/api/chat/sync');
+    expect(global.fetch.mock.calls[4][0]).toContain('/api/sessions/sess-1');
+    expect(global.fetch.mock.calls[5][0]).toContain('/api/sessions');
+    expect(global.fetch.mock.calls[6][0]).toContain('/api/chat/sync');
+  });
+
+  it('disconnect should reset the active port back to default', async () => {
+    global.fetch.mockResolvedValueOnce(createMockResponse({
+      jsonData: {
+        status: 'ok',
+        service: 'sidepilot-copilot-bridge'
+      }
+    }));
+
+    await SDKClient.connect(32000);
+    expect(SDKClient.getStatus().port).toBe(32000);
+
+    SDKClient.disconnect();
+    expect(SDKClient.getStatus().port).toBe(31031);
+    expect(SDKClient.getStatus().connected).toBe(false);
   });
 });

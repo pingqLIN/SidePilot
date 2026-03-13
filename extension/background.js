@@ -5,6 +5,7 @@ import * as SDKClient from './js/sdk-client.js';
 import * as RulesManager from './js/rules-manager.js';
 import * as MemoryBank from './js/memory-bank.js';
 import * as VSCodeConnector from './js/vscode-connector.js';
+import * as ConnectionController from './js/connection-controller.js';
 
 // ============================================
 // 常數
@@ -14,7 +15,7 @@ const COPILOT_URL = 'https://github.com/copilot';
 const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{8}$/i;
 const SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
-const INTEGRITY_VERIFY_ENDPOINT = 'http://localhost:31031/api/integrity/verify';
+const ANTIGRAVITY_DEFAULT_BASE_URL = 'http://127.0.0.1:47619';
 
 const startupGuard = {
   ready: false,
@@ -31,6 +32,8 @@ const CORE_MODULES = [
   ['MemoryBank', () => MemoryBank.init()],
   ['VSCodeConnector', () => VSCodeConnector.init()]
 ];
+
+ModeManager.setModeDetector(() => ConnectionController.detectPreferredMode());
 
 function addStartupGuardFailure(message) {
   startupGuard.reasons.push(String(message || 'unknown failure'));
@@ -80,21 +83,18 @@ function getManifestSealDigest() {
 }
 
 async function verifyIntegrityViaBridge(timeoutMs = 7000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(INTEGRITY_VERIFY_ENDPOINT, {
+    const response = await handleBridgeJsonRequestInternal({
+      path: '/api/integrity/verify',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ timeoutMs }),
-      signal: controller.signal
+      body: { timeoutMs },
+      timeoutMs,
     });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok || !payload?.success) {
+
+    if (!response.success || !response.data?.success) {
       return {
         success: false,
-        error: payload?.error || `HTTP ${response.status}`
+        error: response.error || response.data?.error || `HTTP ${response.status || 500}`
       };
     }
     return { success: true };
@@ -103,8 +103,6 @@ async function verifyIntegrityViaBridge(timeoutMs = 7000) {
       ? `verify timeout after ${timeoutMs}ms`
       : (err?.message || String(err));
     return { success: false, error };
-  } finally {
-    clearTimeout(timer);
   }
 }
 
@@ -414,6 +412,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       handleBridgeHealth(message, sendResponse);
       return true;
 
+    case 'bridgeAuthBootstrap':
+      handleBridgeAuthBootstrap(message, sendResponse);
+      return true;
+
+    case 'bridgeRequest':
+      handleBridgeRequest(message, sendResponse);
+      return true;
+
+    case 'antigravityProbe':
+      handleAntigravityProbe(message, sendResponse);
+      return true;
+
     // Rules Manager
     case 'rules.save':
       RulesManager.saveRules(message.content)
@@ -497,13 +507,179 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function handleBridgeHealth(message, sendResponse) {
   const port = Number(message?.port) || 31031;
   const timeoutMs = Number(message?.timeoutMs) || 3000;
-  const url = `http://localhost:${port}/health`;
+  const result = await ConnectionController.checkBridgeHealth({ port, timeoutMs });
+  sendResponse(result);
+}
+
+async function handleBridgeAuthBootstrap(message, sendResponse) {
+  const port = Number(message?.port) || 31031;
+  const timeoutMs = Number(message?.timeoutMs) || 2500;
+  const forceRefresh = message?.forceRefresh === true;
+  const result = await ConnectionController.bootstrapBridgeAuth({
+    port,
+    timeoutMs,
+    forceRefresh,
+  });
+  sendResponse(result);
+}
+
+async function handleBridgeRequest(message, sendResponse) {
+  try {
+    const result = await handleBridgeJsonRequestInternal(message);
+    sendResponse(result);
+  } catch (err) {
+    sendResponse({
+      success: false,
+      error: err?.message || String(err),
+      status: 0,
+      data: null,
+    });
+  }
+}
+
+async function handleBridgeJsonRequestInternal(message = {}) {
+  const port = Number(message?.port) || 31031;
+  const path = String(message?.path || '');
+  const method = String(message?.method || 'GET').toUpperCase();
+  const timeoutMs = Number(message?.timeoutMs) || 5000;
+  const requireAuth = message?.requireAuth !== false;
+
+  if (!path.startsWith('/api/')) {
+    return {
+      success: false,
+      status: 400,
+      error: 'invalid bridge path',
+      data: null,
+    };
+  }
+
+  const baseUrl = ConnectionController.getBridgeBaseUrl(port);
+  const url = `${baseUrl}${path}`;
+  const body = message?.body;
+
+  const doFetch = async (forceRefresh = false) => {
+    let token = '';
+    if (requireAuth) {
+      const auth = await ConnectionController.bootstrapBridgeAuth({
+        port,
+        timeoutMs: Math.min(timeoutMs, 2500),
+        forceRefresh,
+      });
+      if (!auth.success || !auth.token) {
+        return {
+          success: false,
+          status: auth.status || 401,
+          error: auth.error || 'bridge auth bootstrap failed',
+          data: null,
+          url,
+        };
+      }
+      token = auth.token;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers: ConnectionController.buildBridgeHeaders({
+          token,
+          json: body !== undefined,
+        }),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      let data = null;
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
+
+      return {
+        success: response.ok,
+        status: response.status,
+        data,
+        error: response.ok ? '' : (data?.error || `HTTP ${response.status}`),
+        url,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        status: 0,
+        data: null,
+        error: err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown error'),
+        url,
+      };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
+
+  let result = await doFetch(false);
+  if (result.status === 401 && requireAuth) {
+    ConnectionController.clearBridgeAuth({ port });
+    result = await doFetch(true);
+  }
+  return result;
+}
+
+function normalizeLoopbackBaseUrl(rawValue, fallbackUrl = ANTIGRAVITY_DEFAULT_BASE_URL) {
+  try {
+    const parsed = new URL(String(rawValue || fallbackUrl).trim() || fallbackUrl);
+    const protocol = parsed.protocol === 'https:' ? 'https:' : 'http:';
+    const host = String(parsed.hostname || '').toLowerCase();
+    if (host !== '127.0.0.1' && host !== 'localhost') {
+      throw new Error('loopback_only');
+    }
+    const port = Number.parseInt(parsed.port || '', 10);
+    const normalizedPort = Number.isInteger(port) && port > 0 ? port : (protocol === 'https:' ? 443 : 80);
+    return `${protocol}//${host}:${normalizedPort}`;
+  } catch {
+    return fallbackUrl;
+  }
+}
+
+function getAntigravityProbeRequest(message = {}) {
+  const probe = String(message?.probe || 'health').toLowerCase();
+  switch (probe) {
+    case 'meta':
+      return { probe, method: 'GET', path: '/v1/meta', requiresAuth: true };
+    case 'session':
+      return { probe, method: 'GET', path: '/v1/session', requiresAuth: true };
+    case 'detect':
+      return { probe, method: 'POST', path: '/v1/detect', requiresAuth: true };
+    default:
+      return { probe: 'health', method: 'GET', path: '/health', requiresAuth: false };
+  }
+}
+
+async function handleAntigravityProbe(message, sendResponse) {
+  const baseUrl = normalizeLoopbackBaseUrl(message?.baseUrl);
+  const timeoutMs = Number(message?.timeoutMs) || 3500;
+  const token = String(message?.token || '').trim();
+  const request = getAntigravityProbeRequest(message);
+  const url = `${baseUrl}${request.path}`;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+  const headers = {
+    Accept: 'application/json',
+  };
+  if (request.requiresAuth && token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (request.method === 'POST') {
+    headers['Content-Type'] = 'application/json';
+  }
+
   try {
     const response = await fetch(url, {
-      method: 'GET',
+      method: request.method,
+      headers,
+      body: request.method === 'POST' ? '{}' : undefined,
       signal: controller.signal,
     });
 
@@ -515,28 +691,47 @@ async function handleBridgeHealth(message, sendResponse) {
       data = null;
     }
 
+    const isAntigravity =
+      data?.app === 'antigravity-chat-standalone' ||
+      (data?.ok === true && typeof data?.bridge === 'object');
+    const requiresAuth =
+      response.status === 401 || data?.error === 'unauthorized' || false;
+
     if (!response.ok) {
       sendResponse({
         success: false,
         url,
+        baseUrl,
         status: response.status,
         error: data?.error || `HTTP ${response.status}`,
         data,
+        isAntigravity,
+        requiresAuth,
       });
       return;
     }
 
-    const isBridge = data?.service === 'sidepilot-copilot-bridge' && data?.status === 'ok';
     sendResponse({
       success: true,
       url,
+      baseUrl,
       status: response.status,
       data,
-      isBridge,
+      isAntigravity,
+      requiresAuth,
+      probe: request.probe,
     });
   } catch (err) {
-    const errMessage = err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown error');
-    sendResponse({ success: false, url, error: errMessage });
+    const error = err?.name === 'AbortError' ? 'timeout' : (err?.message || 'unknown error');
+    sendResponse({
+      success: false,
+      url,
+      baseUrl,
+      error,
+      isAntigravity: false,
+      requiresAuth: false,
+      probe: request.probe,
+    });
   } finally {
     clearTimeout(timeoutId);
   }

@@ -14,6 +14,7 @@ const DEFAULT_ALLOWLIST = [
 ];
 
 let allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST);
+let guardMode = 'allow';
 
 function isSidePilotIframeContext() {
   if (window.top === window.self) {
@@ -24,7 +25,7 @@ function isSidePilotIframeContext() {
   return ref.startsWith(`chrome-extension://${chrome.runtime.id}/`);
 }
 
-function normalizeAllowlist(raw) {
+function normalizeAllowlist(raw, mode = 'allow') {
   const source = Array.isArray(raw) ? raw : [];
   const clean = [];
   const seen = new Set();
@@ -38,7 +39,8 @@ function normalizeAllowlist(raw) {
     clean.push(value);
   }
 
-  return clean.length > 0 ? clean : [...DEFAULT_ALLOWLIST];
+  if (clean.length > 0) return clean;
+  return mode === 'deny' ? [] : [...DEFAULT_ALLOWLIST];
 }
 
 function escapeRegex(value) {
@@ -50,22 +52,29 @@ function wildcardToRegex(pattern) {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
-function buildRegexPatterns(list) {
-  return normalizeAllowlist(list).map(wildcardToRegex);
+function buildRegexPatterns(list, mode = 'allow') {
+  return normalizeAllowlist(list, mode).map(wildcardToRegex);
 }
 
 async function refreshAllowPatternsFromStorage() {
   try {
     const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
-    const allowlist = result?.[SETTINGS_STORAGE_KEY]?.linkAllowlist;
-    allowPatterns = buildRegexPatterns(allowlist);
+    const settings = result?.[SETTINGS_STORAGE_KEY] || {};
+    guardMode = settings?.linkGuardMode === 'deny' ? 'deny' : 'allow';
+    const allowlist = settings?.linkAllowlist;
+    allowPatterns = buildRegexPatterns(allowlist, guardMode);
   } catch {
-    allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST);
+    allowPatterns = buildRegexPatterns(DEFAULT_ALLOWLIST, 'allow');
+    guardMode = 'allow';
   }
 }
 
 function shouldKeepInIframe(urlString) {
-  return allowPatterns.some((pattern) => pattern.test(urlString));
+  const matches = allowPatterns.some((pattern) => pattern.test(urlString));
+  if (guardMode === 'deny') {
+    return !matches;
+  }
+  return matches;
 }
 
 function onAnchorClick(event) {
@@ -103,7 +112,8 @@ function onStorageChanged(changes, areaName) {
   if (areaName !== 'local') return;
   if (!changes?.[SETTINGS_STORAGE_KEY]) return;
   const nextSettings = changes[SETTINGS_STORAGE_KEY].newValue || {};
-  allowPatterns = buildRegexPatterns(nextSettings.linkAllowlist);
+  guardMode = nextSettings.linkGuardMode === 'deny' ? 'deny' : 'allow';
+  allowPatterns = buildRegexPatterns(nextSettings.linkAllowlist, guardMode);
 }
 
 if (isSidePilotIframeContext()) {

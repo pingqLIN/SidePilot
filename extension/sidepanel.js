@@ -22,8 +22,13 @@ const SDK_LOGIN_URL =
 const SDK_BRIDGE_PORT = 31031;
 const COPILOT_HOME_URL = "https://github.com/copilot";
 const DEFAULT_CAPTURE_BUTTON_WIDTH = 42;
+const DEFAULT_CAPTURE_BUTTON_TOP_PERCENT = 38;
+const ANTIGRAVITY_DEFAULT_BASE_URL = "http://127.0.0.1:47619";
 const BRIDGE_WORKDIR_HINT =
-  "C:\\Dev\\Projects\\SidePilot\\scripts\\copilot-bridge";
+  "C:\\Projects\\SidePilot\\scripts\\copilot-bridge";
+const BRIDGE_WORKDIR_HINT_WSL =
+  "/path/to/SidePilot/scripts/copilot-bridge";
+const BRIDGE_WSL_DISTRO_HINT = "Ubuntu";
 const SIDEPILOT_PACKET_SCHEMA = "sidepilot.turn-packet.v1";
 const SIDEPILOT_SANDBOX_SCHEMA = "sidepilot.sandbox.v1";
 const LOG_STORAGE_KEY = "sidepilot.logs.v1";
@@ -35,9 +40,8 @@ const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
 const UI_LANGUAGE_ZH_TW = "zh-TW";
 const UI_LANGUAGE_EN = "en";
 const UI_LANGUAGE_FALLBACK = UI_LANGUAGE_ZH_TW;
-const BRIDGE_AUTO_START_PROTOCOL_URL =
-  "sidepilot://start-bridge?source=sidepilot-extension&v=1";
-const BRIDGE_AUTO_START_TIMEOUT_MS = 12000;
+const BRIDGE_AUTO_START_PROTOCOL_BASE = "sidepilot://start-bridge";
+const BRIDGE_AUTO_START_TIMEOUT_MS = 45000;
 const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
 const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
 const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
@@ -50,15 +54,57 @@ const SETTINGS_I18N = {
     "settings.language.desc": "僅影響設定分頁顯示文字（i18n 後續擴充）",
     "settings.language.option.zh-TW": "繁體中文",
     "settings.language.option.en": "English",
-    "settings.section.install": "安裝助手",
+    "settings.section.install": "Bridge 設定",
+    "settings.section.providers": "Provider Probe",
     "settings.bridge.status.title": "Bridge 狀態",
+    "settings.bridge.card.title": "SDK Bridge Setup",
+    "settings.bridge.card.desc":
+      "SDK 模式需要本機 Bridge 服務與 sidepilot:// 啟動器",
     "settings.bridge.autostart.title": "自動啟動 Bridge（MVP）",
     "settings.bridge.autostart.desc":
       "進入 SDK 模式時，若偵測不到 Bridge，會嘗試喚起 sidepilot:// 啟動器",
+    "settings.bridge.primary.start": "嘗試自動啟動 Bridge",
+    "settings.bridge.primary.retry": "重試自動啟動",
+    "settings.bridge.primary.install": "複製 Quick Setup 指令",
+    "settings.bridge.primary.ready": "Bridge 已就緒",
+    "settings.bridge.primary.starting": "Bridge 啟動中...",
+    "settings.bridge.root.title": "SidePilot Repo Root",
+    "settings.bridge.advanced.show": "顯示進階選項",
+    "settings.bridge.advanced.hide": "隱藏進階選項",
+    "settings.bridge.advanced.runtime": "手動指令 Runtime",
+    "settings.bridge.advanced.wslDistro": "WSL Distro（選填）",
+    "settings.bridge.advanced.wslDistroDesc":
+      "僅供 WSL Quick Setup 與 sidepilot:// 自動啟動使用；留空時使用預設 distro。",
+    "settings.bridge.advanced.install": "Quick Setup 指令",
+    "settings.bridge.advanced.manual": "手動啟動指令",
+    "settings.bridge.advanced.lastError": "上次自動啟動結果",
+    "settings.bridge.advanced.diagnostics": "啟動診斷",
+    "settings.bridge.advanced.diagnosticsDesc":
+      "根據目前 runtime、repo root、WSL 設定與最近一次 probe/launcher 結果推斷。",
+    "settings.bridge.runtime.auto": "自動",
+    "settings.bridge.runtime.windows": "Windows",
+    "settings.bridge.runtime.wsl": "WSL",
+    "settings.bridge.actions.check": "重新檢查",
+    "settings.bridge.actions.copyInstall": "複製 Quick Setup",
+    "settings.bridge.actions.copyStart": "複製啟動指令",
+    "settings.bridge.actions.copyHealth": "複製檢查指令",
     "settings.bridge.step.launch": "0. 啟動 Bridge",
     "settings.bridge.step.check": "1. 檢查狀態",
     "settings.bridge.step.copyStart": "2. 複製啟動指令",
     "settings.bridge.step.verify": "3. 驗證連線",
+    "settings.antigravity.status.title": "Antigravity Provider Probe",
+    "settings.antigravity.baseUrl.title": "Base URL",
+    "settings.antigravity.baseUrl.desc":
+      "指向 Antigravity Chat Standalone 的本機 bridge，例如 http://127.0.0.1:47619",
+    "settings.antigravity.baseUrl.placeholder": "http://127.0.0.1:47619",
+    "settings.antigravity.token.title": "Bridge Token",
+    "settings.antigravity.token.desc":
+      "選填；要讀取 /v1/meta 與 /v1/detect 時需要 Bearer token",
+    "settings.antigravity.token.placeholder":
+      "貼上 Antigravity bridge token",
+    "settings.antigravity.actions.health": "檢查 Health",
+    "settings.antigravity.actions.meta": "讀取 Meta",
+    "settings.antigravity.actions.detect": "自動偵測",
     "settings.section.startup": "啟動畫面",
     "settings.startup.playIntro.title": "每次開啟都播放動畫",
     "settings.startup.playIntro.desc": "關閉後只在首次開啟播放 Intro 影片",
@@ -83,12 +129,18 @@ const SETTINGS_I18N = {
     "settings.sdk.prompt.concise.title": "輸出精簡模式",
     "settings.sdk.prompt.concise.desc": "控制 AI 回覆的詳細程度",
     "settings.section.iframe": "iframe 模式",
+    "settings.iframe.mode.title": "Link Guard 模式",
+    "settings.iframe.mode.desc":
+      "allow = 僅匹配 URL 留在 Sidecar；deny = 匹配 URL 改在新分頁開啟",
+    "settings.iframe.mode.allow": "Allowlist（白名單）",
+    "settings.iframe.mode.deny": "Denylist（黑名單）",
     "settings.iframe.allowlist.title": "允許留在 Sidecar 的連結前綴",
     "settings.iframe.allowlist.desc": "每行一個 URL 前綴，支援結尾萬用字元 `*`",
     "settings.iframe.allowlist.placeholder":
       "https://github.com/copilot/*\nhttps://github.com/settings/copilot*",
     "settings.section.capture": "擷取按鍵",
     "settings.capture.width.title": "按鍵寬度",
+    "settings.capture.position.title": "上下位置",
     "settings.section.history": "對話紀錄",
     "settings.history.sdk": "SDK 模式",
     "settings.history.sdk.path.title": "聊天紀錄儲存路徑",
@@ -122,15 +174,57 @@ const SETTINGS_I18N = {
       "Currently affects text in Settings tab only (i18n expansion planned).",
     "settings.language.option.zh-TW": "Chinese (Traditional)",
     "settings.language.option.en": "English",
-    "settings.section.install": "Install Helper",
+    "settings.section.install": "Bridge Setup",
+    "settings.section.providers": "Provider Probe",
     "settings.bridge.status.title": "Bridge Status",
+    "settings.bridge.card.title": "SDK Bridge Setup",
+    "settings.bridge.card.desc":
+      "SDK mode requires a local bridge service and the sidepilot:// launcher.",
     "settings.bridge.autostart.title": "Auto-start Bridge (MVP)",
     "settings.bridge.autostart.desc":
       "When entering SDK mode, if Bridge is unavailable, SidePilot will try to invoke sidepilot:// launcher.",
+    "settings.bridge.primary.start": "Try Auto-start Bridge",
+    "settings.bridge.primary.retry": "Retry Auto-start",
+    "settings.bridge.primary.install": "Copy Quick Setup Command",
+    "settings.bridge.primary.ready": "Bridge Ready",
+    "settings.bridge.primary.starting": "Bridge Starting...",
+    "settings.bridge.root.title": "SidePilot Repo Root",
+    "settings.bridge.advanced.show": "Show Advanced",
+    "settings.bridge.advanced.hide": "Hide Advanced",
+    "settings.bridge.advanced.runtime": "Manual Command Runtime",
+    "settings.bridge.advanced.wslDistro": "WSL Distro (Optional)",
+    "settings.bridge.advanced.wslDistroDesc":
+      "Used only by WSL Quick Setup and sidepilot:// auto-start; leave empty to use the default distro.",
+    "settings.bridge.advanced.install": "Quick Setup Command",
+    "settings.bridge.advanced.manual": "Manual Start Command",
+    "settings.bridge.advanced.lastError": "Last Auto-start Result",
+    "settings.bridge.advanced.diagnostics": "Startup Diagnostics",
+    "settings.bridge.advanced.diagnosticsDesc":
+      "Derived from the current runtime, repo root, WSL settings, and the most recent probe/launcher result.",
+    "settings.bridge.runtime.auto": "Auto",
+    "settings.bridge.runtime.windows": "Windows",
+    "settings.bridge.runtime.wsl": "WSL",
+    "settings.bridge.actions.check": "Check Again",
+    "settings.bridge.actions.copyInstall": "Copy Quick Setup",
+    "settings.bridge.actions.copyStart": "Copy Start Command",
+    "settings.bridge.actions.copyHealth": "Copy Health Check",
     "settings.bridge.step.launch": "0. Launch Bridge",
     "settings.bridge.step.check": "1. Check Status",
     "settings.bridge.step.copyStart": "2. Copy Start Command",
     "settings.bridge.step.verify": "3. Verify Connection",
+    "settings.antigravity.status.title": "Antigravity Provider Probe",
+    "settings.antigravity.baseUrl.title": "Base URL",
+    "settings.antigravity.baseUrl.desc":
+      "Points to the local Antigravity Chat Standalone bridge, for example http://127.0.0.1:47619",
+    "settings.antigravity.baseUrl.placeholder": "http://127.0.0.1:47619",
+    "settings.antigravity.token.title": "Bridge Token",
+    "settings.antigravity.token.desc":
+      "Optional; required for /v1/meta and /v1/detect via Bearer token",
+    "settings.antigravity.token.placeholder":
+      "Paste Antigravity bridge token",
+    "settings.antigravity.actions.health": "Check Health",
+    "settings.antigravity.actions.meta": "Read Meta",
+    "settings.antigravity.actions.detect": "Auto Detect",
     "settings.section.startup": "Startup",
     "settings.startup.playIntro.title": "Play intro every time",
     "settings.startup.playIntro.desc":
@@ -159,6 +253,11 @@ const SETTINGS_I18N = {
     "settings.sdk.prompt.concise.desc":
       "Controls how detailed AI responses should be.",
     "settings.section.iframe": "iframe Mode",
+    "settings.iframe.mode.title": "Link Guard Mode",
+    "settings.iframe.mode.desc":
+      "allow = only matching URLs stay in the sidecar; deny = matching URLs open in a new tab",
+    "settings.iframe.mode.allow": "Allowlist",
+    "settings.iframe.mode.deny": "Denylist",
     "settings.iframe.allowlist.title": "Allowed link prefixes inside Sidecar",
     "settings.iframe.allowlist.desc":
       "One URL prefix per line; supports trailing wildcard `*`.",
@@ -166,6 +265,7 @@ const SETTINGS_I18N = {
       "https://github.com/copilot/*\nhttps://github.com/settings/copilot*",
     "settings.section.capture": "Capture Button",
     "settings.capture.width.title": "Button Width",
+    "settings.capture.position.title": "Vertical Position",
     "settings.section.history": "Conversation History",
     "settings.history.sdk": "SDK Mode",
     "settings.history.sdk.path.title": "Chat history path",
@@ -425,6 +525,10 @@ const DEFAULT_SETTINGS = {
   autoStartBridgeLastAttemptAt: 0,
   autoStartBridgeLastResult: "idle",
   autoStartBridgeLastError: "",
+  bridgeManualRuntime: "auto",
+  bridgeProjectRootWindows: "",
+  bridgeProjectRootWsl: "",
+  bridgeWslDistro: "",
   autoSDKLoginGuide: true,
   selfIterationEnabled: false,
   selfIterationFirstSealDone: false,
@@ -434,6 +538,10 @@ const DEFAULT_SETTINGS = {
   playIntroEveryOpen: false,
   showWarningOverlay: true,
   captureButtonWidth: DEFAULT_CAPTURE_BUTTON_WIDTH,
+  captureButtonTopPercent: DEFAULT_CAPTURE_BUTTON_TOP_PERCENT,
+  antigravityBaseUrl: ANTIGRAVITY_DEFAULT_BASE_URL,
+  antigravityToken: "",
+  linkGuardMode: "allow",
   linkAllowlist: [
     "https://github.com/copilot/*",
     "https://github.com/settings/copilot*",
@@ -476,12 +584,27 @@ const state = {
   permissionCountdownTimer: null,
   sdkHealthTimer: null,
   bridgeSectionHealthTimer: null,
+  antigravitySectionHealthTimer: null,
   bridgeAutoStartInFlight: null,
+  bridgeLastProbe: {
+    connected: false,
+    isBridge: false,
+    text: "",
+    detail: "",
+    type: "info",
+    url: "",
+    sdkState: "",
+    service: "",
+    backendType: "",
+    checkedAt: 0,
+  },
   startupLocked: false,
   sdkInputResizeInitialized: false,
   sdkInputResizeDragging: false,
   sdkInputResizeStartY: 0,
   sdkInputResizeStartHeight: 0,
+  identityTemplateLoaded: false,
+  identityUiBound: false,
 };
 
 // ============================================
@@ -614,6 +737,9 @@ async function init() {
   );
   dom.sdkIncludeRules = document.getElementById("sdkIncludeRules");
   dom.sdkIncludeSystemMsg = document.getElementById("sdkIncludeSystemMsg");
+  dom.sdkIncludeSystemMsgItem = document.getElementById(
+    "sdkIncludeSystemMsgItem",
+  );
   dom.sdkStructuredOutput = document.getElementById("sdkStructuredOutput");
   dom.sdkAssistantOnly = document.getElementById("sdkAssistantOnly");
   dom.sdkMemorySummary = document.getElementById("sdkMemorySummary");
@@ -689,6 +815,11 @@ async function init() {
   // History Log tab (Bridge)
   dom.logFileList = document.getElementById("logFileList");
   dom.refreshLogBtn = document.getElementById("refreshLogBtn");
+  dom.logContainerSdk = document.getElementById("logContainerSdk");
+  dom.logContainerIframe = document.getElementById("logContainerIframe");
+  dom.logIframeAgentsToggle = document.getElementById("logIframeAgentsToggle");
+  dom.logIframeAgentsBody = document.getElementById("logIframeAgentsBody");
+  dom.logIframeAgents = document.getElementById("logIframeAgents");
 
   // Settings tab
   dom.settingsTab = document.getElementById("settings-tab");
@@ -717,17 +848,69 @@ async function init() {
   dom.settingCaptureButtonWidth = document.getElementById(
     "settingCaptureButtonWidth",
   );
+  dom.settingCaptureButtonTop = document.getElementById(
+    "settingCaptureButtonTop",
+  );
+  dom.settingLinkGuardMode = document.getElementById("settingLinkGuardMode");
   dom.settingLinkAllowlist = document.getElementById("settingLinkAllowlist");
   dom.captureBtnWidthValue = document.getElementById("captureBtnWidthValue");
+  dom.captureBtnTopValue = document.getElementById("captureBtnTopValue");
   dom.openSdkLoginGuideBtn = document.getElementById("openSdkLoginGuideBtn");
   dom.testSdkBridgeBtn = document.getElementById("testSdkBridgeBtn");
   dom.bridgeInstallStatus = document.getElementById("bridgeInstallStatus");
   dom.bridgeInstallDetail = document.getElementById("bridgeInstallDetail");
+  dom.bridgePrimaryBtn = document.getElementById("bridgePrimaryBtn");
+  dom.settingBridgeProjectRoot = document.getElementById(
+    "settingBridgeProjectRoot",
+  );
+  dom.bridgeProjectRootHint = document.getElementById("bridgeProjectRootHint");
+  dom.settingBridgeWslDistro = document.getElementById(
+    "settingBridgeWslDistro",
+  );
+  dom.bridgeAdvancedToggleBtn = document.getElementById(
+    "bridgeAdvancedToggleBtn",
+  );
+  dom.bridgeAdvancedPanel = document.getElementById("bridgeAdvancedPanel");
+  dom.bridgeInstallCommandPreview = document.getElementById(
+    "bridgeInstallCommandPreview",
+  );
+  dom.bridgeCommandPreview = document.getElementById("bridgeCommandPreview");
+  dom.bridgeLastResultDetail = document.getElementById(
+    "bridgeLastResultDetail",
+  );
+  dom.bridgeDiagnosticPreview = document.getElementById(
+    "bridgeDiagnosticPreview",
+  );
+  dom.bridgeLauncherBadge = document.getElementById("bridgeLauncherBadge");
+  dom.bridgeBridgeBadge = document.getElementById("bridgeBridgeBadge");
+  dom.bridgeRuntimeBadge = document.getElementById("bridgeRuntimeBadge");
+  dom.bridgeAdvancedRuntimeHint = document.getElementById(
+    "bridgeAdvancedRuntimeHint",
+  );
   dom.bridgeCheckBtn = document.getElementById("bridgeCheckBtn");
-  dom.bridgeLaunchBtn = document.getElementById("bridgeLaunchBtn");
+  dom.bridgeCopyInstallBtn = document.getElementById("bridgeCopyInstallBtn");
   dom.bridgeCopyCmdBtn = document.getElementById("bridgeCopyCmdBtn");
   dom.bridgeCopyCheckBtn = document.getElementById("bridgeCopyCheckBtn");
   dom.bridgeStatusDot = document.getElementById("bridgeStatusDot");
+  dom.bridgeRuntimeButtons = Array.from(
+    document.querySelectorAll(".bridge-runtime-btn"),
+  );
+  dom.settingAntigravityBaseUrl = document.getElementById(
+    "settingAntigravityBaseUrl",
+  );
+  dom.settingAntigravityToken = document.getElementById(
+    "settingAntigravityToken",
+  );
+  dom.antigravityInstallStatus = document.getElementById(
+    "antigravityInstallStatus",
+  );
+  dom.antigravityInstallDetail = document.getElementById(
+    "antigravityInstallDetail",
+  );
+  dom.antigravityStatusDot = document.getElementById("antigravityStatusDot");
+  dom.antigravityHealthBtn = document.getElementById("antigravityHealthBtn");
+  dom.antigravityMetaBtn = document.getElementById("antigravityMetaBtn");
+  dom.antigravityDetectBtn = document.getElementById("antigravityDetectBtn");
 
   // SDK login guide modal
   dom.sdkLoginModal = document.getElementById("sdkLoginModal");
@@ -780,6 +963,7 @@ async function init() {
       );
       applySettingsToUI();
       applyCaptureButtonWidth(state.settings.captureButtonWidth);
+      applyCaptureButtonTop(state.settings.captureButtonTopPercent);
       updateSettingsStatus("使用預設設定", "warning");
     })
     .finally(() => {
@@ -904,9 +1088,12 @@ function switchTab(tabId) {
     }
   });
 
-  // Fix iframe bleed-through: hide iframe when not on copilot tab
+  // Keep the iframe document alive while hidden so Copilot can finish rendering
+  // replies even if the user briefly switches to Logs/History during a request.
   if (dom.copilotFrame) {
-    dom.copilotFrame.style.display = tabId === "copilot" ? "" : "none";
+    const isCopilotTab = tabId === "copilot";
+    dom.copilotFrame.style.visibility = isCopilotTab ? "visible" : "hidden";
+    dom.copilotFrame.style.pointerEvents = isCopilotTab ? "" : "none";
   }
   if (tabId === "copilot" && state.detectedMode === "sdk") {
     requestAnimationFrame(() => {
@@ -930,14 +1117,19 @@ function switchTab(tabId) {
     loadLogFiles();
   } else if (tabId === "settings") {
     applySettingsToUI();
-    // Start bridge polling if install helper section is open
+    // Start section polling if the matching settings sections are open.
     const installSection = document.getElementById("settingsSectionInstall");
     if (installSection && !installSection.classList.contains("collapsed")) {
       startBridgeSectionPolling();
     }
+    const providerSection = document.getElementById("settingsSectionProviders");
+    if (providerSection && !providerSection.classList.contains("collapsed")) {
+      startAntigravitySectionPolling();
+    }
   } else {
     // Stop bridge polling when leaving settings tab
     stopBridgeSectionPolling();
+    stopAntigravitySectionPolling();
     disconnectBridgeLogSSE();
   }
 
@@ -1110,6 +1302,27 @@ function normalizeSettings(raw = {}) {
   const uiLanguage = normalizeUiLanguage(
     source.uiLanguage || DEFAULT_SETTINGS.uiLanguage,
   );
+  const bridgeManualRuntime =
+    source.bridgeManualRuntime === "windows" ||
+    source.bridgeManualRuntime === "wsl"
+      ? source.bridgeManualRuntime
+      : "auto";
+  const bridgeProjectRootWindows =
+    typeof source.bridgeProjectRootWindows === "string"
+      ? source.bridgeProjectRootWindows.trim().replace(/[\r\n]+/g, " ").slice(0, 260)
+      : "";
+  const bridgeProjectRootWsl =
+    typeof source.bridgeProjectRootWsl === "string"
+      ? source.bridgeProjectRootWsl.trim().replace(/[\r\n]+/g, " ").slice(0, 320)
+      : "";
+  const bridgeWslDistro =
+    typeof source.bridgeWslDistro === "string"
+      ? source.bridgeWslDistro
+          .trim()
+          .replace(/[\r\n]+/g, " ")
+          .replace(/["`]/g, "")
+          .slice(0, 80)
+      : "";
   const autoStartBridgeCooldownMs = clampBridgeAutoStartCooldownMs(
     source.autoStartBridgeCooldownMs,
   );
@@ -1127,7 +1340,17 @@ function normalizeSettings(raw = {}) {
       ? source.autoStartBridgeLastError.slice(0, 240)
       : "";
   const captureWidth = clampCaptureButtonWidth(source.captureButtonWidth);
-  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist);
+  const captureButtonTopPercent = clampCaptureButtonTopPercent(
+    source.captureButtonTopPercent,
+  );
+  const antigravityBaseUrl = normalizeAntigravityBaseUrl(
+    source.antigravityBaseUrl,
+  );
+  const antigravityToken = normalizeAntigravityToken(source.antigravityToken);
+  const linkGuardMode = source.linkGuardMode === "deny" ? "deny" : "allow";
+  const linkAllowlist = normalizeLinkAllowlist(source.linkAllowlist, {
+    allowEmpty: linkGuardMode === "deny",
+  });
   const rawLastError =
     typeof source.selfIterationLastError === "string"
       ? source.selfIterationLastError.trim()
@@ -1153,6 +1376,10 @@ function normalizeSettings(raw = {}) {
     autoStartBridgeLastAttemptAt,
     autoStartBridgeLastResult,
     autoStartBridgeLastError,
+    bridgeManualRuntime,
+    bridgeProjectRootWindows,
+    bridgeProjectRootWsl,
+    bridgeWslDistro,
     autoSDKLoginGuide: source.autoSDKLoginGuide !== false,
     selfIterationEnabled: source.selfIterationEnabled === true,
     selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
@@ -1162,6 +1389,10 @@ function normalizeSettings(raw = {}) {
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
     captureButtonWidth: captureWidth,
+    captureButtonTopPercent,
+    antigravityBaseUrl,
+    antigravityToken,
+    linkGuardMode,
     linkAllowlist,
     iframeHistoryUrl: source.iframeHistoryUrl || "https://github.com/copilot",
   };
@@ -1175,7 +1406,45 @@ function clampCaptureButtonWidth(value) {
   return Math.min(100, Math.max(2, Math.round(number)));
 }
 
-function normalizeLinkAllowlist(value) {
+function clampCaptureButtonTopPercent(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return DEFAULT_CAPTURE_BUTTON_TOP_PERCENT;
+  }
+  return Math.min(92, Math.max(8, Math.round(number)));
+}
+
+function normalizeAntigravityBaseUrl(value) {
+  try {
+    const parsed = new URL(
+      String(value || ANTIGRAVITY_DEFAULT_BASE_URL).trim() ||
+        ANTIGRAVITY_DEFAULT_BASE_URL,
+    );
+    const protocol = parsed.protocol === "https:" ? "https:" : "http:";
+    const host = String(parsed.hostname || "").toLowerCase();
+    if (host !== "127.0.0.1" && host !== "localhost") {
+      throw new Error("loopback_only");
+    }
+    const port = Number.parseInt(parsed.port || "", 10);
+    const normalizedPort =
+      Number.isInteger(port) && port > 0
+        ? port
+        : protocol === "https:"
+          ? 443
+          : 80;
+    return `${protocol}//${host}:${normalizedPort}`;
+  } catch {
+    return ANTIGRAVITY_DEFAULT_BASE_URL;
+  }
+}
+
+function normalizeAntigravityToken(value) {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, 240);
+}
+
+function normalizeLinkAllowlist(value, options = {}) {
+  const allowEmpty = options.allowEmpty === true;
   const sourceList = Array.isArray(value)
     ? value
     : typeof value === "string"
@@ -1195,11 +1464,13 @@ function normalizeLinkAllowlist(value) {
 
   return normalized.length > 0
     ? normalized
-    : [...DEFAULT_SETTINGS.linkAllowlist];
+    : allowEmpty
+      ? []
+      : [...DEFAULT_SETTINGS.linkAllowlist];
 }
 
-function formatAllowlistForTextarea(list) {
-  const normalized = normalizeLinkAllowlist(list);
+function formatAllowlistForTextarea(list, options = {}) {
+  const normalized = normalizeLinkAllowlist(list, options);
   return normalized.join("\n");
 }
 
@@ -1332,37 +1603,34 @@ async function loadSettings() {
   state.settings = normalizeSettings(result?.[SETTINGS_STORAGE_KEY]);
   applySettingsToUI();
   applyCaptureButtonWidth(state.settings.captureButtonWidth);
+  applyCaptureButtonTop(state.settings.captureButtonTopPercent);
   updateSettingsStatus("設定已載入", "success");
   return state.settings;
 }
 
 async function requestAutoSealFromBridge() {
-  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/auto-seal`;
-  const response = await fetch(endpoint, {
+  const payload = await bridgeJsonRequest("/api/integrity/auto-seal", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ dryRun: false }),
+    body: { dryRun: false },
+    timeoutMs: 12000,
   });
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
+  if (!payload?.success) {
+    throw new Error(payload?.error || "auto-seal failed");
   }
 
   return payload;
 }
 
 async function requestVerifyIntegrityFromBridge() {
-  const endpoint = `http://localhost:${SDK_BRIDGE_PORT}/api/integrity/verify`;
-  const response = await fetch(endpoint, {
+  const payload = await bridgeJsonRequest("/api/integrity/verify", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ timeoutMs: 12_000 }),
+    body: { timeoutMs: 12_000 },
+    timeoutMs: 12000,
   });
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
+  if (!payload?.success) {
+    throw new Error(payload?.error || "verify failed");
   }
 
   return payload;
@@ -1498,6 +1766,7 @@ async function persistSettings(settings, options = {}) {
 
   applySettingsToUI();
   applyCaptureButtonWidth(state.settings.captureButtonWidth);
+  applyCaptureButtonTop(state.settings.captureButtonTopPercent);
 
   if (options.showToast) {
     showToast("設定已儲存");
@@ -1532,6 +1801,14 @@ function applySettingsToUI() {
     dom.settingAutoStartBridge.checked =
       settings.autoStartBridgeEnabled !== false;
   }
+  if (dom.settingBridgeWslDistro) {
+    dom.settingBridgeWslDistro.value = settings.bridgeWslDistro || "";
+    dom.settingBridgeWslDistro.placeholder = BRIDGE_WSL_DISTRO_HINT;
+  }
+  dom.bridgeRuntimeButtons?.forEach((button) => {
+    button.dataset.active =
+      button.dataset.runtime === settings.bridgeManualRuntime ? "true" : "false";
+  });
   if (dom.settingAutoSdkLogin) {
     dom.settingAutoSdkLogin.checked = settings.autoSDKLoginGuide;
   }
@@ -1548,14 +1825,31 @@ function applySettingsToUI() {
   if (dom.settingCaptureButtonWidth) {
     dom.settingCaptureButtonWidth.value = String(settings.captureButtonWidth);
   }
+  if (dom.settingCaptureButtonTop) {
+    dom.settingCaptureButtonTop.value = String(settings.captureButtonTopPercent);
+  }
+  if (dom.settingAntigravityBaseUrl) {
+    dom.settingAntigravityBaseUrl.value = settings.antigravityBaseUrl;
+  }
+  if (dom.settingAntigravityToken) {
+    dom.settingAntigravityToken.value = settings.antigravityToken;
+  }
+  if (dom.settingLinkGuardMode) {
+    dom.settingLinkGuardMode.value = settings.linkGuardMode || "allow";
+  }
   if (dom.settingLinkAllowlist) {
     dom.settingLinkAllowlist.value = formatAllowlistForTextarea(
       settings.linkAllowlist,
+      { allowEmpty: settings.linkGuardMode === "deny" },
     );
   }
   applySettingsI18n(settings.uiLanguage);
   updateCaptureWidthLabel(settings.captureButtonWidth);
+  updateCaptureTopLabel(settings.captureButtonTopPercent);
   updateSelfIterationSealBadge(settings.uiLanguage);
+  setAntigravityInstallDefaultHint(settings.antigravityBaseUrl);
+  setBridgeInstallDefaultHint();
+  refreshBridgeSetupUi();
 
   // Conversation records
   const sdkHistoryPath = document.getElementById("settingSdkHistoryPath");
@@ -1588,6 +1882,10 @@ function collectSettingsFromUI() {
     autoStartBridgeLastResult:
       state.settings?.autoStartBridgeLastResult || "idle",
     autoStartBridgeLastError: state.settings?.autoStartBridgeLastError || "",
+    bridgeManualRuntime: state.settings?.bridgeManualRuntime || "auto",
+    bridgeProjectRootWindows: state.settings?.bridgeProjectRootWindows || "",
+    bridgeProjectRootWsl: state.settings?.bridgeProjectRootWsl || "",
+    bridgeWslDistro: dom.settingBridgeWslDistro?.value || "",
     autoSDKLoginGuide: !!dom.settingAutoSdkLogin?.checked,
     selfIterationEnabled: !!dom.settingSelfIterationEnabled?.checked,
     selfIterationFirstSealDone:
@@ -1599,6 +1897,10 @@ function collectSettingsFromUI() {
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
     captureButtonWidth: dom.settingCaptureButtonWidth?.value,
+    captureButtonTopPercent: dom.settingCaptureButtonTop?.value,
+    antigravityBaseUrl: dom.settingAntigravityBaseUrl?.value,
+    antigravityToken: dom.settingAntigravityToken?.value,
+    linkGuardMode: dom.settingLinkGuardMode?.value,
     linkAllowlist: dom.settingLinkAllowlist?.value,
     iframeHistoryUrl: document.getElementById("settingIframeHistoryUrl")?.value,
   });
@@ -1611,6 +1913,11 @@ function getDefaultIdentityTemplate() {
 }
 
 async function loadIdentityTemplate() {
+  if (state.identityTemplateLoaded) {
+    updateIdentityPreview();
+    return;
+  }
+
   // Render module chips
   if (dom.identityModuleChips) {
     dom.identityModuleChips.innerHTML = IDENTITY_MODULES.map(
@@ -1643,12 +1950,16 @@ async function loadIdentityTemplate() {
   });
   const template = stored || getDefaultIdentityTemplate();
   if (dom.identityEditor) dom.identityEditor.value = template;
+  state.identityTemplateLoaded = true;
   updateIdentityPreview();
 
   // Wire events
-  dom.identityEditor?.addEventListener("input", updateIdentityPreview);
-  dom.identitySaveBtn?.addEventListener("click", saveIdentityTemplate);
-  dom.identityResetBtn?.addEventListener("click", resetIdentityTemplate);
+  if (!state.identityUiBound) {
+    dom.identityEditor?.addEventListener("input", updateIdentityPreview);
+    dom.identitySaveBtn?.addEventListener("click", saveIdentityTemplate);
+    dom.identityResetBtn?.addEventListener("click", resetIdentityTemplate);
+    state.identityUiBound = true;
+  }
 }
 
 function updateIdentityPreview() {
@@ -1712,6 +2023,15 @@ function updateCaptureWidthLabel(width) {
     normalized < 20 ? `${normalized}px (僅色塊)` : `${normalized}px`;
 }
 
+function updateCaptureTopLabel(value) {
+  if (!dom.captureBtnTopValue) return;
+  const normalized = clampCaptureButtonTopPercent(value);
+  const isEnglish = getCurrentUiLanguage() === UI_LANGUAGE_EN;
+  dom.captureBtnTopValue.textContent = isEnglish
+    ? `Current: ${normalized}%`
+    : `目前：${normalized}%`;
+}
+
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
   document.documentElement.style.setProperty(
@@ -1737,6 +2057,14 @@ function applyCaptureButtonWidth(width) {
   );
 }
 
+function applyCaptureButtonTop(value) {
+  const normalized = clampCaptureButtonTopPercent(value);
+  document.documentElement.style.setProperty(
+    "--capture-button-top",
+    `${normalized}%`,
+  );
+}
+
 async function saveSettings() {
   const nextSettings = collectSettingsFromUI();
   await persistSettings(nextSettings, { showToast: true });
@@ -1755,6 +2083,7 @@ async function persistSettingsPatch(partial = {}) {
   });
   await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: next });
   state.settings = next;
+  refreshBridgeSetupUi();
   return next;
 }
 
@@ -1762,18 +2091,590 @@ function getBridgeHealthUrl(port = SDK_BRIDGE_PORT) {
   return `http://localhost:${port}/health`;
 }
 
-function buildBridgeStartCommands() {
-  const lines = [
-    `cd /d "${BRIDGE_WORKDIR_HINT}"`,
+function getBridgeAutoStartProtocolUrl() {
+  const params = new URLSearchParams({
+    source: "sidepilot-extension",
+    v: "1",
+  });
+  if (chrome?.runtime?.id) {
+    params.set("ext", chrome.runtime.id);
+  }
+  return `${BRIDGE_AUTO_START_PROTOCOL_BASE}?${params.toString()}`;
+}
+
+async function sendBridgeRuntimeMessage(payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(payload, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve(response || null);
+    });
+  });
+}
+
+async function bridgeJsonRequest(path, options = {}) {
+  const response = await sendBridgeRuntimeMessage({
+    action: "bridgeRequest",
+    port: Number(options.port) || SDK_BRIDGE_PORT,
+    path,
+    method: options.method || "GET",
+    body: options.body,
+    timeoutMs: options.timeoutMs || 5000,
+    requireAuth: options.requireAuth !== false,
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.error || `Bridge request failed: ${path}`);
+  }
+
+  return response.data;
+}
+
+async function getBridgeAuthToken(options = {}) {
+  const response = await sendBridgeRuntimeMessage({
+    action: "bridgeAuthBootstrap",
+    port: Number(options.port) || SDK_BRIDGE_PORT,
+    timeoutMs: options.timeoutMs || 2500,
+    forceRefresh: options.forceRefresh === true,
+  });
+
+  if (!response?.success || !response?.token) {
+    throw new Error(response?.error || "Bridge auth bootstrap failed");
+  }
+
+  return response.token;
+}
+
+async function createAuthorizedBridgeEventSource(path, options = {}) {
+  const token = await getBridgeAuthToken({
+    port: options.port,
+    timeoutMs: options.timeoutMs,
+    forceRefresh: options.forceRefresh,
+  });
+  const url = new URL(`http://localhost:${Number(options.port) || SDK_BRIDGE_PORT}${path}`);
+  url.searchParams.set("token", token);
+  return new EventSource(url.toString());
+}
+
+function normalizeBridgeManualRuntime(value) {
+  return value === "windows" || value === "wsl" ? value : "auto";
+}
+
+function inferBridgeManualRuntime() {
+  const settings = normalizeSettings(state.settings);
+  if (settings.bridgeProjectRootWindows && !settings.bridgeProjectRootWsl) {
+    return "windows";
+  }
+  if (settings.bridgeProjectRootWsl && !settings.bridgeProjectRootWindows) {
+    return "wsl";
+  }
+  if (/runtime=wsl|\/mnt\//i.test(settings.autoStartBridgeLastError || "")) {
+    return "wsl";
+  }
+  return "windows";
+}
+
+function getEffectiveBridgeRuntime(value = state.settings?.bridgeManualRuntime) {
+  const normalized = normalizeBridgeManualRuntime(value);
+  return normalized === "auto" ? inferBridgeManualRuntime() : normalized;
+}
+
+function getBridgeProjectRootHintWsl() {
+  return BRIDGE_WORKDIR_HINT_WSL.replace(/\/scripts\/copilot-bridge$/i, "");
+}
+
+function convertWslPathToWindowsPath(value = "") {
+  const matched = String(value).match(/^\/mnt\/([a-zA-Z])\/(.+)$/);
+  if (!matched) return "";
+  return `${matched[1].toUpperCase()}:\\${matched[2].replace(/\//g, "\\")}`;
+}
+
+function getBridgeWindowsWorkdirHint() {
+  return convertWslPathToWindowsPath(BRIDGE_WORKDIR_HINT_WSL) || BRIDGE_WORKDIR_HINT;
+}
+
+function getBridgeProjectRootHintWindows() {
+  return getBridgeWindowsWorkdirHint().replace(/[\\/]scripts[\\/]copilot-bridge$/i, "");
+}
+
+function getBridgeInstallScriptHintWindows(runtime = getEffectiveBridgeRuntime()) {
+  if (runtime === "wsl") {
+    const convertedRoot = convertWslPathToWindowsPath(getBridgeProjectRootHintWsl());
+    if (convertedRoot) {
+      return `${convertedRoot}\\scripts\\bridge-launcher\\windows\\install-launcher.ps1`;
+    }
+  }
+  return `${getBridgeProjectRootHintWindows()}\\scripts\\bridge-launcher\\windows\\install-launcher.ps1`;
+}
+
+function getBridgeProjectRootPlaceholderWindows() {
+  return "C:\\path\\to\\SidePilot";
+}
+
+function getBridgeProjectRootPlaceholderWsl() {
+  return "/path/to/SidePilot";
+}
+
+function getConfiguredBridgeProjectRoot(runtime = getEffectiveBridgeRuntime()) {
+  const settings = normalizeSettings(state.settings);
+  return runtime === "wsl"
+    ? settings.bridgeProjectRootWsl || ""
+    : settings.bridgeProjectRootWindows || "";
+}
+
+function getBridgeProjectRootTemplateValue(runtime = getEffectiveBridgeRuntime()) {
+  const configured = getConfiguredBridgeProjectRoot(runtime);
+  if (configured) return configured;
+  return runtime === "wsl"
+    ? getBridgeProjectRootPlaceholderWsl()
+    : getBridgeProjectRootPlaceholderWindows();
+}
+
+function getBridgeProjectRootSettingsPatch(runtime, value) {
+  const cleaned = String(value || "").trim().replace(/[\r\n]+/g, " ");
+  if (runtime === "wsl") {
+    return { bridgeProjectRootWsl: cleaned.slice(0, 320) };
+  }
+  return { bridgeProjectRootWindows: cleaned.slice(0, 260) };
+}
+
+function getConfiguredBridgeWslDistro() {
+  const settings = normalizeSettings(state.settings);
+  return settings.bridgeWslDistro || "";
+}
+
+function buildBridgeWslDistroArg() {
+  const distro = getConfiguredBridgeWslDistro();
+  return distro ? ` -WslDistro "${distro}"` : "";
+}
+
+function getBridgeProjectRootHintText(runtime = getEffectiveBridgeRuntime(), language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  if (runtime === "wsl") {
+    return isEnglish
+      ? "Enter the Linux repo root. Quick Setup and manual start commands will reuse this path in bash."
+      : "填入 Linux 內的 SidePilot repo 根目錄；Quick Setup 與手動啟動指令會以 bash 重用這個路徑。";
+  }
+  return isEnglish
+    ? "Enter the Windows repo root. Quick Setup and manual start commands will reuse this path in PowerShell."
+    : "填入 Windows 內的 SidePilot repo 根目錄；Quick Setup 與手動啟動指令會以 PowerShell 重用這個路徑。";
+}
+
+function getBridgeCommandShellLabel(runtime, language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  if (runtime === "wsl") {
+    return isEnglish ? "bash" : "bash";
+  }
+  return isEnglish ? "PowerShell" : "PowerShell";
+}
+
+function buildBridgeInstallCommand(runtime = getEffectiveBridgeRuntime()) {
+  if (runtime === "wsl") {
+    return [
+      "# Replace SIDEPILOT_ROOT with your local SidePilot repo path once",
+      "# Quick Setup will install user-local nvm + Node 24 in the selected/default WSL distro if needed",
+      `export SIDEPILOT_ROOT="${getBridgeProjectRootTemplateValue("wsl")}"`,
+      'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$(wslpath -w "${SIDEPILOT_ROOT}/scripts/bridge-launcher/windows/bootstrap-bridge.ps1")" -ProjectRoot "${SIDEPILOT_ROOT}" -Runtime wsl -WslBridgeDir "${SIDEPILOT_ROOT}/scripts/copilot-bridge"' +
+        buildBridgeWslDistroArg(),
+    ].join("\n");
+  }
+
+  return [
+    "# Replace SIDEPILOT_ROOT with your local SidePilot repo path once",
+    `$env:SIDEPILOT_ROOT = "${getBridgeProjectRootTemplateValue("windows")}"`,
+    '& powershell -NoProfile -ExecutionPolicy Bypass -File "$env:SIDEPILOT_ROOT\\scripts\\bridge-launcher\\windows\\bootstrap-bridge.ps1" -ProjectRoot "$env:SIDEPILOT_ROOT" -Runtime windows',
+  ].join("\n");
+}
+
+function buildBridgeStartCommands(runtime = getEffectiveBridgeRuntime()) {
+  const extensionId = chrome?.runtime?.id || "";
+  if (runtime === "windows") {
+    return [
+      "# Paste into PowerShell",
+      "# Replace SIDEPILOT_ROOT with your local SidePilot repo path once",
+      `$env:SIDEPILOT_ROOT = "${getBridgeProjectRootTemplateValue("windows")}"`,
+      'Set-Location "$env:SIDEPILOT_ROOT\\scripts\\copilot-bridge"',
+      '$node24Dir = $null',
+      'if (Test-Path "$env:LOCALAPPDATA\\Programs\\nodejs\\node.exe") { $node24Dir = "$env:LOCALAPPDATA\\Programs\\nodejs" }',
+      'if (-not $node24Dir -and (Test-Path "$env:ProgramFiles\\nodejs\\node.exe")) { $node24Dir = "$env:ProgramFiles\\nodejs" }',
+      'if (-not $node24Dir) {',
+      "  $programFilesX86 = [Environment]::GetEnvironmentVariable('ProgramFiles(x86)')",
+      '  if ($programFilesX86 -and (Test-Path (Join-Path $programFilesX86 "nodejs\\node.exe"))) {',
+      '    $node24Dir = (Join-Path $programFilesX86 "nodejs")',
+      "  }",
+      "}",
+      'if ($node24Dir) { $env:PATH = "$node24Dir;$env:PATH" }',
+      extensionId
+        ? `$env:SIDEPILOT_EXTENSION_ID = "${extensionId}"`
+        : "# SIDEPILOT_EXTENSION_ID is unavailable in this context",
+      "node -v",
+      `node -e "const v=parseInt(process.versions.node.split('.')[0],10); if (!Number.isFinite(v) || v < 24) { console.error('Node.js 24+ required. Install Node 24+ and reopen PowerShell.'); process.exit(1); }"`,
+      "npm install",
+      "npm run start",
+    ].join("\n");
+  }
+
+  return [
+    "# Replace SIDEPILOT_ROOT with your local SidePilot repo path once",
+    `export SIDEPILOT_ROOT="${getBridgeProjectRootTemplateValue("wsl")}"`,
+    'cd "${SIDEPILOT_ROOT}/scripts/copilot-bridge"',
+    extensionId
+      ? `export SIDEPILOT_EXTENSION_ID=${extensionId}`
+      : "# SIDEPILOT_EXTENSION_ID is unavailable in this context",
+    "node -v",
+    `node -e "const v=parseInt(process.versions.node.split('.')[0],10); if (!Number.isFinite(v) || v < 24) { console.error('Node.js 24+ required. Run Quick Setup first, or run: nvm install 24 && nvm use 24'); process.exit(1); }"`,
     "npm install",
-    "npm run dev",
-  ];
-  return lines.join("\n");
+    "npm run start",
+  ].join("\n");
 }
 
 function buildBridgeCheckCommand(port = SDK_BRIDGE_PORT) {
   const url = getBridgeHealthUrl(port);
   return `powershell -Command "Invoke-RestMethod ${url}"`;
+}
+
+function getBridgeRuntimeLabel(runtime = getEffectiveBridgeRuntime(), language = getCurrentUiLanguage()) {
+  const effective = runtime === "auto" ? getEffectiveBridgeRuntime(runtime) : runtime;
+  const isEnglish = language === UI_LANGUAGE_EN;
+  if (effective === "windows") {
+    return isEnglish ? "Windows" : "Windows";
+  }
+  if (effective === "wsl") {
+    return "WSL";
+  }
+  return isEnglish ? "Auto" : "自動";
+}
+
+function getBridgeLauncherConfigHint(language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  return isEnglish
+    ? "Changing repo root, runtime, or WSL distro updates the copied commands only. Re-run Quick Setup so sidepilot:// auto-start uses the same settings."
+    : "變更 repo root、runtime 或 WSL distro 只會更新複製出的指令；若要讓 sidepilot:// 自動啟動跟著更新，請重新執行 Quick Setup。";
+}
+
+function buildBridgeDiagnostics(runtime = getEffectiveBridgeRuntime(), language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  const settings = normalizeSettings(state.settings);
+  const probe = state.bridgeLastProbe || {};
+  const root = getConfiguredBridgeProjectRoot(runtime);
+  const distro = getConfiguredBridgeWslDistro();
+  const lastError = String(settings.autoStartBridgeLastError || "");
+  const lines = [];
+
+  lines.push(
+    isEnglish
+      ? `Runtime: ${getBridgeRuntimeLabel(runtime, language)} | Shell: ${getBridgeCommandShellLabel(runtime, language)}`
+      : `Runtime: ${getBridgeRuntimeLabel(runtime, language)} | Shell: ${getBridgeCommandShellLabel(runtime, language)}`,
+  );
+  lines.push(
+    isEnglish
+      ? `Repo root: ${root || "(not set; commands still use placeholder path)"}`
+      : `Repo root: ${root || "（尚未設定，複製指令仍會使用 placeholder 路徑）"}`,
+  );
+  if (runtime === "wsl") {
+    lines.push(
+      isEnglish
+        ? `WSL distro: ${distro || "(default distro)"}`
+        : `WSL distro: ${distro || "（預設 distro）"}`,
+    );
+  }
+
+  if (probe.connected) {
+    lines.push(
+      isEnglish
+        ? `Bridge probe: healthy${probe.backendType ? ` | backend=${probe.backendType}` : ""}${probe.sdkState ? ` | sdk=${probe.sdkState}` : ""}`
+        : `Bridge probe: healthy${probe.backendType ? ` | backend=${probe.backendType}` : ""}${probe.sdkState ? ` | sdk=${probe.sdkState}` : ""}`,
+    );
+    lines.push(
+      isEnglish
+        ? "Diagnosis: current launch path is working."
+        : "診斷：目前啟動鏈路可正常工作。",
+    );
+    return lines.join("\n");
+  }
+
+  if (!root) {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: repo root is empty, so copied commands still contain a placeholder path."
+        : "可能阻塞點：repo root 尚未填入，複製出的指令仍包含 placeholder 路徑。",
+    );
+  }
+
+  if (probe.text) {
+    lines.push(
+      isEnglish
+        ? `Latest probe: ${probe.text}${probe.detail ? ` | ${probe.detail}` : ""}`
+        : `最近 probe：${probe.text}${probe.detail ? ` | ${probe.detail}` : ""}`,
+    );
+  }
+
+  if (/BRG-AUTO-001/i.test(lastError)) {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: sidepilot:// launcher is unavailable or the browser/OS blocked the protocol handoff. Re-run Quick Setup and confirm the protocol prompt."
+        : "可能阻塞點：sidepilot:// 啟動器不可用，或被瀏覽器 / 系統擋下。請重新執行 Quick Setup，並確認協定喚起提示有放行。",
+    );
+  }
+  if (/LCH-003|Bridge directory not found|WSL bridge directory not found/i.test(lastError)) {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: launcher is still pointing at an old repo path/runtime. Re-run Quick Setup after updating repo root/runtime/WSL distro."
+        : "可能阻塞點：launcher 還指向舊的 repo 路徑或 runtime。更新 repo root/runtime/WSL distro 後，請重新執行 Quick Setup。",
+    );
+  }
+  if (/LCH-004|Node\.js v?24\+|Install Node\.js 24/i.test(lastError)) {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: Node.js 24+ is missing in the selected runtime."
+        : "可能阻塞點：所選 runtime 缺少 Node.js 24+。",
+    );
+  }
+  if (/BRG-AUTO-002|LCH-005|timeout/i.test(lastError)) {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: the launcher ran, but the bridge never became healthy. Check npm install/build output, Copilot CLI login, and whether another process is holding port 31031."
+        : "可能阻塞點：launcher 已執行，但 bridge 沒有進入 healthy。請檢查 npm install/build 輸出、Copilot CLI 登入狀態，以及是否有其他程序佔用 31031。",
+    );
+  }
+  if (probe.text === "不是 SidePilot Bridge") {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: another service is already listening on port 31031."
+        : "可能阻塞點：目前有其他服務佔用了 31031。",
+    );
+  }
+  if (probe.text === "Bridge 未啟動或版本不符") {
+    lines.push(
+      isEnglish
+        ? "Likely blocker: the process on port 31031 is not exposing the current SidePilot Bridge endpoints."
+        : "可能阻塞點：31031 上的程序不是目前版本的 SidePilot Bridge，或端點不相容。",
+    );
+  }
+  if (runtime === "windows") {
+    lines.push(
+      isEnglish
+        ? "Windows note: copied commands are now PowerShell commands. Pasting them into cmd.exe will not work as-is."
+        : "Windows 提醒：目前複製出的指令是 PowerShell 版本，直接貼進 cmd.exe 不會正常執行。",
+    );
+  }
+  if (runtime === "wsl" && !distro) {
+    lines.push(
+      isEnglish
+        ? "WSL note: Quick Setup uses the default distro when WSL distro is left empty. If that is not the right distro, fill in the exact distro name first."
+        : "WSL 提醒：若 WSL distro 留空，Quick Setup 會使用預設 distro。若預設不是你要的環境，請先填入正確的 distro 名稱。",
+    );
+  }
+  if (runtime === "wsl" && distro) {
+    lines.push(
+      isEnglish
+        ? `WSL note: Quick Setup and sidepilot:// launcher will target distro "${distro}" after Quick Setup is re-run.`
+        : `WSL 提醒：重新執行 Quick Setup 後，Quick Setup 與 sidepilot:// launcher 會改用 distro "${distro}"。`,
+    );
+  }
+
+  if (!lastError && !probe.text) {
+    lines.push(
+      isEnglish
+        ? "Diagnosis: no recent launcher/probe error yet. Run Quick Setup or click Check Again to collect a concrete failure."
+        : "診斷：目前還沒有最近一次 launcher/probe 失敗資訊。請先執行 Quick Setup，或按一次「重新檢查」收集具體錯誤。",
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function getBridgeBadgeModel(kind, language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  switch (kind) {
+    case "ready":
+      return { text: isEnglish ? "Ready" : "就緒", type: "success" };
+    case "starting":
+      return { text: isEnglish ? "Starting" : "啟動中", type: "warning" };
+    case "warning":
+      return { text: isEnglish ? "Check" : "需檢查", type: "warning" };
+    case "offline":
+      return { text: isEnglish ? "Offline" : "離線", type: "error" };
+    case "install":
+      return { text: isEnglish ? "Not Installed" : "未安裝", type: "warning" };
+    case "manual":
+      return { text: isEnglish ? "Manual" : "手動", type: "info" };
+    default:
+      return { text: isEnglish ? "Unknown" : "未知", type: "info" };
+  }
+}
+
+function extractBridgeStatusCode(value = "") {
+  const matched = String(value).match(/(BRG-AUTO-\d{3}|LCH-\d{3})/);
+  return matched ? matched[1] : "";
+}
+
+function formatBridgeAutoStartSummary(language = getCurrentUiLanguage()) {
+  const isEnglish = language === UI_LANGUAGE_EN;
+  const settings = normalizeSettings(state.settings);
+  const code = extractBridgeStatusCode(settings.autoStartBridgeLastError);
+  if (state.bridgeAutoStartInFlight || settings.autoStartBridgeLastResult === "launching") {
+    return {
+      label: isEnglish ? "Launcher is starting the bridge." : "啟動器正在喚起 Bridge。",
+      detail: isEnglish
+        ? `Auto-start in progress via ${getBridgeRuntimeLabel(settings.bridgeManualRuntime, language)}`
+        : `目前使用 ${getBridgeRuntimeLabel(settings.bridgeManualRuntime, language)} 路徑自動啟動`,
+      launcherKind: "starting",
+    };
+  }
+  if (settings.autoStartBridgeLastResult === "ready") {
+    return {
+      label: isEnglish ? "Launcher succeeded last time." : "上次自動啟動成功。",
+      detail: isEnglish ? "sidepilot:// launcher responded and the bridge became healthy." : "sidepilot:// 啟動器已成功帶起 Bridge。",
+      launcherKind: "ready",
+    };
+  }
+  if (code === "BRG-AUTO-001") {
+    return {
+      label: isEnglish ? "Launcher unavailable or blocked." : "啟動器不可用或被瀏覽器阻擋。",
+      detail: settings.autoStartBridgeLastError || "-",
+      launcherKind: "install",
+    };
+  }
+  if (code === "BRG-AUTO-002") {
+    return {
+      label: isEnglish ? "Launcher responded, but bridge startup timed out." : "啟動器已觸發，但 Bridge 啟動逾時。",
+      detail: settings.autoStartBridgeLastError || "-",
+      launcherKind: "warning",
+    };
+  }
+  if (code === "BRG-AUTO-003") {
+    return {
+      label: isEnglish ? "Auto-start cooldown is active." : "自動啟動冷卻中。",
+      detail: settings.autoStartBridgeLastError || "-",
+      launcherKind: "warning",
+    };
+  }
+  return {
+    label: isEnglish ? "Launcher state is unknown." : "尚未確認啟動器狀態。",
+    detail: isEnglish
+      ? "Use the primary action to try auto-start or copy the Quick Setup command."
+      : "可先嘗試自動啟動，或複製 Quick Setup 指令。",
+    launcherKind: "unknown",
+  };
+}
+
+function refreshBridgeSetupUi() {
+  const language = getCurrentUiLanguage();
+  const isEnglish = language === UI_LANGUAGE_EN;
+  const settings = normalizeSettings(state.settings);
+  const runtime = getEffectiveBridgeRuntime(settings.bridgeManualRuntime);
+  const summary = formatBridgeAutoStartSummary(language);
+  const bridgeProbe = state.bridgeLastProbe || {};
+
+  let bridgeKind = "offline";
+  if (bridgeProbe.connected) {
+    bridgeKind = "ready";
+  } else if (state.bridgeAutoStartInFlight || settings.autoStartBridgeLastResult === "launching") {
+    bridgeKind = "starting";
+  }
+
+  const launcherBadge = getBridgeBadgeModel(summary.launcherKind, language);
+  const bridgeBadge = getBridgeBadgeModel(bridgeKind, language);
+
+  if (dom.bridgeLauncherBadge) {
+    dom.bridgeLauncherBadge.textContent = `${isEnglish ? "Launcher" : "Launcher"}: ${launcherBadge.text}`;
+    dom.bridgeLauncherBadge.dataset.status = launcherBadge.type;
+  }
+  if (dom.bridgeBridgeBadge) {
+    dom.bridgeBridgeBadge.textContent = `${isEnglish ? "Bridge" : "Bridge"}: ${bridgeBadge.text}`;
+    dom.bridgeBridgeBadge.dataset.status = bridgeBadge.type;
+  }
+  if (dom.bridgeRuntimeBadge) {
+    dom.bridgeRuntimeBadge.textContent = `${isEnglish ? "Runtime" : "Runtime"}: ${getBridgeRuntimeLabel(runtime, language)}`;
+    dom.bridgeRuntimeBadge.dataset.status = runtime === "wsl" ? "warning" : "info";
+  }
+
+  if (dom.bridgeAdvancedRuntimeHint) {
+    dom.bridgeAdvancedRuntimeHint.textContent = isEnglish
+      ? `Showing ${getBridgeCommandShellLabel(runtime, language)} commands for ${getBridgeRuntimeLabel(runtime, language)}. ${getBridgeLauncherConfigHint(language)}`
+      : `目前顯示 ${getBridgeRuntimeLabel(runtime, language)} 路徑的 ${getBridgeCommandShellLabel(runtime, language)} 安裝與手動啟動指令。${getBridgeLauncherConfigHint(language)}`;
+  }
+  if (dom.bridgeProjectRootHint) {
+    dom.bridgeProjectRootHint.textContent = getBridgeProjectRootHintText(
+      runtime,
+      language,
+    );
+  }
+  if (dom.settingBridgeProjectRoot) {
+    const configuredRoot = getConfiguredBridgeProjectRoot(runtime);
+    if (document.activeElement !== dom.settingBridgeProjectRoot) {
+      dom.settingBridgeProjectRoot.value = configuredRoot;
+    }
+    dom.settingBridgeProjectRoot.placeholder =
+      runtime === "wsl"
+        ? getBridgeProjectRootPlaceholderWsl()
+        : getBridgeProjectRootPlaceholderWindows();
+  }
+  if (dom.bridgeInstallCommandPreview) {
+    dom.bridgeInstallCommandPreview.value = buildBridgeInstallCommand(runtime);
+  }
+  if (dom.bridgeCommandPreview) {
+    dom.bridgeCommandPreview.value = buildBridgeStartCommands(runtime);
+  }
+  if (dom.bridgeLastResultDetail) {
+    dom.bridgeLastResultDetail.textContent = `${summary.label}\n${summary.detail || "-"}`;
+  }
+  if (dom.bridgeDiagnosticPreview) {
+    dom.bridgeDiagnosticPreview.value = buildBridgeDiagnostics(runtime, language);
+  }
+
+  const advancedOpen = dom.bridgeAdvancedPanel && !dom.bridgeAdvancedPanel.classList.contains("hidden");
+  if (dom.bridgeAdvancedToggleBtn) {
+    dom.bridgeAdvancedToggleBtn.textContent = advancedOpen
+      ? translateSettingsKey("settings.bridge.advanced.hide", language)
+      : translateSettingsKey("settings.bridge.advanced.show", language);
+    dom.bridgeAdvancedToggleBtn.setAttribute(
+      "aria-expanded",
+      advancedOpen ? "true" : "false",
+    );
+  }
+
+  let primaryKey = "settings.bridge.primary.start";
+  let primaryDisabled = false;
+  if (state.bridgeAutoStartInFlight || settings.autoStartBridgeLastResult === "launching") {
+    primaryKey = "settings.bridge.primary.starting";
+    primaryDisabled = true;
+  } else if (bridgeProbe.connected) {
+    primaryKey = "settings.bridge.primary.ready";
+  } else if (summary.launcherKind === "install") {
+    primaryKey = "settings.bridge.primary.install";
+  } else if (
+    settings.autoStartBridgeLastResult === "failed" &&
+    settings.autoStartBridgeLastError
+  ) {
+    primaryKey = "settings.bridge.primary.retry";
+  }
+
+  if (dom.bridgePrimaryBtn) {
+    dom.bridgePrimaryBtn.textContent = translateSettingsKey(primaryKey, language);
+    dom.bridgePrimaryBtn.disabled = primaryDisabled;
+    dom.bridgePrimaryBtn.dataset.action =
+      primaryKey === "settings.bridge.primary.install"
+        ? "copy-install"
+        : bridgeProbe.connected
+          ? "check"
+          : "start";
+  }
+
+  dom.bridgeRuntimeButtons?.forEach((button) => {
+    button.dataset.active =
+      button.dataset.runtime === settings.bridgeManualRuntime ? "true" : "false";
+    const runtimeLabel =
+      button.dataset.runtime === "windows"
+        ? translateSettingsKey("settings.bridge.runtime.windows", language)
+        : button.dataset.runtime === "wsl"
+          ? translateSettingsKey("settings.bridge.runtime.wsl", language)
+          : translateSettingsKey("settings.bridge.runtime.auto", language);
+    button.textContent = runtimeLabel;
+  });
 }
 
 function isBridgeAutoStartCoolingDown(settings = state.settings) {
@@ -1794,7 +2695,7 @@ async function triggerBridgeLauncherProtocol(options = {}) {
   try {
     const response = await chrome.runtime.sendMessage({
       action: "openExternalLink",
-      url: BRIDGE_AUTO_START_PROTOCOL_URL,
+      url: getBridgeAutoStartProtocolUrl(),
     });
     if (!response?.success) {
       throw new Error(response?.error || "openExternalLink failed");
@@ -1963,15 +2864,173 @@ function setBridgeInstallStatus(statusText, detailText, type = "info") {
   if (dom.bridgeInstallDetail) {
     dom.bridgeInstallDetail.textContent = detailText || "-";
   }
+  refreshBridgeSetupUi();
 }
 
 function setBridgeInstallDefaultHint() {
   if (!dom.bridgeInstallStatus || !dom.bridgeInstallDetail) return;
+  const runtime = getEffectiveBridgeRuntime();
+  const installHint = formatBridgeAutoStartSummary().label;
   if (
     !dom.bridgeInstallStatus.textContent ||
     dom.bridgeInstallStatus.textContent === "尚未檢查"
   ) {
-    dom.bridgeInstallDetail.textContent = `啟動目錄: ${BRIDGE_WORKDIR_HINT}`;
+    dom.bridgeInstallDetail.textContent =
+      `${installHint} | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
+  }
+  refreshBridgeSetupUi();
+}
+
+let _lastAntigravityStatus = { text: "", detail: "", type: "" };
+
+function getAntigravityProbeConfig() {
+  return {
+    baseUrl: normalizeAntigravityBaseUrl(
+      dom.settingAntigravityBaseUrl?.value || state.settings?.antigravityBaseUrl,
+    ),
+    token: normalizeAntigravityToken(
+      dom.settingAntigravityToken?.value || state.settings?.antigravityToken,
+    ),
+  };
+}
+
+function setAntigravityInstallStatus(statusText, detailText, type = "info") {
+  if (!dom.antigravityInstallStatus) return;
+
+  if (
+    _lastAntigravityStatus.text === statusText &&
+    _lastAntigravityStatus.detail === detailText &&
+    _lastAntigravityStatus.type === type
+  ) {
+    return;
+  }
+  _lastAntigravityStatus = { text: statusText, detail: detailText, type };
+
+  dom.antigravityInstallStatus.textContent = statusText;
+  dom.antigravityInstallStatus.dataset.status = type;
+  if (dom.antigravityStatusDot) {
+    dom.antigravityStatusDot.dataset.status = type;
+  }
+  if (dom.antigravityInstallDetail) {
+    dom.antigravityInstallDetail.textContent = detailText || "-";
+  }
+}
+
+function setAntigravityInstallDefaultHint(baseUrl = state.settings?.antigravityBaseUrl) {
+  if (!dom.antigravityInstallStatus || !dom.antigravityInstallDetail) return;
+  if (
+    !dom.antigravityInstallStatus.textContent ||
+    dom.antigravityInstallStatus.textContent === "尚未檢查"
+  ) {
+    const normalizedBaseUrl = normalizeAntigravityBaseUrl(baseUrl);
+    dom.antigravityInstallDetail.textContent =
+      `預設探測：${normalizedBaseUrl}/health`;
+  }
+}
+
+function formatAntigravityProbeDetail(payload, fallbackBaseUrl) {
+  const bridge = payload?.bridge || {};
+  const config = payload?.config || {};
+  const parts = [bridge.url || fallbackBaseUrl];
+
+  if (bridge.status) parts.push(`bridge: ${bridge.status}`);
+  if (bridge.port) parts.push(`port: ${bridge.port}`);
+  if (bridge.serviceLabel) parts.push(`service: ${bridge.serviceLabel}`);
+  if (typeof bridge.chatReady === "boolean") {
+    parts.push(bridge.chatReady ? "chatReady: yes" : "chatReady: no");
+  }
+  if (config.serviceUrl) parts.push(`runtime: ${config.serviceUrl}`);
+  if (config.languageServerUrl) parts.push("ls: ready");
+
+  return parts.filter(Boolean).join(" | ");
+}
+
+async function runAntigravityProviderProbe(probe = "health", options = {}) {
+  const { baseUrl, token } = getAntigravityProbeConfig();
+  const toastEnabled = options.showToast === true;
+  const normalizedProbe = String(probe || "health").toLowerCase();
+
+  if (
+    normalizedProbe !== "health" &&
+    !token &&
+    toastEnabled
+  ) {
+    const detail = `${baseUrl} | 需要 Bearer token`;
+    setAntigravityInstallStatus("請先輸入 Bridge Token", detail, "warning");
+    showToast("Antigravity 進階探測需要 Bridge Token", "warning");
+    return { success: false, requiresAuth: true, baseUrl };
+  }
+
+  if (toastEnabled) {
+    setAntigravityInstallStatus(
+      "探測中...",
+      `${baseUrl} | ${normalizedProbe}`,
+      "warning",
+    );
+  }
+
+  try {
+    const response = await chrome.runtime.sendMessage({
+      action: "antigravityProbe",
+      probe: normalizedProbe,
+      baseUrl,
+      token,
+      timeoutMs: 3500,
+    });
+
+    if (response?.success && response?.isAntigravity) {
+      const detail = formatAntigravityProbeDetail(response.data, baseUrl);
+      const chatReady = response?.data?.bridge?.chatReady === true;
+      const statusText =
+        normalizedProbe === "health"
+          ? chatReady
+            ? "Antigravity bridge 已偵測"
+            : "Antigravity bridge 已偵測，但 chat 未就緒"
+          : normalizedProbe === "meta"
+            ? "Antigravity meta 讀取成功"
+            : normalizedProbe === "detect"
+              ? "Antigravity 設定偵測成功"
+              : "Antigravity 已連線";
+      const statusType =
+        normalizedProbe === "health" && !chatReady ? "warning" : "success";
+      setAntigravityInstallStatus(statusText, detail, statusType);
+      if (toastEnabled) {
+        showToast(statusText, statusType, 1800);
+      }
+      return response;
+    }
+
+    if (response?.requiresAuth) {
+      const detail = `${baseUrl} | ${response?.error || "unauthorized"}`;
+      setAntigravityInstallStatus("需要 Bridge Token", detail, "warning");
+      if (toastEnabled) {
+        showToast("Antigravity 需要 Bridge Token", "warning");
+      }
+      return response;
+    }
+
+    if (response?.status === 404) {
+      const detail = `${baseUrl} | endpoint not found`;
+      setAntigravityInstallStatus("不是支援的 Antigravity bridge", detail, "warning");
+      if (toastEnabled) {
+        showToast("Antigravity probe 回應 404", "warning");
+      }
+      return response;
+    }
+
+    const detail = `${baseUrl} | ${response?.error || "probe failed"}`;
+    setAntigravityInstallStatus("Antigravity 探測失敗", detail, "error");
+    if (toastEnabled) {
+      showToast("Antigravity 探測失敗", "error");
+    }
+    return response;
+  } catch (err) {
+    const detail = `${baseUrl} | ${err?.message || err}`;
+    setAntigravityInstallStatus("Antigravity 探測失敗", detail, "error");
+    if (toastEnabled) {
+      showToast("Antigravity 探測失敗", "error");
+    }
+    return { success: false, error: err?.message || String(err), baseUrl };
   }
 }
 
@@ -2005,6 +3064,18 @@ async function checkBridgeHealth(options = {}) {
         const statusType = okStates.includes(sdkStateValue)
           ? "success"
           : "warning";
+        state.bridgeLastProbe = {
+          connected: statusType === "success",
+          isBridge: true,
+          text: "Bridge 已連線",
+          detail,
+          type: statusType,
+          url,
+          sdkState: sdkStateValue,
+          service: response?.data?.service || "",
+          backendType: response?.data?.backend?.type || "",
+          checkedAt: Date.now(),
+        };
         setBridgeInstallStatus("Bridge 已連線", detail, statusType);
         if (toastEnabled) {
           showToast(
@@ -2027,6 +3098,18 @@ async function checkBridgeHealth(options = {}) {
       }
 
       const serviceName = response?.data?.service || "unknown";
+      state.bridgeLastProbe = {
+        connected: false,
+        isBridge: false,
+        text: "不是 SidePilot Bridge",
+        detail: `service: ${serviceName}`,
+        type: "warning",
+        url,
+        sdkState: "",
+        service: serviceName,
+        backendType: "",
+        checkedAt: Date.now(),
+      };
       setBridgeInstallStatus(
         "不是 SidePilot Bridge",
         `service: ${serviceName}`,
@@ -2039,28 +3122,73 @@ async function checkBridgeHealth(options = {}) {
 
     const statusCode = response?.status;
     if (statusCode === 404) {
+      const runtime = getEffectiveBridgeRuntime();
+      const detail =
+        `HTTP 404 | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
+      state.bridgeLastProbe = {
+        connected: false,
+        isBridge: false,
+        text: "Bridge 未啟動或版本不符",
+        detail,
+        type: "warning",
+        url,
+        sdkState: "",
+        service: "",
+        backendType: "",
+        checkedAt: Date.now(),
+      };
       setBridgeInstallStatus(
         "Bridge 未啟動或版本不符",
-        `HTTP 404，啟動目錄: ${BRIDGE_WORKDIR_HINT}`,
+        detail,
         "warning",
       );
-      if (toastEnabled) showToast("Bridge 回應 404，請確認啟動目錄", "warning");
+      if (toastEnabled) showToast("Bridge 回應 404，請確認安裝或啟動流程", "warning");
       state.bridgeModelsLoaded = false;
       return;
     }
 
     const errMessage = response?.error || "連線失敗";
+    const runtime = getEffectiveBridgeRuntime();
+    const failureDetail =
+      `${errMessage} | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
+    state.bridgeLastProbe = {
+      connected: false,
+      isBridge: false,
+      text: "無法連線",
+      detail: failureDetail,
+      type: "error",
+      url,
+      sdkState: "",
+      service: "",
+      backendType: "",
+      checkedAt: Date.now(),
+    };
     setBridgeInstallStatus(
       "無法連線",
-      `${errMessage}，啟動目錄: ${BRIDGE_WORKDIR_HINT}`,
+      failureDetail,
       "error",
     );
     if (toastEnabled) showToast("Bridge 無法連線", "error");
     state.bridgeModelsLoaded = false;
   } catch (err) {
+    const runtime = getEffectiveBridgeRuntime();
+    const failureDetail =
+      `${err?.message || "unknown error"} | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
+    state.bridgeLastProbe = {
+      connected: false,
+      isBridge: false,
+      text: "檢查失敗",
+      detail: failureDetail,
+      type: "error",
+      url,
+      sdkState: "",
+      service: "",
+      backendType: "",
+      checkedAt: Date.now(),
+    };
     setBridgeInstallStatus(
       "檢查失敗",
-      `${err?.message || "unknown error"}，啟動目錄: ${BRIDGE_WORKDIR_HINT}`,
+      failureDetail,
       "error",
     );
     if (toastEnabled) showToast("Bridge 檢查失敗", "error");
@@ -2128,6 +3256,21 @@ function stopBridgeSectionPolling() {
   if (state.bridgeSectionHealthTimer) {
     clearInterval(state.bridgeSectionHealthTimer);
     state.bridgeSectionHealthTimer = null;
+  }
+}
+
+function startAntigravitySectionPolling() {
+  stopAntigravitySectionPolling();
+  runAntigravityProviderProbe("health", { showToast: false });
+  state.antigravitySectionHealthTimer = setInterval(() => {
+    runAntigravityProviderProbe("health", { showToast: false });
+  }, 3000);
+}
+
+function stopAntigravitySectionPolling() {
+  if (state.antigravitySectionHealthTimer) {
+    clearInterval(state.antigravitySectionHealthTimer);
+    state.antigravitySectionHealthTimer = null;
   }
 }
 
@@ -2305,7 +3448,7 @@ function buildSDKUnavailableHelpMessage(errorMessage = "") {
     "請先在本機啟動 Bridge：",
     "1. cd scripts/copilot-bridge",
     "2. npm install",
-    "3. npm run dev",
+    "3. npm run start",
     "",
     "再完成 GitHub 登入：",
     `- 開啟 ${SDK_LOGIN_URL}`,
@@ -2326,7 +3469,7 @@ function buildSDK404HelpMessage(errorMessage = "") {
     "請確認你是在此目錄啟動：",
     "1. cd scripts/copilot-bridge",
     "2. npm install",
-    "3. npm run dev",
+    "3. npm run start",
     "",
     `原始錯誤：${errorMessage || "HTTP 404"}`,
   ];
@@ -2751,172 +3894,6 @@ function sendEntryToVSCode() {
 
 let _captureHoverTimer = null;
 
-// ============================================
-// WP-01: Permission Modal Logic
-// ============================================
-
-let _currentPermissionId = null;
-
-function connectPermissionSSE() {
-  if (state.permissionSSE) {
-    state.permissionSSE.close();
-    state.permissionSSE = null;
-  }
-  const url = `http://localhost:${SDK_BRIDGE_PORT}/api/permissions/stream`;
-  const sse = new EventSource(url);
-
-  sse.addEventListener("permission_required", (e) => {
-    try {
-      const data = JSON.parse(e.data);
-      showPermissionModal(data);
-    } catch (err) {
-      console.error("[SidePilot] Failed to parse permission event:", err);
-    }
-  });
-
-  sse.onerror = () => {
-    sse.close();
-    state.permissionSSE = null;
-    // Auto reconnect later if SDK mode is active
-    setTimeout(() => {
-      if (dom.sdkModeBtn && dom.sdkModeBtn.dataset.status === "success") {
-        connectPermissionSSE();
-      }
-    }, 5000);
-  };
-
-  state.permissionSSE = sse;
-}
-
-function showPermissionModal(data) {
-  _currentPermissionId = data.id;
-
-  if (dom.permissionScope)
-    dom.permissionScope.textContent = data.scope || "未知操作";
-  if (dom.permissionReason)
-    dom.permissionReason.textContent =
-      data.reason || "Bridge 要求額外權限以執行該操作。";
-
-  const optionsHtml = (data.options || [])
-    .map(
-      (opt) =>
-        `<label><input type="radio" name="perm_option" value="${escapeHtml(opt.id)}"> ${escapeHtml(opt.title)}</label>`,
-    )
-    .join("");
-
-  if (dom.permissionOptions) {
-    dom.permissionOptions.innerHTML = optionsHtml;
-    const firstInput = dom.permissionOptions.querySelector("input");
-    if (firstInput) firstInput.checked = true;
-  }
-
-  let remain = 60;
-  if (dom.permissionCountdown)
-    dom.permissionCountdown.textContent = String(remain);
-  if (state.permissionCountdownTimer)
-    clearInterval(state.permissionCountdownTimer);
-
-  state.permissionCountdownTimer = setInterval(() => {
-    remain--;
-    if (remain <= 0) {
-      resolvePermission("deny");
-    } else {
-      if (dom.permissionCountdown)
-        dom.permissionCountdown.textContent = String(remain);
-    }
-  }, 1000);
-
-  dom.permissionModal?.classList.remove("hidden");
-}
-
-function hidePermissionModal() {
-  dom.permissionModal?.classList.add("hidden");
-  if (state.permissionCountdownTimer) {
-    clearInterval(state.permissionCountdownTimer);
-    state.permissionCountdownTimer = null;
-  }
-  _currentPermissionId = null;
-}
-
-async function resolvePermission(action) {
-  if (!_currentPermissionId) return;
-  hidePermissionModal();
-
-  let selectedOptionId;
-  const selectedRadio = dom.permissionOptions?.querySelector(
-    'input[name="perm_option"]:checked',
-  );
-  if (selectedRadio) {
-    selectedOptionId = selectedRadio.value;
-  }
-
-  try {
-    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: _currentPermissionId,
-        action,
-        selectedOptionId,
-      }),
-    });
-  } catch (err) {
-    console.error("[SidePilot] Failed to resolve permission:", err);
-  }
-}
-
-// ============================================
-// WP-07: Prompt Strategy Logic
-// ============================================
-
-async function loadPromptStrategy() {
-  try {
-    const res = await fetch(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`,
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success && data.strategy) {
-        updatePromptStrategyUI(data.strategy);
-      }
-    }
-  } catch (err) {
-    console.warn("[SidePilot] Failed to load prompt strategy:", err);
-  }
-}
-
-async function setPromptStrategy(strategy) {
-  updatePromptStrategyUI(strategy); // optimistic update
-  try {
-    const res = await fetch(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ strategy }),
-      },
-    );
-    const data = await res.json();
-    if (data.success) {
-      showToast(`輸出精簡模式已切換：${strategy}`);
-    } else {
-      throw new Error(data.error);
-    }
-  } catch (err) {
-    console.error("[SidePilot] Failed to set prompt strategy:", err);
-    loadPromptStrategy(); // revert UI on failure
-    showToast("策略切換失敗", "error");
-  }
-}
-
-function updatePromptStrategyUI(strategy) {
-  if (!dom.promptStrategyBtns) return;
-  dom.promptStrategyBtns.querySelectorAll(".strategy-btn").forEach((btn) => {
-    const isActive = btn.dataset.strategy === strategy;
-    btn.classList.toggle("active", isActive);
-  });
-}
-
 function setupEventListeners() {
   // 底部浮動擷取按鈕
   dom.floatingCaptureBtn?.addEventListener("click", toggleCapturePanel);
@@ -3017,6 +3994,7 @@ function setupEventListeners() {
   ].forEach((key) => {
     dom[key]?.addEventListener("change", () => {
       localStorage.setItem(`sidepilot_${key}`, String(dom[key].checked));
+      syncStructuredOutputDependency();
       refreshSDKMemorySummary();
     });
   });
@@ -3038,6 +4016,10 @@ function setupEventListeners() {
 
   // History Log Tab (Bridge)
   dom.refreshLogBtn?.addEventListener("click", () => loadLogFiles());
+  dom.logIframeAgentsToggle?.addEventListener("click", () => {
+    const shouldExpand = dom.logContainerIframe?.classList.contains("collapsed");
+    setIframeAgentsExpanded(!!shouldExpand);
+  });
 
   // Settings Tab (auto-save — no manual save button)
 
@@ -3049,13 +4031,21 @@ function setupEventListeners() {
         const section = title.closest(".settings-section");
         section.classList.toggle("collapsed");
 
-        // Start/stop bridge section polling when install helper section toggles
+        // Start/stop section-specific polling when settings sections toggle
         const isBridgeSection = section.querySelector("#bridgeStatusDot");
+        const isProviderSection = section.querySelector("#antigravityStatusDot");
         if (isBridgeSection) {
           if (section.classList.contains("collapsed")) {
             stopBridgeSectionPolling();
           } else {
             startBridgeSectionPolling();
+          }
+        }
+        if (isProviderSection) {
+          if (section.classList.contains("collapsed")) {
+            stopAntigravitySectionPolling();
+          } else {
+            startAntigravitySectionPolling();
           }
         }
       });
@@ -3067,6 +4057,12 @@ function setupEventListeners() {
     applyCaptureButtonWidth(width);
     markSettingsDirty();
   });
+  dom.settingCaptureButtonTop?.addEventListener("input", (e) => {
+    const topPercent = clampCaptureButtonTopPercent(e.target.value);
+    updateCaptureTopLabel(topPercent);
+    applyCaptureButtonTop(topPercent);
+    markSettingsDirty();
+  });
   dom.settingUiLanguage?.addEventListener("change", (e) => {
     const nextLanguage = normalizeUiLanguage(e.target.value);
     state.settings = normalizeSettings({
@@ -3075,16 +4071,37 @@ function setupEventListeners() {
     });
     applySettingsI18n(nextLanguage);
     updateSelfIterationSealBadge(nextLanguage);
+    updateCaptureTopLabel(state.settings.captureButtonTopPercent);
     markSettingsDirty();
   });
   dom.settingAutoStartBridge?.addEventListener("change", markSettingsDirty);
   dom.settingAutoSdkLogin?.addEventListener("change", markSettingsDirty);
+  dom.settingBridgeProjectRoot?.addEventListener("input", (event) => {
+    const runtime = getEffectiveBridgeRuntime();
+    state.settings = normalizeSettings({
+      ...state.settings,
+      ...getBridgeProjectRootSettingsPatch(runtime, event.target?.value || ""),
+    });
+    refreshBridgeSetupUi();
+    markSettingsDirty();
+  });
+  dom.settingBridgeWslDistro?.addEventListener("input", (event) => {
+    state.settings = normalizeSettings({
+      ...state.settings,
+      bridgeWslDistro: event.target?.value || "",
+    });
+    refreshBridgeSetupUi();
+    markSettingsDirty();
+  });
   dom.settingSelfIterationEnabled?.addEventListener(
     "change",
     markSettingsDirty,
   );
   dom.settingPlayIntroEveryOpen?.addEventListener("change", markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener("change", markSettingsDirty);
+  dom.settingAntigravityBaseUrl?.addEventListener("input", markSettingsDirty);
+  dom.settingAntigravityToken?.addEventListener("input", markSettingsDirty);
+  dom.settingLinkGuardMode?.addEventListener("change", markSettingsDirty);
   dom.settingLinkAllowlist?.addEventListener("input", markSettingsDirty);
   document
     .getElementById("settingIframeHistoryUrl")
@@ -3107,7 +4124,20 @@ function setupEventListeners() {
       showToast(`Bridge 測試失敗：${err.message}`, "error");
     }
   });
-  dom.bridgeLaunchBtn?.addEventListener("click", async () => {
+  dom.bridgePrimaryBtn?.addEventListener("click", async () => {
+    const action = dom.bridgePrimaryBtn?.dataset.action || "start";
+    if (action === "copy-install") {
+      await copyToClipboard(
+        buildBridgeInstallCommand(getEffectiveBridgeRuntime()),
+        "Quick Setup 指令已複製",
+      );
+      return;
+    }
+    if (action === "check") {
+      checkBridgeHealth({ showToast: true });
+      return;
+    }
+
     const result = await ensureSDKBridgeReadyWithAutoStart({
       source: "manual-button",
       bypassCooldown: true,
@@ -3125,15 +4155,46 @@ function setupEventListeners() {
     }
     const detail = result?.detail || result?.code || "BRG-AUTO-001";
     updateSettingsStatus(`Bridge 啟動失敗：${detail}`, "error");
+    refreshBridgeSetupUi();
+  });
+  dom.bridgeAdvancedToggleBtn?.addEventListener("click", () => {
+    const shouldOpen = dom.bridgeAdvancedPanel?.classList.contains("hidden");
+    dom.bridgeAdvancedPanel?.classList.toggle("hidden", !shouldOpen);
+    refreshBridgeSetupUi();
   });
   dom.bridgeCheckBtn?.addEventListener("click", () => {
     checkBridgeHealth({ showToast: true });
   });
+  dom.bridgeCopyInstallBtn?.addEventListener("click", async () => {
+    await copyToClipboard(
+      buildBridgeInstallCommand(getEffectiveBridgeRuntime()),
+      "Quick Setup 指令已複製",
+    );
+  });
   dom.bridgeCopyCmdBtn?.addEventListener("click", async () => {
-    await copyToClipboard(buildBridgeStartCommands(), "啟動指令已複製");
+    await copyToClipboard(
+      buildBridgeStartCommands(getEffectiveBridgeRuntime()),
+      "啟動指令已複製",
+    );
   });
   dom.bridgeCopyCheckBtn?.addEventListener("click", async () => {
     await copyToClipboard(buildBridgeCheckCommand(), "檢查指令已複製");
+  });
+  dom.bridgeRuntimeButtons?.forEach((button) => {
+    button.addEventListener("click", async () => {
+      const runtime = normalizeBridgeManualRuntime(button.dataset.runtime);
+      await persistSettingsPatch({ bridgeManualRuntime: runtime });
+      refreshBridgeSetupUi();
+    });
+  });
+  dom.antigravityHealthBtn?.addEventListener("click", async () => {
+    await runAntigravityProviderProbe("health", { showToast: true });
+  });
+  dom.antigravityMetaBtn?.addEventListener("click", async () => {
+    await runAntigravityProviderProbe("meta", { showToast: true });
+  });
+  dom.antigravityDetectBtn?.addEventListener("click", async () => {
+    await runAntigravityProviderProbe("detect", { showToast: true });
   });
 
   // SDK Login Guide Modal
@@ -3206,6 +4267,8 @@ function setupEventListeners() {
 
     // Add typing indicator
     const typingId = addSDKTypingIndicator();
+    const expectedStructuredResponse =
+      !!dom.sdkIncludeMemory?.checked && !!dom.sdkStructuredOutput?.checked;
 
     try {
       let promptToSend = content;
@@ -3235,7 +4298,7 @@ function setupEventListeners() {
             { useStructuredOutput, identityText },
           );
           promptToSend = composed.prompt;
-          if (includeSystemMsg) {
+          if (includeSystemMsg && useStructuredOutput) {
             sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
           }
           const parts = [];
@@ -3243,7 +4306,7 @@ function setupEventListeners() {
           if (includeMemEntries) parts.push(`${composed.injectedCount} mem`);
           if (includeRules)
             parts.push(`rules ${composed.rulesInjected ? "on" : "off"}`);
-          if (includeSystemMsg) parts.push("sys");
+          if (includeSystemMsg && useStructuredOutput) parts.push("sys");
           if (useStructuredOutput) parts.push("struct");
           updateSDKMemorySummary(`Packet: ${parts.join(", ")}`);
         } catch (memoryErr) {
@@ -3272,9 +4335,15 @@ function setupEventListeners() {
 
       if (response.success && response.content) {
         const parsed = parseSDKSandboxResponse(response.content);
-        addSDKStructuredAssistantMessage(parsed);
+        const hasStructuredBlocks =
+          parsed.hasAssistantBlock || parsed.hasPacketBlock;
+        if (hasStructuredBlocks) {
+          addSDKStructuredAssistantMessage(parsed);
+        } else {
+          addSDKMessage("assistant", parsed.rawContent || response.content);
+        }
 
-        if (!parsed.hasAssistantBlock) {
+        if (expectedStructuredResponse && !parsed.hasAssistantBlock) {
           showToast(
             "未偵測到 assistant_response 區塊，已顯示原始輸出",
             "warning",
@@ -4293,16 +5362,48 @@ function buildMemoryInjectedPrompt(
       packet_tag: "sidepilot_packet",
       response_tag: "assistant_response",
     };
+
+    const lines = [
+      "[[SIDEPILOT_TURN_PACKET]]",
+      JSON.stringify(packet, null, 2),
+      "[[END_SIDEPILOT_TURN_PACKET]]",
+    ];
+
+    return {
+      prompt: lines.join("\n"),
+      injectedCount: memoryPacket.length,
+      rulesInjected,
+    };
   }
 
-  const lines = [
-    "[[SIDEPILOT_TURN_PACKET]]",
-    JSON.stringify(packet, null, 2),
-    "[[END_SIDEPILOT_TURN_PACKET]]",
+  const plainSections = [
+    "Use memory and rules only when relevant.",
+    "If context conflicts with the latest user message, prioritize the latest user message.",
+    "Do not reveal chain-of-thought.",
   ];
 
+  if (identityText) {
+    plainSections.push("", "[Identity]", identityText.trim());
+  }
+
+  if (rulesInjected) {
+    plainSections.push("", "[Rules]", normalizedRules);
+  }
+
+  if (memoryPacket.length > 0) {
+    plainSections.push("", "[Relevant Memory]");
+    memoryPacket.forEach((entry, index) => {
+      plainSections.push(
+        `${index + 1}. [${entry.type}] ${entry.title}`,
+        entry.content,
+      );
+    });
+  }
+
+  plainSections.push("", "[User Message]", userInput);
+
   return {
-    prompt: lines.join("\n"),
+    prompt: plainSections.join("\n"),
     injectedCount: memoryPacket.length,
     rulesInjected,
   };
@@ -4318,6 +5419,20 @@ function syncContextChildToggles() {
   if (dom.contextChildToggles) {
     dom.contextChildToggles.classList.toggle("disabled", !masterOn);
   }
+  syncStructuredOutputDependency();
+}
+
+function syncStructuredOutputDependency() {
+  const masterOn = !!dom.sdkIncludeMemory?.checked;
+  const structOn = !!dom.sdkStructuredOutput?.checked;
+  const enabled = masterOn && structOn;
+
+  if (dom.sdkIncludeSystemMsg) {
+    dom.sdkIncludeSystemMsg.disabled = !enabled;
+  }
+  if (dom.sdkIncludeSystemMsgItem) {
+    dom.sdkIncludeSystemMsgItem.classList.toggle("disabled", !enabled);
+  }
 }
 
 function refreshSDKMemorySummary() {
@@ -4330,8 +5445,10 @@ function refreshSDKMemorySummary() {
   if (dom.sdkIncludeIdentity?.checked) parts.push("id");
   if (dom.sdkIncludeMemoryEntries?.checked) parts.push("mem");
   if (dom.sdkIncludeRules?.checked) parts.push("rules");
-  if (dom.sdkIncludeSystemMsg?.checked) parts.push("sys");
-  if (dom.sdkStructuredOutput?.checked) parts.push("struct");
+  if (dom.sdkStructuredOutput?.checked) {
+    if (dom.sdkIncludeSystemMsg?.checked) parts.push("sys");
+    parts.push("struct");
+  }
   updateSDKMemorySummary(
     parts.length > 0
       ? `Context: ${parts.join(", ")}`
@@ -4625,10 +5742,9 @@ async function copyLogsToClipboard() {
 // Bridge real-time log SSE
 function connectBridgeLogSSE() {
   disconnectBridgeLogSSE();
-  try {
-    state.bridgeLogSSE = new EventSource(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/logs/stream`,
-    );
+  createAuthorizedBridgeEventSource("/api/logs/stream")
+    .then((eventSource) => {
+      state.bridgeLogSSE = eventSource;
     state.bridgeLogSSE.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -4641,9 +5757,10 @@ function connectBridgeLogSSE() {
     state.bridgeLogSSE.onerror = () => {
       // Will auto-reconnect; don't flood logs
     };
-  } catch {
+    })
+    .catch(() => {
     // Bridge not available
-  }
+    });
 }
 
 function disconnectBridgeLogSSE() {
@@ -4660,23 +5777,41 @@ function disconnectBridgeLogSSE() {
 let logFileListEl = null;
 let refreshLogBtn = null;
 
+function setIframeAgentsExpanded(expanded) {
+  if (!dom.logContainerIframe || !dom.logIframeAgentsToggle) return;
+
+  dom.logContainerIframe.classList.toggle("collapsed", !expanded);
+  dom.logIframeAgentsToggle.setAttribute("aria-expanded", String(expanded));
+
+  const badge = dom.logIframeAgentsToggle.querySelector(".log-toolbar-badge");
+  if (badge) {
+    badge.textContent = expanded ? "▾" : "▸";
+  }
+
+  if (dom.logIframeAgentsBody) {
+    dom.logIframeAgentsBody.style.display = expanded ? "flex" : "none";
+  }
+
+  if (expanded && dom.logIframeAgents && !dom.logIframeAgents.src) {
+    dom.logIframeAgents.src = "https://github.com/copilot/agents";
+  }
+}
+
 function updateHistoryTabMode() {
-  const sdkContainer = document.getElementById("logContainerSdk");
-  const iframeContainer = document.getElementById("logContainerIframe");
-  const iframeEl = document.getElementById("logIframeAgents");
-  if (!sdkContainer || !iframeContainer) return;
+  if (!dom.logContainerSdk || !dom.logContainerIframe) return;
 
   if (state.detectedMode === "sdk") {
-    sdkContainer.classList.remove("hidden");
-    iframeContainer.classList.add("hidden");
-    if (iframeEl) iframeEl.style.display = "none";
+    dom.logContainerSdk.classList.remove("hidden");
+    dom.logContainerSdk.style.display = "flex";
+    dom.logContainerIframe.classList.add("hidden");
+    dom.logContainerIframe.style.display = "none";
+    setIframeAgentsExpanded(false);
   } else {
-    sdkContainer.classList.add("hidden");
-    iframeContainer.classList.remove("hidden");
-    if (iframeEl) {
-      iframeEl.src = "https://github.com/copilot/agents";
-      iframeEl.style.display = "block";
-    }
+    dom.logContainerSdk.classList.add("hidden");
+    dom.logContainerSdk.style.display = "none";
+    dom.logContainerIframe.classList.remove("hidden");
+    dom.logContainerIframe.style.display = "flex";
+    setIframeAgentsExpanded(false);
   }
 }
 
@@ -4831,8 +5966,7 @@ async function loadLogFiles() {
   logFileListEl.innerHTML = '<div class="log-empty">載入中...</div>';
 
   try {
-    const resp = await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/history`);
-    const data = await resp.json();
+    const data = await bridgeJsonRequest("/api/history");
 
     if (!data.success || !data.files || data.files.length === 0) {
       logFileListEl.innerHTML = '<div class="log-empty">尚無對話歷史紀錄</div>';
@@ -4890,10 +6024,9 @@ function renderLogFiles(files) {
 async function loadLogFileContent(filename, container) {
   container.innerHTML = '<div class="log-empty">載入中...</div>';
   try {
-    const resp = await fetch(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/history/${encodeURIComponent(filename)}`,
+    const data = await bridgeJsonRequest(
+      `/api/history/${encodeURIComponent(filename)}`,
     );
-    const data = await resp.json();
 
     if (!data.success || !data.messages || data.messages.length === 0) {
       container.innerHTML = '<div class="log-empty">此日誌沒有訊息</div>';
@@ -5018,10 +6151,9 @@ function createLogMessageEl(msg) {
 function connectLogSSE() {
   disconnectLogSSE();
 
-  try {
-    state.logSSE = new EventSource(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/history/stream`,
-    );
+  createAuthorizedBridgeEventSource("/api/history/stream")
+    .then((eventSource) => {
+      state.logSSE = eventSource;
     state.logSSE.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -5034,9 +6166,10 @@ function connectLogSSE() {
     state.logSSE.onerror = () => {
       disconnectLogSSE();
     };
-  } catch {
+    })
+    .catch(() => {
     // SSE not available
-  }
+    });
 }
 
 function disconnectLogSSE() {
@@ -5353,6 +6486,17 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
   const parsed = parsedResponse?.blocks
     ? parsedResponse
     : parseSDKSandboxResponse(parsedResponse);
+  const displayBlocks = parsed.hasAssistantBlock
+    ? parsed.blocks
+    : parsed.blocks.map((block) =>
+        block.type === "raw"
+          ? {
+              ...block,
+              type: "assistant",
+              label: "assistant_response_fallback",
+            }
+          : block,
+      );
 
   const msgEl = document.createElement("div");
   msgEl.className = "sdk-message assistant";
@@ -5360,7 +6504,7 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
   const contentEl = document.createElement("div");
   contentEl.className = "sdk-message-content sdk-structured-content";
 
-  parsed.blocks.forEach((block) => {
+  displayBlocks.forEach((block) => {
     let format = null;
     if (block.type === "packet") {
       const packetValue =
@@ -5539,12 +6683,23 @@ function removeSDKTypingIndicator(id) {
 // WP-01: Permission SSE & Modal
 // ============================================
 
+function schedulePermissionSSEReconnect() {
+  if (state.permissionSSEReconnectTimer) {
+    clearTimeout(state.permissionSSEReconnectTimer);
+  }
+  state.permissionSSEReconnectTimer = setTimeout(() => {
+    state.permissionSSEReconnectTimer = null;
+    connectPermissionSSE();
+  }, 5000);
+}
+
 function connectPermissionSSE() {
   disconnectPermissionSSE();
-  try {
-    state.permissionSSE = new EventSource(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/permissions/stream`,
-    );
+  createAuthorizedBridgeEventSource("/api/permissions/stream", {
+    forceRefresh: true,
+  })
+    .then((eventSource) => {
+      state.permissionSSE = eventSource;
     state.permissionSSE.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -5556,18 +6711,34 @@ function connectPermissionSSE() {
         /* ignore parse errors */
       }
     };
+    state.permissionSSE.addEventListener("permission_required", (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.id && data.scope) {
+          showPermissionModal(data);
+        }
+      } catch (err) {
+        console.error("[SidePilot] Failed to parse permission event:", err);
+      }
+    });
     state.permissionSSE.onerror = () => {
-      // Will auto-reconnect
+      disconnectPermissionSSE();
+      schedulePermissionSSEReconnect();
     };
-  } catch {
-    // Bridge not available
-  }
+    })
+    .catch(() => {
+    schedulePermissionSSEReconnect();
+    });
 }
 
 function disconnectPermissionSSE() {
   if (state.permissionSSE) {
     state.permissionSSE.close();
     state.permissionSSE = null;
+  }
+  if (state.permissionSSEReconnectTimer) {
+    clearTimeout(state.permissionSSEReconnectTimer);
+    state.permissionSSEReconnectTimer = null;
   }
 }
 
@@ -5593,20 +6764,21 @@ function showPermissionModal(permission) {
   if (dom.permissionOptions) {
     dom.permissionOptions.innerHTML = "";
     _currentPermissionOptions.forEach((opt, idx) => {
+      const optionId = opt.optionId || opt.id;
+      const optionLabel = opt.label || opt.title || optionId;
+      if (!optionId) return;
       const label = document.createElement("label");
       label.className = "permission-option-label";
       const radio = document.createElement("input");
       radio.type = "radio";
       radio.name = "permissionOption";
-      radio.value = opt.optionId;
+      radio.value = optionId;
       if (idx === 0) radio.checked = true;
       radio.addEventListener("change", () => {
-        _selectedOptionId = opt.optionId;
+        _selectedOptionId = optionId;
       });
       label.appendChild(radio);
-      label.appendChild(
-        document.createTextNode(` ${opt.label || opt.optionId}`),
-      );
+      label.appendChild(document.createTextNode(` ${optionLabel}`));
       dom.permissionOptions.appendChild(label);
     });
   }
@@ -5656,14 +6828,14 @@ async function resolvePermission(decision) {
 
   const approved = decision === "allow";
   try {
-    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/permission/resolve`, {
+    await bridgeJsonRequest("/api/permission/resolve", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+      body: {
         id: permId,
         approved,
         optionId: approved ? optionId : undefined,
-      }),
+      },
+      timeoutMs: 5000,
     });
     addLog(
       "info",
@@ -5678,36 +6850,33 @@ async function resolvePermission(decision) {
 // WP-07: Prompt Strategy
 // ============================================
 
-async function setPromptStrategy(strategy) {
-  // Update UI immediately
+function updatePromptStrategyUI(strategy) {
   dom.promptStrategyBtns?.querySelectorAll(".strategy-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.strategy === strategy);
   });
+}
+
+async function setPromptStrategy(strategy) {
+  updatePromptStrategyUI(strategy);
 
   try {
-    await fetch(`http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`, {
+    await bridgeJsonRequest("/api/prompt/strategy", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ strategy }),
+      body: { strategy },
     });
     addLog("info", `[Prompt] 策略已切換: ${strategy}`);
   } catch (err) {
     addLog("error", `[Prompt] 策略切換失敗: ${err.message}`);
+    loadPromptStrategy();
     showToast("Prompt 策略切換失敗", "error");
   }
 }
 
 async function loadPromptStrategy() {
   try {
-    const res = await fetch(
-      `http://localhost:${SDK_BRIDGE_PORT}/api/prompt/strategy`,
-    );
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await bridgeJsonRequest("/api/prompt/strategy");
     const strategy = data.strategy || "normal";
-    dom.promptStrategyBtns?.querySelectorAll(".strategy-btn").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.strategy === strategy);
-    });
+    updatePromptStrategyUI(strategy);
   } catch {
     // Bridge not available, keep default
   }

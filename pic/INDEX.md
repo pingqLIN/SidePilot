@@ -4,6 +4,21 @@
 
 ---
 
+## 最新版 UI 原始擷圖（2026-03-13）
+
+> 這批檔案是最新提供的 UI 截圖，檔名仍保留系統擷圖格式，先收錄以便挑圖與後續重命名。
+
+| 檔名 | 狀態 | 建議用途 |
+| --- | --- | --- |
+| `螢幕擷取畫面 2026-03-13 145550.png` | 新增 | 候選 README / release screenshot |
+| `螢幕擷取畫面 2026-03-13 145619.png` | 新增 | 候選 README / release screenshot |
+| `螢幕擷取畫面 2026-03-13 145648.png` | 新增 | 候選 README / release screenshot |
+| `螢幕擷取畫面 2026-03-13 145703.png` | 新增 | 候選 README / release screenshot |
+| `螢幕擷取畫面 2026-03-13 145719.png` | 新增 | 候選 README / release screenshot |
+| `螢幕擷取畫面 2026-03-13 145750.png` | 新增 | 候選 README / release screenshot |
+
+---
+
 ## 實際截圖（Extension UI）
 
 | #   | 檔名                                                                 | 功能區域          | 使用情境                                        | 引用文件         |

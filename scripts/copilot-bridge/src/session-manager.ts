@@ -198,7 +198,6 @@ export class SessionManager {
       const result = await new Promise<string[]>((resolve, reject) => {
         const child = spawn(CONFIG.cliPath, ['--list-models', '--json'], {
           stdio: ['ignore', 'pipe', 'ignore'],
-          shell: IS_WINDOWS,
           timeout: 5000,
         });
         let out = '';
@@ -587,7 +586,7 @@ export class SessionManager {
           if (!session.process.killed) {
             // Kill 子程序樹
             if (IS_WINDOWS) {
-              spawn('taskkill', ['/pid', String(session.process.pid), '/t', '/f'], { shell: true });
+              spawn('taskkill', ['/pid', String(session.process.pid), '/t', '/f']);
             } else {
               session.process.kill('SIGKILL');
             }

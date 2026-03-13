@@ -226,19 +226,41 @@
             <select id="templateSelect" class="rules-select">
               <option value="">選擇樣板...</option>
             </select>
-            <button class="btn btn-icon" id="importRulesBtn" title="匯入規則檔案">
-              <svg viewBox="0 0 16 16" fill="currentColor">
+            <button
+              class="btn btn-secondary btn-sm rules-action-btn"
+              id="importRulesBtn"
+              title="匯入規則檔案"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14Zm-.54-7.47a.75.75 0 0 1 1.06 0L7 10.94V1.75a.75.75 0 0 1 1.5 0v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 0-1.06Z"
                 />
               </svg>
+              <span>匯入</span>
             </button>
-            <button class="btn btn-icon" id="exportRulesBtn" title="匯出規則為檔案">
-              <svg viewBox="0 0 16 16" fill="currentColor">
+            <button
+              class="btn btn-secondary btn-sm rules-action-btn"
+              id="exportRulesBtn"
+              title="匯出規則為檔案"
+            >
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                fill="currentColor"
+                aria-hidden="true"
+              >
                 <path
                   d="M2.75 14A1.75 1.75 0 0 1 1 12.25v-2.5a.75.75 0 0 1 1.5 0v2.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25v-2.5a.75.75 0 0 1 1.5 0v2.5A1.75 1.75 0 0 1 13.25 14ZM8.75 1v9.19l3.72-3.72a.75.75 0 1 1 1.06 1.06l-5 5a.75.75 0 0 1-1.06 0l-5-5a.75.75 0 0 1 1.06-1.06L7 10.19V1a.75.75 0 0 1 1.5 0Z"
                 />
               </svg>
+              <span>匯出</span>
             </button>
           </div>
           <div class="rules-origin-row">
@@ -398,24 +420,31 @@
             <div class="log-empty">點擊「重新整理」載入歷史</div>
           </div>
         </div>
-        <div class="log-container hidden" id="logContainerIframe">
-          <div class="log-toolbar">
+        <div class="log-container hidden collapsed" id="logContainerIframe">
+          <button
+            type="button"
+            class="log-toolbar log-toolbar-toggle"
+            id="logIframeAgentsToggle"
+            aria-expanded="false"
+          >
             <span class="log-toolbar-title">🌐 Copilot Agents</span>
-          </div>
-          <iframe
-            id="logIframeAgents"
-            class="log-iframe-agents"
-            src=""
-            sandbox="allow-scripts allow-same-origin allow-popups"
-            style="display: none"
-          ></iframe>
-          <div class="log-iframe-links">
-            <a
-              href="https://github.com/copilot/agents"
-              target="_blank"
-              class="log-agents-link"
-              >↗ 在瀏覽器中開啟 GitHub Copilot Agents</a
-            >
+            <span class="log-file-badge log-toolbar-badge">▸</span>
+          </button>
+          <div class="log-iframe-body" id="logIframeAgentsBody">
+            <iframe
+              id="logIframeAgents"
+              class="log-iframe-agents"
+              src=""
+              sandbox="allow-scripts allow-same-origin allow-popups"
+            ></iframe>
+            <div class="log-iframe-links">
+              <a
+                href="https://github.com/copilot/agents"
+                target="_blank"
+                class="log-agents-link"
+                >↗ 在瀏覽器中開啟 GitHub Copilot Agents</a
+              >
+            </div>
           </div>
         </div>
       </div>
@@ -447,18 +476,26 @@
 
           <div class="settings-section" id="settingsSectionInstall">
             <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.install">
-              安裝助手
+              Bridge 設定
             </div>
             <div class="settings-section-body">
-              <div class="settings-item settings-install-card">
+              <div class="settings-item settings-install-card bridge-setup-card">
                 <div class="settings-item-text">
-                  <div class="settings-item-title">
-                    <span data-i18n="settings.bridge.status.title">Bridge 狀態</span>
+                  <div class="settings-item-title bridge-setup-heading">
+                    <span data-i18n="settings.bridge.card.title">SDK Bridge Setup</span>
                     <span
                       class="status-dot"
                       id="bridgeStatusDot"
                       aria-hidden="true"
                     ></span>
+                  </div>
+                  <div class="settings-item-desc" data-i18n="settings.bridge.card.desc">
+                    SDK 模式需要本機 Bridge 服務與 sidepilot:// 啟動器
+                  </div>
+                  <div class="bridge-setup-badges" id="bridgeSetupBadges">
+                    <span class="bridge-setup-badge" id="bridgeLauncherBadge">Launcher: Unknown</span>
+                    <span class="bridge-setup-badge" id="bridgeBridgeBadge">Bridge: Offline</span>
+                    <span class="bridge-setup-badge" id="bridgeRuntimeBadge">Runtime: Auto</span>
                   </div>
                   <div class="settings-item-desc" id="bridgeInstallStatus">
                     尚未檢查
@@ -478,33 +515,233 @@
                   </div>
                   <input type="checkbox" id="settingAutoStartBridge" checked />
                 </label>
-                <p class="settings-install-guide">
-                  首次使用 SDK 模式需啟動本機 Bridge 服務：檢查狀態 →
-                  複製指令到終端機啟動 → 驗證連線
-                </p>
-                <div class="settings-install-steps">
-                  <button class="btn btn-secondary btn-sm" id="bridgeLaunchBtn" data-i18n="settings.bridge.step.launch">
-                    0. 啟動 Bridge
+                <div class="settings-item settings-item-vertical">
+                  <div class="settings-item-text">
+                    <div class="settings-item-title" data-i18n="settings.bridge.root.title">
+                      SidePilot Repo Root
+                    </div>
+                    <div class="settings-item-desc" id="bridgeProjectRootHint">
+                      填入 SidePilot repo 根目錄；Quick Setup 與手動啟動指令都會使用這個路徑。
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    id="settingBridgeProjectRoot"
+                    class="settings-text-input settings-mono-input"
+                    placeholder="Q:\path\to\SidePilot"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="bridge-setup-actions">
+                  <button class="btn btn-primary btn-sm" id="bridgePrimaryBtn">
+                    嘗試自動啟動 Bridge
                   </button>
-                  <span class="step-arrow" aria-hidden="true">→</span>
-                  <button class="btn btn-secondary btn-sm" id="bridgeCheckBtn" data-i18n="settings.bridge.step.check">
-                    1. 檢查狀態
-                  </button>
-                  <span class="step-arrow" aria-hidden="true">→</span>
                   <button
                     class="btn btn-secondary btn-sm"
-                    id="bridgeCopyCmdBtn"
-                    data-i18n="settings.bridge.step.copyStart"
+                    id="bridgeAdvancedToggleBtn"
+                    aria-expanded="false"
                   >
-                    2. 複製啟動指令
+                    顯示進階選項
                   </button>
-                  <span class="step-arrow" aria-hidden="true">→</span>
+                </div>
+                <div class="bridge-advanced-panel hidden" id="bridgeAdvancedPanel">
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.runtime">
+                        手動指令 Runtime
+                      </div>
+                      <div class="settings-item-desc" id="bridgeAdvancedRuntimeHint">
+                        只顯示目前選定 runtime 的安裝與手動啟動指令
+                      </div>
+                    </div>
+                    <div class="bridge-runtime-picker" id="bridgeRuntimePicker">
+                      <button class="bridge-runtime-btn" type="button" data-runtime="auto">Auto</button>
+                      <button class="bridge-runtime-btn" type="button" data-runtime="windows">Windows</button>
+                      <button class="bridge-runtime-btn" type="button" data-runtime="wsl">WSL</button>
+                    </div>
+                  </div>
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.wslDistro">
+                        WSL Distro（選填）
+                      </div>
+                      <div class="settings-item-desc" id="bridgeWslDistroHint" data-i18n="settings.bridge.advanced.wslDistroDesc">
+                        僅供 WSL Quick Setup 與 sidepilot:// 自動啟動使用；留空時使用預設 distro。
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      id="settingBridgeWslDistro"
+                      class="settings-text-input settings-mono-input"
+                      placeholder="Ubuntu-24.04"
+                      spellcheck="false"
+                    />
+                  </div>
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.install">
+                        Quick Setup 指令
+                      </div>
+                    </div>
+                    <textarea
+                      id="bridgeInstallCommandPreview"
+                      class="settings-textarea settings-mono-input bridge-command-preview"
+                      readonly
+                    ></textarea>
+                  </div>
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.manual">
+                        手動啟動指令
+                      </div>
+                    </div>
+                    <textarea
+                      id="bridgeCommandPreview"
+                      class="settings-textarea settings-mono-input bridge-command-preview"
+                      readonly
+                    ></textarea>
+                  </div>
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.lastError">
+                        上次自動啟動結果
+                      </div>
+                    </div>
+                    <div class="settings-item-sub bridge-last-result" id="bridgeLastResultDetail">
+                      -
+                    </div>
+                  </div>
+                  <div class="settings-item settings-item-vertical">
+                    <div class="settings-item-text">
+                      <div class="settings-item-title" data-i18n="settings.bridge.advanced.diagnostics">
+                        啟動診斷
+                      </div>
+                      <div class="settings-item-desc" data-i18n="settings.bridge.advanced.diagnosticsDesc">
+                        根據目前 runtime、repo root、WSL 設定與最近一次 probe/launcher 結果推斷。
+                      </div>
+                    </div>
+                    <textarea
+                      id="bridgeDiagnosticPreview"
+                      class="settings-textarea settings-mono-input bridge-command-preview"
+                      readonly
+                    ></textarea>
+                  </div>
+                  <div class="settings-inline-actions">
+                    <button
+                      class="btn btn-secondary settings-inline-btn"
+                      id="bridgeCheckBtn"
+                      data-i18n="settings.bridge.actions.check"
+                    >
+                      重新檢查
+                    </button>
+                    <button
+                      class="btn btn-secondary settings-inline-btn"
+                      id="bridgeCopyInstallBtn"
+                      data-i18n="settings.bridge.actions.copyInstall"
+                    >
+                      複製安裝指令
+                    </button>
+                    <button
+                      class="btn btn-secondary settings-inline-btn"
+                      id="bridgeCopyCmdBtn"
+                      data-i18n="settings.bridge.actions.copyStart"
+                    >
+                      複製啟動指令
+                    </button>
+                    <button
+                      class="btn btn-secondary settings-inline-btn"
+                      id="bridgeCopyCheckBtn"
+                      data-i18n="settings.bridge.actions.copyHealth"
+                    >
+                      複製檢查指令
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-section collapsed" id="settingsSectionProviders">
+            <div class="settings-section-title" data-toggle="section" data-i18n="settings.section.providers">
+              Provider Probe
+            </div>
+            <div class="settings-section-body">
+              <div class="settings-item settings-install-card">
+                <div class="settings-item-text">
+                  <div class="settings-item-title">
+                    <span data-i18n="settings.antigravity.status.title">Antigravity Provider Probe</span>
+                    <span
+                      class="status-dot"
+                      id="antigravityStatusDot"
+                      aria-hidden="true"
+                    ></span>
+                  </div>
+                  <div class="settings-item-desc" id="antigravityInstallStatus">
+                    尚未檢查
+                  </div>
+                  <div class="settings-item-sub" id="antigravityInstallDetail">
+                    預設探測：http://127.0.0.1:47619/health
+                  </div>
+                </div>
+                <div class="settings-item settings-item-vertical">
+                  <div class="settings-item-text">
+                    <div class="settings-item-title" data-i18n="settings.antigravity.baseUrl.title">
+                      Base URL
+                    </div>
+                    <div class="settings-item-desc" data-i18n="settings.antigravity.baseUrl.desc">
+                      指向 Antigravity Chat Standalone 本機 bridge，例如 http://127.0.0.1:47619
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    id="settingAntigravityBaseUrl"
+                    class="settings-text-input settings-mono-input"
+                    data-i18n-placeholder="settings.antigravity.baseUrl.placeholder"
+                    placeholder="http://127.0.0.1:47619"
+                    value="http://127.0.0.1:47619"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="settings-item settings-item-vertical">
+                  <div class="settings-item-text">
+                    <div class="settings-item-title" data-i18n="settings.antigravity.token.title">
+                      Bridge Token
+                    </div>
+                    <div class="settings-item-desc" data-i18n="settings.antigravity.token.desc">
+                      選填；要讀取 /v1/meta 與 /v1/detect 時需要 Bearer token
+                    </div>
+                  </div>
+                  <input
+                    type="password"
+                    id="settingAntigravityToken"
+                    class="settings-text-input settings-mono-input"
+                    data-i18n-placeholder="settings.antigravity.token.placeholder"
+                    placeholder="Paste Antigravity bridge token"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                </div>
+                <div class="settings-inline-actions">
                   <button
-                    class="btn btn-secondary btn-sm"
-                    id="bridgeCopyCheckBtn"
-                    data-i18n="settings.bridge.step.verify"
+                    class="btn btn-secondary settings-inline-btn"
+                    id="antigravityHealthBtn"
+                    data-i18n="settings.antigravity.actions.health"
                   >
-                    3. 驗證連線
+                    檢查 Health
+                  </button>
+                  <button
+                    class="btn btn-secondary settings-inline-btn"
+                    id="antigravityMetaBtn"
+                    data-i18n="settings.antigravity.actions.meta"
+                  >
+                    讀取 Meta
+                  </button>
+                  <button
+                    class="btn btn-secondary settings-inline-btn"
+                    id="antigravityDetectBtn"
+                    data-i18n="settings.antigravity.actions.detect"
+                  >
+                    自動偵測
                   </button>
                 </div>
               </div>
@@ -661,6 +898,7 @@
                   </label>
                   <label
                     class="settings-item settings-toggle settings-toggle-child"
+                    id="sdkIncludeSystemMsgItem"
                   >
                     <div class="settings-item-text">
                       <div class="settings-item-title">System Instructions</div>
@@ -727,6 +965,24 @@
               iframe 模式
             </div>
             <div class="settings-section-body">
+              <div class="settings-item settings-item-vertical">
+                <div class="settings-item-text">
+                  <div class="settings-item-title" data-i18n="settings.iframe.mode.title">
+                    Link Guard 模式
+                  </div>
+                  <div class="settings-item-desc" data-i18n="settings.iframe.mode.desc">
+                    allow = 僅匹配 URL 留在 Sidecar；deny = 匹配 URL 改在新分頁開啟
+                  </div>
+                </div>
+                <select id="settingLinkGuardMode" class="settings-text-input">
+                  <option value="allow" data-i18n="settings.iframe.mode.allow">
+                    Allowlist（白名單）
+                  </option>
+                  <option value="deny" data-i18n="settings.iframe.mode.deny">
+                    Denylist（黑名單）
+                  </option>
+                </select>
+              </div>
               <div class="settings-item settings-textarea-wrap">
                 <div class="settings-item-text">
                   <div class="settings-item-title" data-i18n="settings.iframe.allowlist.title">
@@ -769,6 +1025,22 @@
                   max="100"
                   step="2"
                   value="42"
+                />
+              </label>
+              <label class="settings-item settings-range">
+                <div class="settings-item-text">
+                  <div class="settings-item-title" data-i18n="settings.capture.position.title">上下位置</div>
+                  <div class="settings-item-desc" id="captureBtnTopValue">
+                    目前：38%
+                  </div>
+                </div>
+                <input
+                  type="range"
+                  id="settingCaptureButtonTop"
+                  min="8"
+                  max="92"
+                  step="1"
+                  value="38"
                 />
               </label>
             </div>
