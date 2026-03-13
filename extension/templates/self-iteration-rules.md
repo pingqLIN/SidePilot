@@ -1,54 +1,54 @@
-# 自我疊代開發模式 (Self-Iteration Mode)
+# Self-Iteration Mode
 
-## 核心原則
-- AI 可主動建議新增、修改、刪除記憶條目與規則內容
-- 每次對話結束前，回顧本次互動是否產生值得記錄的知識
-- 持續累積專案上下文，減少重複說明
-- **所有程式碼變更必須可追蹤、可回溯**
+## Core Principles
+- AI may proactively suggest adding, editing, or deleting memory entries and rule content
+- Before each conversation ends, review whether the interaction produced knowledge worth recording
+- Continuously accumulate project context to reduce repeated explanations
+- **All code changes must be traceable and reversible**
 
-## 記憶管理策略
-- 發現新的專案慣例或偏好時 → 建議新增記憶條目
-- 發現記憶內容過時或矛盾時 → 建議更新或刪除
-- 記憶條目應簡潔（< 200 字），包含來源引用
-- 分類使用：`context`（技術上下文）、`note`（發現與觀察）、`reference`（參考資料）
+## Memory Management Strategy
+- When a new project convention or preference is discovered → propose a new memory entry
+- When memory content is outdated or contradictory → propose an update or deletion
+- Memory entries should be concise (< 200 words) and include a source reference
+- Use categories: `context` (technical context), `note` (findings & observations), `reference` (reference material)
 
-## 規則演進策略
-- 發現反覆出現的需求模式時 → 建議加入規則
-- 規則衝突時 → 優先遵循最新使用者指令，並建議更新規則
-- 規則應具體可執行，避免模糊描述
+## Rules Evolution Strategy
+- When a recurring requirement pattern is identified → propose adding a rule
+- On rule conflicts → follow the most recent user instruction and suggest updating the rule
+- Rules should be specific and actionable; avoid vague descriptions
 
-## 版本與 Git 紀律
+## Version & Git Discipline
 
-### 檢查點機制（每次疊代必須遵守）
-1. **修改前**：確認當前工作區乾淨（`git status`）
-2. **修改中**：每個邏輯單元一個 commit，訊息格式 `type: 描述`
-   - `feat:` 新功能 → bump minor
-   - `fix:` 修復 → bump patch
-   - `refactor:` 重構 → bump patch
-   - `style:` 樣式 → 不 bump
-3. **修改後**：執行測試確認不破壞既有功能
-4. **里程碑**：功能完成時執行 `npm run version:bump` 建立版本標籤
+### Checkpoint Protocol (required every iteration)
+1. **Before changes**: Confirm the working tree is clean (`git status`)
+2. **During changes**: One commit per logical unit, format `type: description`
+   - `feat:` new feature → bump minor
+   - `fix:` bug fix → bump patch
+   - `refactor:` refactor → bump patch
+   - `style:` style only → no bump
+3. **After changes**: Run tests to confirm no regressions
+4. **Milestone**: On feature completion, run `npm run version:bump` to create a version tag
 
-### 版本號規則
-- 格式：`MAJOR.MINOR.PATCH`（語意化版本）
-- `package.json` 為唯一來源，`bump-version` 腳本自動同步 `manifest.json`
-- 每次 bump 自動追加 CHANGELOG.md 條目
-- Git tag 格式：`v0.5.0`
+### Version Number Rules
+- Format: `MAJOR.MINOR.PATCH` (semantic versioning)
+- `package.json` is the single source of truth; `bump-version` script syncs `manifest.json` automatically
+- Each bump appends a CHANGELOG.md entry automatically
+- Git tag format: `v0.5.0`
 
-### 安全回溯
-- 任何時候可用 `git tag` 查看所有穩定點
-- 回溯：`git checkout v0.5.0` 即可還原到該版本
-- 發現錯誤：`git revert <commit>` 而非強制覆蓋歷史
-- **禁止 `git push --force` 或 `git reset --hard` 到已推送的提交**
+### Safe Rollback
+- Use `git tag` at any time to view all stable checkpoints
+- Rollback: `git checkout v0.5.0` to restore that version
+- On error: use `git revert <commit>` rather than force-overwriting history
+- **Prohibit `git push --force` or `git reset --hard` on already-pushed commits**
 
-## 對話行為
-- 主動標記：「💡 建議記憶」或「📝 建議規則更新」
-- 提供具體的新增/修改內容，等待使用者確認
-- 追蹤哪些建議被接受、哪些被拒絕，調整未來建議策略
-- 修改程式碼前報告：影響範圍、預期結果、回溯方式
+## Conversation Behavior
+- Proactively mark suggestions: "💡 Suggested Memory" or "📝 Suggested Rule Update"
+- Provide concrete add/edit content and wait for user confirmation
+- Track which suggestions were accepted or rejected to adjust future proposal strategy
+- Before modifying code, report: scope of impact, expected outcome, and rollback method
 
-## 安全邊界
-- 不自動執行記憶/規則變更，僅提議
-- 不刪除使用者手動建立的核心記憶
-- 敏感資訊（密碼、token）不得寫入記憶
-- 不跳過測試直接 bump 版本
+## Safety Boundaries
+- Do not automatically apply memory/rule changes — propose only
+- Do not delete core memory entries created manually by the user
+- Sensitive information (passwords, tokens) must never be written to memory
+- Do not skip tests to bump a version

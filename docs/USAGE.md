@@ -1,6 +1,20 @@
 # SidePilot — Detailed Usage Guide
 
-> This guide covers every feature in detail. For quick setup, see [README.md](../README.md).
+> This is the practical setup-and-operations guide. For the homepage view, see [README.md](../README.md).
+
+| You are here | Best for | Good next reads |
+| --- | --- | --- |
+| setup, configuration, and day-to-day operation | users who want to install SidePilot and actually use it | [guide/getting-started/README.md](guide/getting-started/README.md), [guide/concepts/README.md](guide/concepts/README.md), [FEATURES.md](FEATURES.md) |
+
+## Pick your route
+
+| If you want to... | Start here |
+| --- | --- |
+| install the extension fast | [📦 Installation](#-installation) |
+| understand iframe mode first | [🌐 iframe Mode](#-iframe-mode) |
+| unlock streaming + bridge features | [🔧 SDK Mode](#-sdk-mode) |
+| manage persistent context | [🧠 Memory Bank](#-memory-bank) |
+| tune behavior and storage | [⚙️ Settings Reference](#%EF%B8%8F-settings-reference) |
 
 ---
 
@@ -17,6 +31,7 @@
 - [Keyboard Shortcuts](#-keyboard-shortcuts)
 - [Storage & Data](#-storage--data)
 - [Bridge Server API](#-bridge-server-api)
+- [Development](#%EF%B8%8F-development)
 
 ---
 
@@ -27,7 +42,7 @@
 | Requirement | Minimum |
 |-------------|---------|
 | Chrome | Version 114 or later |
-| Node.js | Version 18+ (SDK mode only) |
+| Node.js | Version 24+ (SDK mode only) |
 | GitHub Account | Copilot subscription required |
 | OS | Windows, macOS, or Linux |
 
@@ -125,10 +140,10 @@ Side Panel  ←──HTTP/SSE──→  Bridge Server  ←──JSON-RPC/stdio�
 
 #### Prerequisites
 
-1. **Node.js 18+**
+1. **Node.js 24+**
 
 ```bash
-node --version    # Should output v18.x.x or higher
+node --version    # Should output v24.x.x or higher
 ```
 
 2. **GitHub Copilot CLI**
@@ -142,21 +157,24 @@ If not installed, follow [GitHub Copilot CLI documentation](https://docs.github.
 
 #### Starting the Bridge Server
 
-**Development mode** (recommended for most use):
+**Recommended mode** (Supervisor + Worker):
 
 ```bash
 cd scripts/copilot-bridge
 npm install          # First time only
-npm run dev          # Starts with hot-reload
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
+npm start            # Starts Supervisor + Worker bound to that extension
 ```
 
-**Production mode** (with supervisor for auto-restart):
+**Development mode** (worker-only hot reload):
 
 ```bash
 cd scripts/copilot-bridge
-npm run build        # Compile TypeScript
-npm start            # Starts Supervisor + Worker
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
+npm run dev          # Starts worker-only hot-reload bound to that extension
 ```
+
+> **Important:** `SIDEPILOT_EXTENSION_ID` is required for secure loopback auth. The one-click launcher sets it automatically; if you start the bridge manually, set it yourself first.
 
 #### Verifying the Connection
 
@@ -176,21 +194,132 @@ Expected response:
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
 
-### First-Time Login
+### Automated Guidance Flow
 
-1. Switch to **SDK** mode in the side panel
-2. A login guide dialog appears automatically
-3. Click **Open GitHub Login Page** to authenticate via OAuth
-4. Return to the side panel and click **Test Bridge Connection**
-5. Once connected, the guide dismisses automatically
+When you switch to SDK mode for the first time, SidePilot runs a **three-stage automated sequence** that handles login, bridge launch, and connection — with no manual steps required in the happy path.
 
-> **Tip:** You can re-trigger the login guide from Settings > SDK Mode.
+#### Stage 1 — Login Guide Modal (one-time)
+
+On the **first SDK switch**, a login guide dialog appears automatically (`maybeShowSDKLoginGuideOnFirstUse`). It will not appear again once dismissed.
+
+What the modal does:
+- Explains that SDK mode requires a GitHub Copilot subscription
+- Provides a **"Open GitHub Login"** button that opens the Copilot authentication page directly:
+  `https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot`
+- Provides a **"Test Bridge Connection"** button to verify the bridge is reachable after login
+- Dismisses automatically once the bridge connects successfully
+
+> **Re-trigger:** You can reopen the login guide at any time from **Settings › SDK Mode**.
+
+#### Stage 2 — Bridge Auto-Start (automatic on every SDK switch)
+
+Every time you switch to SDK mode, SidePilot checks whether the bridge is running (`ensureSDKBridgeReadyWithAutoStart`):
+
+1. **Checks** `http://localhost:31031/health` — if the bridge is already up, proceeds immediately
+2. **If not running** — sends a `sidepilot://` custom URI to the OS, which triggers the Bridge Launcher (Windows: registered via the PowerShell installer) to start the bridge in the background
+3. **Polls** for up to ~10 seconds for the bridge to become available
+4. **If auto-start succeeds** — the side panel connects transparently with no user action required
+5. **If auto-start fails** — shows an in-chat help message with manual commands (see Stage 3)
+
+> **Prerequisite:** The Bridge Launcher must be installed for auto-start to work. See [Bridge Auto-Launcher (Windows)](#bridge-auto-launcher-windows) below.
+
+#### Stage 3 — Manual Fallback (when auto-start is unavailable)
+
+If the bridge is not running and auto-start cannot launch it, SidePilot displays a help message in chat with the exact commands needed:
+
+**Option A — Quick Setup (recommended, single command)**
+
+Copy the one-click command from **Settings › Bridge Setup › Copy Quick Setup**, then run it in your terminal. It installs Node dependencies, sets `SIDEPILOT_EXTENSION_ID`, and starts the supervisor in one step.
+
+**Option B — Manual startup**
+
+```bash
+cd scripts/copilot-bridge
+npm install                                     # First time only
+export SIDEPILOT_EXTENSION_ID=<your-extension-id>   # macOS / Linux
+# $env:SIDEPILOT_EXTENSION_ID="<your-extension-id>" # Windows PowerShell
+npm start                                       # Builds and starts Supervisor + Worker
+```
+
+> **Find your Extension ID:** Go to `chrome://extensions/` → find SidePilot → copy the ID shown below the name.
+
+After the bridge is running, switch to **SDK** mode again — the connection is established automatically.
+
+#### Stage 4 — GitHub CLI Authentication
+
+The bridge communicates with `copilot --acp --stdio`. If the CLI is not authenticated, conversations will fail with an auth error. Authenticate once with:
+
+```bash
+copilot auth login
+```
+
+Or open the Copilot login page directly:
+
+```
+https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot
+```
+
+> For CLI installation, see [GitHub Copilot in the CLI documentation](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line).
+
+---
+
+### Bridge Auto-Launcher (Windows)
+
+The Bridge Launcher registers a `sidepilot://` URI handler at the OS level so the extension can start the bridge with a single click — no terminal required.
+
+**Install**
+
+```powershell
+npm run bridge-launcher:install:win
+```
+
+This registers the `sidepilot://` protocol in the Windows registry and creates a launcher script.
+
+**Verify**
+
+```powershell
+npm run bridge-launcher:test:win
+```
+
+**Uninstall**
+
+```powershell
+npm run bridge-launcher:uninstall:win
+```
+
+> Run all commands from the project root (where `package.json` lives), not from `scripts/copilot-bridge/`.
+
+For full details, see [`scripts/bridge-launcher/`](../scripts/bridge-launcher/).
+
+---
+
+### First-Time Checklist
+
+| # | Step | How |
+|---|------|-----|
+| 1 | Install extension | Load `extension/` folder in `chrome://extensions/` |
+| 2 | Install Bridge Launcher (Windows) | `npm run bridge-launcher:install:win` |
+| 3 | Switch to SDK mode | Mode toggle in the side panel top-right |
+| 4 | Complete login guide | Click **Open GitHub Login**, sign in, return |
+| 5 | Bridge starts automatically | Wait ~5–10 s for auto-start; or run Quick Setup manually |
+| 6 | Authenticate Copilot CLI | `copilot auth login` (once per machine) |
+| 7 | Start chatting | Type in the SDK chat box |
+
+> **Tip:** After initial setup, daily use requires no terminal — just open Chrome and switch to SDK mode.
+
+See also: [Bridge Server README](../scripts/copilot-bridge/README.md) · [Getting Started Guide](guide/getting-started/README.md)
 
 ### Chatting in SDK Mode
 
@@ -570,9 +699,15 @@ Health check endpoint.
 ```json
 {
   "status": "ok",
-  "service": "copilot-bridge",
+  "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": "acp-cli"
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
 
@@ -648,6 +783,91 @@ Send a chat message and wait for the complete response (blocking).
 }
 ```
 
+#### `POST /api/auth/bootstrap`
+
+Bootstrap a loopback auth token for the current session. Must be called once before any protected `/api/*` request. The extension calls this automatically on first connection, but the bridge must already be started with `SIDEPILOT_EXTENSION_ID=<your extension id>`.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "token": "<loopback-token>"
+}
+```
+
+All subsequent `/api/*` requests must include the returned token in `X-SidePilot-Token`, and the request must still come from the bound `chrome-extension://<id>` origin:
+
+```
+X-SidePilot-Token: <loopback-token>
+```
+
+#### `GET /api/backup`
+
+List all available backups.
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "backups": [
+    {
+      "id": "abc12345",
+      "type": "full",
+      "timestamp": 1712345678000,
+      "size": 204800,
+      "filename": "SidePilot-full-2026-03-13-abc12345.zip",
+      "status": "success"
+    }
+  ]
+}
+```
+
+#### `POST /api/backup`
+
+Trigger a manual backup. Two types are supported:
+
+| Type | Contents |
+|------|----------|
+| `full` | Entire `extension/` folder (excludes `node_modules`, `dist`) |
+| `settings` | Rules JSON, all rule templates |
+
+**Request:**
+
+```json
+{ "mode": "full" }
+```
+
+Backups are saved as `.zip` files in the configured backup directory (default: `../../../SidePilot-Backups/` relative to the bridge server).
+
+#### `POST /api/backup/schedule`
+
+Enable or disable automatic scheduled backups.
+
+**Request:**
+
+```json
+{
+  "mode": "settings",
+  "frequency": "d",
+  "interval": 1,
+  "savePath": "/path/to/backups",
+  "enabled": true
+}
+```
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `mode` | `full` \| `settings` | What to back up |
+| `frequency` | `h` `d` `w` `m` | Hourly / daily / weekly / monthly |
+| `interval` | `1`, `2`, … | Every N units |
+| `enabled` | `true` \| `false` | Turn scheduler on/off |
+
+#### `DELETE /api/backup/:id`
+
+Delete a backup by ID.
+
 ---
 
 ## 🛠️ Development
@@ -665,37 +885,75 @@ SidePilot/
 │   ├── rules.json           # Declarative Net Request rules
 │   ├── icons/               # Extension icons
 │   ├── assets/              # Media files
+│   ├── templates/           # Built-in rule templates (.md)
 │   └── js/                  # JavaScript modules
-│       ├── sdk-client.js    # Bridge communication
-│       ├── sdk-chat.js      # SDK mode UI
-│       ├── mode-manager.js  # Mode switching
-│       ├── memory-bank.js   # Memory CRUD
-│       ├── rules-manager.js # Rules management
-│       ├── link-guard.js    # iframe link control
-│       ├── vscode-connector.js
-│       ├── automation.js    # Page capture
-│       └── storage-manager.js
+│       ├── sdk-client.js             # Bridge HTTP/SSE communication
+│       ├── sdk-chat.js               # SDK mode chat UI
+│       ├── mode-manager.js           # iframe ↔ SDK mode switching
+│       ├── memory-bank.js            # Memory CRUD and injection
+│       ├── rules-manager.js          # Rules management
+│       ├── link-guard.js             # iframe link allow/denylist
+│       ├── automation.js             # Page capture (text, code, screenshot)
+│       ├── connection-controller.js  # Bridge connection health management
+│       ├── storage-manager.js        # Chrome storage abstraction
+│       ├── vendor-content-cleaner.js # Strips noisy vendor markup from captures
+│       └── vscode-connector.js       # Opens memory entries in VS Code / Cursor
 │
-├── scripts/copilot-bridge/  # Bridge server
+├── scripts/copilot-bridge/  # Bridge server (TypeScript)
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── src/
-│       ├── server.ts        # Express app + routes
-│       ├── supervisor.ts    # Process supervision
-│       ├── session-manager.ts
-│       └── ipc-types.ts
+│       ├── server.ts           # Express app + all API routes
+│       ├── supervisor.ts       # Process supervision + auto-restart
+│       ├── session-manager.ts  # ACP session lifecycle
+│       ├── backup-manager.ts   # Backup/restore + scheduler
+│       └── ipc-types.ts        # Supervisor ↔ Worker message types
+│
+├── scripts/bridge-launcher/  # Auto-launch helpers
+│   ├── windows/               # PowerShell installer + protocol handler
+│   └── wsl/                   # WSL launcher
 │
 ├── docs/                    # Documentation
 │   ├── USAGE.md             # This file
-│   ├── USAGE.zh-TW.md      # Chinese version
-│   ├── DEVELOPMENT_PLAN.md  # v2.0 roadmap
-│   └── screenshots/         # UI screenshots
+│   ├── USAGE.zh-TW.md       # Chinese version
+│   ├── FEATURES.md          # Full feature tour
+│   ├── DEVELOPMENT_PLAN.md  # Public roadmap
+│   └── guide/               # Structured guide hub
 │
 ├── package.json             # Extension dev dependencies
 ├── README.md                # Project overview (English)
 ├── README.zh-TW.md          # Project overview (Chinese)
 └── LICENSE                  # MIT License
 ```
+
+### Bridge Auto-Launcher (Windows)
+
+The bridge launcher registers a custom URI protocol (`sidepilot://start-bridge`) so the extension can trigger bridge startup with one click in the UI — no terminal required.
+
+**Install (run once):**
+
+```powershell
+cd scripts/bridge-launcher/windows
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install-launcher.ps1
+```
+
+**Verify install:**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\test-launcher.ps1
+```
+
+**Uninstall:**
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-launcher.ps1 -RemoveFiles
+```
+
+After installation, the **Start Bridge** button in the extension's Settings > Bridge Setup panel can launch the bridge server directly. The launcher is registered under `HKCU:\Software\Classes\sidepilot` and does not require admin privileges.
+
+> **WSL users:** A shell launcher is available at `scripts/bridge-launcher/wsl/`.
+
+---
 
 ### Running Tests
 
@@ -715,12 +973,18 @@ npm run test:coverage
 ```bash
 cd scripts/copilot-bridge
 
-# Development (hot-reload)
+# Recommended: build + start Supervisor (production)
+npm start
+
+# Development — worker only, hot-reload
 npm run dev
 
-# Build TypeScript
+# Development — supervisor + worker, hot-reload
+npm run dev:supervisor
+
+# Build TypeScript to dist/ only
 npm run build
 
-# Production (with Supervisor)
-npm start
+# Clean dist/ output
+npm run clean
 ```

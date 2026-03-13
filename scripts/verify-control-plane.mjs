@@ -29,6 +29,8 @@ function readArg(name, fallback) {
 
 const BASE_URL = readArg('--base-url', 'http://localhost:31031').replace(/\/+$/, '');
 const TIMEOUT_MS = Number.parseInt(readArg('--timeout', '3500'), 10);
+const EXTENSION_ID = readArg('--extension-id', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa').trim().toLowerCase();
+const EXTENSION_ORIGIN = `chrome-extension://${EXTENSION_ID}`;
 
 if (!Number.isFinite(TIMEOUT_MS) || TIMEOUT_MS <= 0) {
   console.error('❌ Invalid --timeout value');
@@ -77,6 +79,50 @@ async function fetchJson(path, options = {}) {
   }
 }
 
+function buildAuthHeaders({ includeExtensionOrigin = false, includeJson = false } = {}) {
+  const headers = {
+    Accept: 'application/json',
+  };
+
+  if (includeJson) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (includeExtensionOrigin) {
+    headers.Origin = EXTENSION_ORIGIN;
+    headers['X-SidePilot-Extension-Id'] = EXTENSION_ID;
+  }
+
+  return headers;
+}
+
+function buildProtectedHeaders(token, { includeJson = false } = {}) {
+  return {
+    ...buildAuthHeaders({
+      includeExtensionOrigin: true,
+      includeJson,
+    }),
+    'X-SidePilot-Token': token,
+  };
+}
+
+async function bootstrapBridgeAuth() {
+  const response = await fetchJson('/api/auth/bootstrap', {
+    method: 'POST',
+    headers: buildAuthHeaders({
+      includeExtensionOrigin: true,
+      includeJson: true,
+    }),
+    body: {}
+  }).catch(() => null);
+
+  if (!response || !response.ok || !response.body?.success || typeof response.body?.token !== 'string') {
+    return null;
+  }
+
+  return response.body.token;
+}
+
 async function main() {
   console.log('🩺 SidePilot Control Plane Verification');
   console.log(`   Base URL: ${BASE_URL}`);
@@ -105,6 +151,12 @@ async function main() {
   if (healthBody.service !== 'sidepilot-copilot-bridge') {
     fail(`health.service should be "sidepilot-copilot-bridge", got "${healthBody.service}"`);
   }
+  if (healthBody.auth?.required !== true) {
+    fail('health.auth.required should be true');
+  }
+  if (healthBody.auth?.extensionBindingConfigured !== true) {
+    fail('health.auth.extensionBindingConfigured should be true');
+  }
   if (!validSdkStates.has(String(healthBody.sdk))) {
     fail(`health.sdk must be one of ${Array.from(validSdkStates).join(', ')}, got "${healthBody.sdk}"`);
   }
@@ -114,8 +166,19 @@ async function main() {
     note(`health.backend.command does not contain "copilot": ${healthBody.backend.command}`);
   }
 
+  const bridgeToken = await bootstrapBridgeAuth();
+  if (!bridgeToken) {
+    fail('/api/auth/bootstrap unavailable or malformed');
+  }
+
+  const protectedHeaders = bridgeToken
+    ? buildProtectedHeaders(bridgeToken)
+    : {};
+
   // 2) Config
-  const configResp = await fetchJson('/api/config').catch(() => null);
+  const configResp = await fetchJson('/api/config', {
+    headers: protectedHeaders
+  }).catch(() => null);
   if (!configResp || !configResp.ok || !configResp.body?.success) {
     fail('/api/config unavailable or malformed');
   } else {
@@ -132,14 +195,18 @@ async function main() {
   }
 
   // 3) Permission queue + whitelist
-  const pendingResp = await fetchJson('/api/permissions').catch(() => null);
+  const pendingResp = await fetchJson('/api/permissions', {
+    headers: protectedHeaders
+  }).catch(() => null);
   if (!pendingResp || !pendingResp.ok || !pendingResp.body?.success) {
     fail('/api/permissions unavailable or malformed');
   } else if (!Array.isArray(pendingResp.body.permissions)) {
     fail('/api/permissions.permissions must be an array');
   }
 
-  const whitelistResp = await fetchJson('/api/permissions/whitelist').catch(() => null);
+  const whitelistResp = await fetchJson('/api/permissions/whitelist', {
+    headers: protectedHeaders
+  }).catch(() => null);
   if (!whitelistResp || !whitelistResp.ok || !whitelistResp.body?.success) {
     fail('/api/permissions/whitelist unavailable or malformed');
   } else {
@@ -156,7 +223,9 @@ async function main() {
   }
 
   // 4) Prompt strategy guard surface
-  const strategyResp = await fetchJson('/api/prompt/strategy').catch(() => null);
+  const strategyResp = await fetchJson('/api/prompt/strategy', {
+    headers: protectedHeaders
+  }).catch(() => null);
   if (!strategyResp || !strategyResp.ok || !strategyResp.body?.success) {
     fail('/api/prompt/strategy unavailable or malformed');
   } else {
@@ -174,18 +243,28 @@ async function main() {
   const integrityResp = await fetchJson('/api/integrity/verify', {
     method: 'POST',
     headers: {
-      Origin: 'chrome-extension://control-plane-verifier',
-      'Content-Type': 'application/json'
+      ...protectedHeaders,
+      ...buildAuthHeaders({
+        includeExtensionOrigin: true,
+        includeJson: true,
+      })
     },
     body: { timeoutMs: 5000 }
   }).catch(() => null);
-  if (!integrityResp || !integrityResp.ok || !integrityResp.body?.success) {
+  const integrityReachable =
+    !!integrityResp &&
+    (integrityResp.status === 200 || integrityResp.status === 409) &&
+    typeof integrityResp.body?.success === 'boolean';
+  if (!integrityReachable) {
     fail('/api/integrity/verify unavailable or failed');
+  } else if (integrityResp.body.success !== true) {
+    note(`/api/integrity/verify reported current worktree as unsealed (${integrityResp.body.error || 'verification failed'})`);
   }
 
   // Final
   console.log('\nChecks:');
   console.log(`  - Health endpoint          : ${failures.some(f => f.includes('health')) ? 'FAIL' : 'PASS'}`);
+  console.log(`  - Auth bootstrap          : ${failures.some(f => f.includes('/api/auth/bootstrap')) ? 'FAIL' : 'PASS'}`);
   console.log(`  - Config endpoint          : ${failures.some(f => f.includes('/api/config') || f.includes('config.')) ? 'FAIL' : 'PASS'}`);
   console.log(`  - Permission control plane : ${failures.some(f => f.includes('/api/permissions') || f.includes('whitelist')) ? 'FAIL' : 'PASS'}`);
   console.log(`  - Prompt strategy surface  : ${failures.some(f => f.includes('/api/prompt/strategy') || f.includes('prompt.')) ? 'FAIL' : 'PASS'}`);

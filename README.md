@@ -1,733 +1,244 @@
 <p align="center">
-  <img src="docs/banner.png" width="1000" alt="SidePilot banner">
+  <img src="docs/banner.webp" width="1000" alt="SidePilot — GitHub Copilot browser side panel extension">
 </p>
 
 <h1 align="center">SidePilot</h1>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/Version-1.0.0-blue?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/Version-0.5.0-blue?style=flat-square">
   <img alt="Chrome" src="https://img.shields.io/badge/Chrome-114+-4285F4?style=flat-square&logo=google-chrome&logoColor=white">
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-34a853?style=flat-square">
-  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-18+-339933?style=flat-square&logo=node.js&logoColor=white">
+  <img alt="Node.js" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript&logoColor=white">
   <img alt="License" src="https://img.shields.io/badge/License-MIT-yellow?style=flat-square">
 </p>
 
 <p align="center">
-  <b>GitHub Copilot, always at your side — persistent AI chat in the browser side panel.</b>
+  <b>A Chrome extension that keeps GitHub Copilot in your browser side panel — so you can chat, capture, and keep context without leaving the page.</b>
 </p>
 
 <p align="center">
-  <a href="#-screenshots">Screenshots</a> &bull;
-  <a href="#-features">Features</a> &bull;
+  <a href="#-what-is-sidepilot">Overview</a> &bull;
+  <a href="#-product-preview">Preview</a> &bull;
+  <a href="#-core-features-at-a-glance">Features</a> &bull;
   <a href="#-quick-start">Quick Start</a> &bull;
-  <a href="#-usage-guide">Usage Guide</a> &bull;
-  <a href="#%EF%B8%8F-configuration">Configuration</a> &bull;
-  <a href="#-api-reference">API Reference</a> &bull;
-  <a href="#-security">Security</a> &bull;
-  <a href="#-faq">FAQ</a>
+  <a href="#-documentation-tabs">Docs</a> &bull;
+  <a href="docs/guide/api/README.md">API</a> &bull;
+  <a href="docs/SCREENSHOTS.md">Screenshots</a>
 </p>
 
 <p align="center">
-  <a href="README.zh-TW.md">繁體中文</a>
+  <a href="README.zh-TW.md">繁體中文</a> &bull;
+  <a href="docs/guide/README.md">Guide Hub</a> &bull;
+  <a href="docs/guide/getting-started/README.md">Getting Started</a> &bull;
+  <a href="docs/guide/concepts/README.md">Concepts</a> &bull;
+  <a href="docs/SCREENSHOTS.md">Screenshot Gallery</a>
 </p>
 
 ---
 
-## ✨ Screenshots
+## 🧭 What Is SidePilot?
+
+SidePilot is a **Chrome Extension** (Manifest V3) that puts GitHub Copilot AI into the browser side panel. Its goal is simple: **let you work with AI where you're already working**.
+
+Instead of bouncing between tabs, apps, and terminals, you can keep Copilot beside the page you're reading — docs, pull requests, dashboards, or bug reports — and bring that context into the conversation instantly.
+
+### Why it exists
+
+- **No tab switching** — AI stays next to the page you're working on
+- **Two modes** — start instantly with iframe mode, or unlock full power with SDK mode
+- **Context-aware workflow** — capture page text, code blocks, and screenshots directly from the browser
+- **Persistent memory** — keep tasks, notes, and references across sessions
+- **Rules-driven behavior** — shape responses with templates and custom instructions
+- **Local-first setup** — bridge stays on `localhost`, no extra cloud relay
+
+### Best for
+
+- developers researching in the browser
+- people who want persistent AI context
+- users who want gradual setup from simple to advanced
+- local-tooling power users on Windows / WSL
+
+---
+
+## 📸 Product Preview
 
 <table>
   <tr>
-    <td align="center"><b>iframe Mode</b><br><img src="docs/screenshots/iframe-mode.png" height="340" alt="iframe mode"></td>
-    <td align="center"><b>SDK Mode</b><br><img src="docs/screenshots/sdk-chat.png" height="340" alt="SDK mode chat"></td>
+    <td width="33%" align="center">
+      <img src="pic/14-header-tabs.png" width="280" alt="SidePilot header with all tabs"><br>
+      <b>Instant side-panel access</b><br>
+      <sub>Open Copilot inside the browser side panel — switch IFRAME / SDK with one click.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="pic/15-sdk-model-select.png" width="280" alt="SDK model selector"><br>
+      <b>Streaming SDK chat</b><br>
+      <sub>Switch to the local bridge for richer control, models, and streaming.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="pic/16-rules-templates.png" width="280" alt="Rules templates picker"><br>
+      <b>Rules that shape behavior</b><br>
+      <sub>Use built-in templates (TypeScript, React, Safety…) or write custom instructions.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" align="center">
+      <img src="pic/19-page-capture.png" width="280" alt="Page capture panel"><br>
+      <b>Capture what you're seeing</b><br>
+      <sub>Pull text, code blocks, and screenshots straight from the page.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="pic/18-settings-bridge.png" width="280" alt="Bridge setup panel"><br>
+      <b>Bridge auto-start</b><br>
+      <sub>SidePilot detects and launches the local bridge automatically when SDK mode is entered.</sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="pic/13-welcome-screen.png" width="280" alt="Welcome onboarding screen"><br>
+      <b>Guided onboarding</b><br>
+      <sub>Move from quick start to advanced mode without leaving the panel.</sub>
+    </td>
   </tr>
 </table>
 
-<details>
-<summary><b>More screenshots</b></summary>
-<br>
-
-| Feature | Screenshot |
-|---------|-----------|
-| **Rules Tab** — Manage behavioral instructions alongside GitHub | <img src="docs/screenshots/rules-tab.png" height="200" alt="Rules tab"> |
-| **Settings Panel** — Collapsible sections for all configuration | <img src="docs/screenshots/settings-panel.png" height="200" alt="Settings panel"> |
-| **SDK Settings** — Memory/rules injection, storage paths | <img src="docs/screenshots/settings-sdk.png" height="200" alt="SDK settings"> |
-| **Page Capture (Text)** — Extract page content to chat | <img src="docs/screenshots/page-capture-text.png" height="200" alt="Page capture text"> |
-| **Page Capture (Screenshot)** — Partial screenshot extraction | <img src="docs/screenshots/page-capture-screenshot.png" height="200" alt="Page capture screenshot"> |
-| **SDK + Context** — Captured page context in SDK mode | <img src="docs/screenshots/sdk-context.png" height="200" alt="SDK with context"> |
-
-</details>
-
 ---
 
-## ✨ Features
+## 🎯 Core Features at a Glance
 
-- **Dual Mode Architecture** — iframe mode for web Copilot, SDK mode for official Copilot CLI bridge
-- **Memory Bank** — Store tasks, notes, context, and references with status tracking and search
-- **Rules Management** — Define behavioral instructions with built-in templates (Default, TypeScript, React)
-- **Page Capture** — Extract page text, take full or partial screenshots with a vertical floating button
-- **Link Guard** — Allowlist or denylist control over iframe link navigation
-- **Config Sync** — Sync model, theme, reasoning effort to `~/.copilot/config.json`
-- **Context Injection** — Auto-inject memory entries and rules before prompts (SDK mode)
-- **Streaming Responses** — Real-time SSE streaming in SDK mode with tool execution support
+| Feature | What it gives you | Screenshot |
+| --- | --- | --- |
+| **Dual Mode** | iframe for zero-config use, SDK for streaming + advanced context | `pic/14-header-tabs.png`, `pic/15-sdk-model-select.png` |
+| **Memory Bank** | reusable tasks, notes, references, and context injection | `pic/20-history-tab.png` |
+| **Rules & Templates** | Markdown instructions with built-in templates | `pic/16-rules-templates.png` |
+| **Page Capture** | grab page text, code blocks, and screenshots without leaving the tab | `pic/19-page-capture.png` |
+| **Bridge Auto-Start** | easier SDK startup with local launcher flow | `pic/18-settings-bridge.png` |
+
+> Want the full walkthrough? Open [docs/FEATURES.md](docs/FEATURES.md).
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Install the Extension
+### Do I need the Bridge?
 
-1. Open `chrome://extensions/` in Chrome
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Select the `SidePilot/extension` folder
+The **Bridge** is a small local server that lives inside this repo. You do **not** need it to try SidePilot.
 
-### 2. Open the Side Panel
+| I want to… | Do I need the Bridge? |
+| --- | --- |
+| Try SidePilot right now | **No** — just install the extension and open it |
+| Use streaming chat, Memory Bank, or Rules | **Yes** — start the Bridge from the repo first |
 
-| Platform | Shortcut |
-|----------|----------|
-| Windows / Linux | `Alt + Shift + P` |
-| macOS | `Opt + Shift + P` |
+> **What the Bridge is, in one sentence:** It is not a separate product or download. It lives at `scripts/copilot-bridge/` inside this repo. Wherever you cloned this repo, that is where the Bridge is.
 
-Or click the SidePilot extension icon in the toolbar.
+---
 
-### 3. Choose Your Mode
+### Path A — Instant start (no Bridge needed)
 
-| Mode | Setup | Best For |
-|------|-------|----------|
-| **iframe** | Zero config — works immediately | Quick access to Copilot web UI |
-| **SDK** | Requires bridge server (see below) | Official API, streaming, context injection |
+**Simpler option — download the packaged extension**
 
-<details>
-<summary><b>SDK Mode Setup (Bridge Server)</b></summary>
+If you only want to install SidePilot and do not want to clone the repo first, download `SidePilot-extension-v*.zip` from GitHub Releases.
 
-#### Prerequisites
+1. Download and extract the packaged zip
+2. Open `chrome://extensions/`
+3. Enable **Developer mode**
+4. Click **Load unpacked**
+5. Select the extracted folder
 
-- **Node.js 18+** installed
-- **GitHub Copilot CLI** installed and authenticated
+> Maintainers can generate this package from the repo root with `npm run package:extension`.
+
+**Step 1 — Clone and build**
 
 ```bash
-# Verify Copilot CLI is available
-copilot --version
-```
-
-#### Start the Bridge Server
-
-```bash
-cd scripts/copilot-bridge
+git clone https://github.com/pingqLIN/SidePilot.git
+cd SidePilot
 npm install
-npm run dev          # Development mode with hot-reload
+npm run build:vendor
 ```
 
-For production:
+**Step 2 — Load into Chrome**
 
-```bash
-npm run build
-npm start            # Starts with Supervisor (auto-restart)
-```
+1. Open `chrome://extensions/`
+2. Enable **Developer mode** (toggle, top-right)
+3. Click **Load unpacked**
+4. Select the `extension/` folder inside the repo
 
-The bridge runs on `http://localhost:31031`. Switch to **SDK** mode in the side panel and start chatting.
+**Step 3 — Open the panel**
 
-#### First-Time GitHub Login
+Click the SidePilot icon in the toolbar, or press `Alt + Shift + P`.
 
-1. Switch to SDK mode in the side panel
-2. A login guide appears automatically
-3. Click **Open GitHub Login Page** to authenticate
-4. After authentication, click **Test Bridge Connection** to verify
-
-</details>
+The panel opens in **iframe mode** — Copilot is immediately accessible. No Bridge, no terminal, no extra configuration.
 
 ---
 
-## 📖 Usage Guide
+### Path B — Full features (Bridge required)
 
-> For a detailed walkthrough of every feature, see **[docs/USAGE.md](docs/USAGE.md)**.
+After completing Path A, do this once:
 
-<details>
-<summary><b>iframe Mode</b></summary>
+**Step 1 — Install the Bridge Launcher** (Windows, run from the repo root)
 
-#### How It Works
-
-iframe mode embeds the GitHub Copilot web interface directly in the side panel. No server required.
-
-#### Using Copilot Chat
-
-1. Open the side panel and ensure **IFRAME** mode is selected
-2. The Copilot web UI loads inside the panel
-3. Chat, use agents (Task, Create Issue, Spark), and browse sessions as normal
-4. A floating **capture button** on the left edge lets you grab page content
-
-#### Link Guard
-
-Links clicked inside the iframe are controlled by the Link Guard:
-
-- **Allowlist mode** (default) — Only URLs matching the allowlist stay in the iframe; others open in a new tab
-- **Denylist mode** — URLs matching the denylist open in a new tab; all others stay
-
-Configure patterns in **Settings > iframe Mode**.
-
-> **Note:** iframe mode removes `X-Frame-Options` and CSP headers via Chrome's Declarative Net Request API to enable embedding.
-
-</details>
-
-<details>
-<summary><b>SDK Mode</b></summary>
-
-#### How It Works
-
-SDK mode connects to GitHub Copilot through the official `@github/copilot-sdk` via a local bridge server.
-
-```
-Extension ←→ HTTP/SSE ←→ Bridge Server ←→ Copilot CLI (ACP)
+```powershell
+npm run bridge-launcher:install:win
 ```
 
-#### Chatting
+This registers a background launcher so the extension can start the Bridge automatically when you switch modes.
 
-1. Ensure the bridge server is running (`npm run dev`)
-2. Switch to **SDK** mode in the side panel
-3. Select a model from the dropdown (e.g., `gpt-5.2`)
-4. Type your message and click **Send** or press Enter
-5. Responses stream in real-time via Server-Sent Events
+**Step 2 — Switch to SDK mode**
 
-#### Context Injection
+Click the mode toggle in the side panel (top-right corner). The extension will:
+1. Detect that the Bridge is not running
+2. Automatically launch it via the launcher you just installed
+3. Show a one-time login guide
 
-When enabled in Settings, SidePilot automatically prepends:
+**Step 3 — Sign in to GitHub**
 
-- **Memory entries** — Up to 5 most relevant entries (max 3,600 chars)
-- **Rules** — Your active behavioral instructions (max 2,200 chars)
+Click **Open GitHub Login** in the guide dialog and sign in with your GitHub account. A [GitHub Copilot subscription](https://github.com/features/copilot) is required.
 
-This gives Copilot persistent context about your project without repeating yourself.
+**Step 4 — Done**
 
-#### Session Management
+After initial setup, the Bridge starts automatically every time you switch to SDK mode. No terminal needed for daily use.
 
-- Each conversation is a separate Copilot CLI session
-- Sessions are created on first message
-- Chat exports are saved to the configured path (default: `~/copilot/chat-exports/`)
-
-</details>
-
-<details>
-<summary><b>Memory Bank</b></summary>
-
-#### Overview
-
-The Memory Bank stores structured entries that persist across sessions. Four entry types:
-
-| Type | Icon | Weight | Purpose |
-|------|------|--------|---------|
-| Task | `[T]` | 1 | Trackable work items with status |
-| Note | `[N]` | 2 | Quick thoughts and observations |
-| Context | `[C]` | 4 | Project context and environment info |
-| Reference | `[R]` | 3 | Links, docs, and external resources |
-
-#### Creating Entries
-
-1. Go to the **Memory** tab
-2. Click **Add Entry**
-3. Select a type, enter content, set status (Pending / In Progress / Done)
-4. Click **Save**
-
-#### Search & Filter
-
-- Use the search bar for full-text search across all entries
-- Filter by type (Task, Note, Context, Reference) or status
-- Entries are sorted by weight, then by creation date
-
-#### VS Code Integration
-
-Click the VS Code icon on any entry to send it to VS Code via a custom URI scheme (`vscode://` / `cursor://`).
-
-</details>
-
-<details>
-<summary><b>Rules Management</b></summary>
-
-#### Overview
-
-Rules are long-form behavioral instructions sent to Copilot to shape its responses (SDK mode only).
-
-#### Built-in Templates
-
-| Template | Description |
-|----------|-------------|
-| Default | General-purpose coding assistant instructions |
-| TypeScript | TypeScript-specific conventions and best practices |
-| React | React component patterns and hooks guidelines |
-
-#### Writing Rules
-
-1. Go to the **Rules** tab
-2. Select a template or start from scratch
-3. Write instructions in markdown format
-4. Click **Save Rules** (max 2,200 characters)
-
-#### Import / Export
-
-- **Export** — Download rules as a `.md` file
-- **Import** — Load rules from a markdown file
-
-</details>
-
-<details>
-<summary><b>Page Capture</b></summary>
-
-#### Floating Capture Button
-
-A vertical button appears on the left edge of every page. It provides:
-
-| Action | Description |
-|--------|-------------|
-| **Text Content** | Extracts full page text with structure preserved |
-| **Code Blocks** | Detects and extracts markdown code blocks from the page |
-| **Full Screenshot** | Captures the visible viewport |
-| **Partial Screenshot** | Select a region to capture |
-
-#### How to Use
-
-1. Click the floating **capture button** (left edge of page)
-2. Choose a capture type from the popup
-3. Captured content appears in the side panel
-4. Drag or paste content into the chat input
-
-#### Adjusting Button Size
-
-Go to **Settings > Capture** and adjust the button width (1–128 px).
-
-</details>
+> **If the Bridge doesn't start automatically**, go to **Settings → Bridge Setup → Copy Quick Setup**, paste the command into a terminal, and run it. Full details: [docs/guide/getting-started/README.md](docs/guide/getting-started/README.md)
 
 ---
 
-## ⚙️ Configuration
-
-All settings are accessible from the **Settings** tab in the side panel. Sections are collapsible for easy navigation.
-
-<details>
-<summary><b>Complete Configuration Reference</b></summary>
-
-### Intro & Welcome
-
-| Setting | Type | Description |
-|---------|------|-------------|
-| Play Every Open | Toggle | Replay intro animation each session |
-| Show Warning | Toggle | Display risk disclaimer on startup |
-
-### Bridge Setup (SDK)
-
-| Setting | Type | Description |
-|---------|------|-------------|
-| Health Check | Button | Test bridge server connectivity |
-| Copy Start Command | Button | Copy `npm run dev` command |
-| Copy Health Check | Button | Copy `curl localhost:31031/health` |
-
-### SDK Mode
-
-| Setting | Type | Description |
-|---------|------|-------------|
-| First-Time Login Guide | Toggle | Show login guide on first SDK switch |
-| Include Memory in Prompt | Toggle | Auto-inject memory entries before messages |
-| Include Rules in Prompt | Toggle | Auto-inject rules before messages |
-| Show Storage Location | Toggle | Display chat save path in UI |
-| Session-state Path | Text | Local `.copilot/session-state/` directory |
-| Chat Export Path | Text | Directory for conversation exports |
-| Screenshot Path | Text | Directory for saved screenshots |
-
-### Copilot CLI Sync
-
-| Setting | Type | Options | Description |
-|---------|------|---------|-------------|
-| Sync Model | Toggle | — | Sync selected model to CLI config |
-| Sync Theme | Toggle | auto / dark / light | Sync color theme preference |
-| Sync Banner | Toggle | always / once / never | Sync banner display frequency |
-| Sync Reasoning Effort | Toggle | low / medium / high | Sync reasoning level |
-
-### iframe Mode
-
-| Setting | Type | Description |
-|---------|------|-------------|
-| Link Guard Mode | Select | `allow` (whitelist) or `deny` (blacklist) |
-| URL Patterns | Textarea | One URL prefix per line |
-
-### Capture
-
-| Setting | Type | Range | Description |
-|---------|------|-------|-------------|
-| Button Width | Slider | 1–128 px | Floating capture button width |
-
-</details>
-
----
-
-## 🔌 API Reference
-
-The bridge server exposes a REST + SSE API on `http://localhost:31031`.
-
-<details>
-<summary><b>Bridge Server Endpoints</b></summary>
-
-### Health Check
-
-```bash
-GET /health
-```
-
-```json
-{
-  "status": "ok",
-  "service": "copilot-bridge",
-  "sdk": "ready",
-  "backend": "acp-cli"
-}
-```
-
-### Models
-
-```bash
-GET /api/models
-```
-
-Returns available AI models for the current Copilot subscription.
-
-### Sessions
-
-```bash
-POST /api/sessions          # Create a new chat session
-GET  /api/sessions          # List active sessions
-DELETE /api/sessions/:id    # Terminate a session
-```
-
-### Chat (Streaming)
-
-```bash
-POST /api/chat
-Content-Type: application/json
-
-{
-  "sessionId": "abc-123",
-  "message": "Explain this code"
-}
-```
-
-Returns a Server-Sent Events stream:
-
-| Event | Payload | Description |
-|-------|---------|-------------|
-| `delta` | `{ content }` | Text chunk update |
-| `tool` | `{ name, status }` | Tool execution progress |
-| `message` | `{ content }` | Complete response |
-| `error` | `{ message }` | Error details |
-| `done` | `{}` | Stream termination |
-
-### Chat (Synchronous)
-
-```bash
-POST /api/chat/sync
-Content-Type: application/json
-
-{
-  "sessionId": "abc-123",
-  "message": "Explain this code"
-}
-```
-
-Returns `{ success: true, content: "..." }` after the full response completes.
-
-</details>
-
----
-
-## 🔒 Security
-
-> This section is especially relevant when **self-hosting or iteratively developing** SidePilot. Review each topic before exposing the bridge server beyond your local machine.
-
-<details>
-<summary><b>Development Security Checklist</b></summary>
-
-Before running the bridge server in any shared or CI environment, confirm the following:
-
-- [ ] Bridge server is bound to `127.0.0.1` (loopback) by default — confirm you have not changed `app.listen()` to `0.0.0.0` or removed the hostname argument in any fork
-- [ ] Port `31031` is not reachable from outside your machine (firewall / VPN)
-- [ ] No GitHub tokens or credentials are committed to source control
-- [ ] `COPILOT_CONFIG_PATH` environment variable (if set) points to a non-public directory
-- [ ] Branch protection is applied to your fork (see [Branch Protection](#branch-protection) below)
-- [ ] You have reviewed the [Legal Notice](#%EF%B8%8F-legal-notice) regarding iframe header removal
-
-</details>
-
-<details>
-<summary><b>Bridge Server Security</b></summary>
-
-#### Network Binding
-
-The bridge server (`scripts/copilot-bridge`) is explicitly bound to `127.0.0.1` (loopback), so it is **not** reachable from outside your machine.
-
-> **Warning:** Do not change the bind address to `0.0.0.0` or remove the hostname argument from `app.listen()` unless you have a firewall rule or reverse-proxy with authentication protecting port `31031`.
-
-#### CORS Policy
-
-The bridge uses `origin: '*'` because Chrome extensions send a `chrome-extension://` origin that varies per installation and cannot be hard-coded in the server. **This is intentional for the local development use case**, but the risk is real:
-
-> **Important:** Any web page a user visits can issue requests to `http://localhost:31031`. With no authentication in place, a malicious page could call endpoints like `GET /api/sessions` or `POST /api/chat`, potentially hijacking or exfiltrating Copilot sessions that contain sensitive code or secrets. If you extend the bridge for non-extension use cases, make an origin allowlist and a shared secret header **mandatory**.
-
-If you extend the bridge for non-extension use cases (e.g. a local web UI), add an explicit allowlist and consider adding a shared secret header:
-
-```typescript
-// scripts/copilot-bridge/src/server.ts
-app.use(cors({
-  origin: (origin, callback) => {
-    const allowedOrigins = [
-      'chrome-extension://YOUR_EXTENSION_ID', // your extension origin
-      'http://localhost:YOUR_PORT',          // optional: local web UI, if you have one
-    ];
-
-    // Allow requests with no origin (e.g. some CLI tools) or from whitelisted origins
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: ['GET', 'POST', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'X-Bridge-Secret'],
-}));
-```
-
-#### Port Configuration
-
-You can change the default port by setting the `PORT` environment variable before starting the bridge:
-
-```bash
-PORT=32000 npm run dev
-```
-
-Update the **Bridge Setup** URL in the extension settings to match.
-
-#### Config Path
-
-The bridge reads and writes `~/.copilot/config.json`. Override the path with:
-
-```bash
-COPILOT_CONFIG_PATH=/path/to/your/config.json npm run dev
-```
-
-</details>
-
-<details>
-<summary><b>Permission System (File Access)</b></summary>
-
-SDK mode includes a permission system that can gate filesystem operations initiated by the Copilot agent. In a configuration where filesystem capabilities are enabled, the bridge would call `requestPermission` when the agent requests a filesystem action, and the outcome would determine whether the operation proceeds.
-
-In the **current bridge implementation**, however, filesystem capabilities are disabled, so there are no file operations that are always allowed and no prompts are issued for file access.
-#### How Permissions Are Resolved
-
-In the current bridge implementation, file system capabilities are disabled in `scripts/copilot-bridge/src/session-manager.ts`, and there are no `/api/permission/*` routes exposed by `scripts/copilot-bridge/src/server.ts`. As a result, there is no runtime allowlist for fs operations and no REST-based permission resolution API to configure.
-
-If you wish to introduce a runtime allowlist or a REST-based permission API, you would need to:
-- Enable the relevant fs capabilities in the ACP client within `scripts/copilot-bridge/src/session-manager.ts`, and
-- Implement corresponding `/api/permission/*` routes in `scripts/copilot-bridge/src/server.ts`.
-
-</details>
-
-<details>
-<summary><b>Config Key Allowlist</b></summary>
-
-When the extension syncs settings to `~/.copilot/config.json`, only keys on the following allowlist are written. Unknown keys sent by the extension are silently ignored:
-
-| Key | Description |
-|-----|-------------|
-| `model` | Selected AI model |
-| `reasoning_effort` | Reasoning level (`low` / `medium` / `high`) |
-| `render_markdown` | Markdown rendering toggle |
-| `theme` | UI theme (`auto` / `dark` / `light`) |
-| `banner` | Banner display frequency |
-
-This prevents accidental or malicious writes to unrelated config keys.
-
-</details>
-
-<details id="branch-protection">
-<summary><b>Branch Protection</b></summary>
-
-The repository ships a reusable GitHub ruleset definition at `.github/branch-protection-ruleset.json`. Apply it to your fork to enforce:
-
-- No direct pushes to the default branch (deletion & non-fast-forward blocked)
-- Linear history required
-- At least **1 approving review** before merge
-- All review threads must be resolved before merge
-
-#### Applying the Ruleset
-
-1. Go to your fork → **Settings → Rules → Rulesets**
-2. Click **New ruleset → Import ruleset**
-3. Upload `.github/branch-protection-ruleset.json`
-4. Set **Enforcement** to `Active` and save
-
-</details>
-
----
-
-## 🏗️ Architecture
-
-<details>
-<summary><b>System Architecture</b></summary>
-
-```
-┌──────────────────────────────────────────────────────────┐
-│  Chrome Extension (Manifest V3)                          │
-│                                                          │
-│  ┌──────────┬──────────┬──────────┬──────────┐          │
-│  │ Copilot  │  Rules   │  Memory  │ Settings │  Tabs    │
-│  └──────────┴──────────┴──────────┴──────────┘          │
-│                                                          │
-│  ┌─────────────────┐  ┌─────────────────────┐           │
-│  │   iframe Mode   │  │     SDK Mode        │           │
-│  │  (Copilot Web)  │  │  (sdk-client.js)    │           │
-│  └────────┬────────┘  └────────┬────────────┘           │
-│           │                    │ HTTP / SSE              │
-│  ┌────────┴────────┐          │                          │
-│  │   Link Guard    │          │                          │
-│  │ (content script) │          │                          │
-│  └─────────────────┘          │                          │
-└───────────────────────────────┼──────────────────────────┘
-                                │
-                    ┌───────────┴───────────┐
-                    │   Copilot Bridge      │
-                    │   (Express.js)        │
-                    │   localhost:31031     │
-                    │                       │
-                    │  ┌─────────────────┐  │
-                    │  │   Supervisor    │  │
-                    │  │  (auto-restart) │  │
-                    │  └────────┬────────┘  │
-                    │           │            │
-                    │  ┌────────┴────────┐  │
-                    │  │     Worker      │  │
-                    │  │ (HTTP + Sessions)│  │
-                    │  └────────┬────────┘  │
-                    └───────────┼───────────┘
-                                │ JSON-RPC / stdio
-                    ┌───────────┴───────────┐
-                    │   Copilot CLI         │
-                    │   (copilot --acp)     │
-                    └───────────────────────┘
-```
-
-### Key Modules
-
-| Module | File | Responsibility |
-|--------|------|----------------|
-| SDK Client | `js/sdk-client.js` | Bridge HTTP/SSE communication |
-| SDK Chat | `js/sdk-chat.js` | SDK mode UI and streaming display |
-| Mode Manager | `js/mode-manager.js` | Mode detection and switching |
-| Memory Bank | `js/memory-bank.js` | Memory CRUD, search, filtering |
-| Rules Manager | `js/rules-manager.js` | Instructions, templates, import/export |
-| Link Guard | `js/link-guard.js` | iframe boundary control |
-| VS Code Connector | `js/vscode-connector.js` | URI scheme integration |
-| Automation | `js/automation.js` | Page capture and content extraction |
-| Storage Manager | `js/storage-manager.js` | Chrome storage abstraction |
-| Background | `background.js` | Service worker, IPC routing |
-
-### Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Extension UI | Vanilla JS (ES Modules), HTML, CSS |
-| Styling | CSS Variables, GitHub Dark theme |
-| Bridge Server | TypeScript, Express.js 5.x |
-| SDK | `@github/copilot-sdk` ^0.1.8 |
-| Protocol | HTTP REST + Server-Sent Events |
-| Process Mgmt | Supervisor/Worker pattern |
-| Storage | Chrome Storage API (`chrome.storage.local`) |
-
-</details>
-
----
-
-## ❓ FAQ
-
-<details>
-<summary><b>Q: The bridge server won't start — what should I check?</b></summary>
-
-1. Verify Node.js 18+ is installed: `node --version`
-2. Verify Copilot CLI is installed: `copilot --version`
-3. Ensure you're authenticated: `copilot auth status`
-4. Check if port 31031 is already in use
-5. Try running `npm run dev` in `scripts/copilot-bridge/` and check the console output
-
-</details>
-
-<details>
-<summary><b>Q: SDK mode shows "Bridge not connected" — how do I fix this?</b></summary>
-
-1. Go to **Settings > Bridge Setup** and click **Health Check**
-2. If it fails, start the bridge server: `cd scripts/copilot-bridge && npm run dev`
-3. Wait for the console to show `Server listening on port 31031`
-4. Click **Health Check** again — it should show a green status
-
-</details>
-
-<details>
-<summary><b>Q: iframe mode shows a blank page or login screen</b></summary>
-
-- Ensure you're logged into GitHub in the same Chrome profile
-- The Copilot web UI requires an active GitHub Copilot subscription
-- If the page still doesn't load, try refreshing (click the home icon)
-
-</details>
-
-<details>
-<summary><b>Q: What's the difference between Memory and Rules?</b></summary>
-
-| Aspect | Memory | Rules |
-|--------|--------|-------|
-| Purpose | Concrete data — tasks, notes, context | Behavioral instructions — tone, conventions |
-| Injection | Up to 5 entries, sorted by weight | Single block of markdown instructions |
-| Max Length | 3,600 chars total (700 per entry) | 2,200 chars |
-| Use Case | "Current sprint tasks", "API endpoint reference" | "Always use TypeScript strict mode" |
-
-</details>
-
-<details>
-<summary><b>Q: Is iframe mode safe to use?</b></summary>
-
-iframe mode embeds the GitHub Copilot web interface by removing certain HTTP headers. This is a gray area regarding GitHub's Terms of Service. **SDK mode** uses the official `@github/copilot-sdk` and is the recommended approach for production use.
-
-</details>
-
-<details>
-<summary><b>Q: Can I use SidePilot with VS Code or Cursor?</b></summary>
-
-SidePilot includes a VS Code connector that generates custom URIs. You can send memory entries to VS Code or Cursor by clicking the IDE icon on any memory entry. Supported URI schemes: `vscode://`, `cursor://`, `windsurf://`.
-
-</details>
-
----
-
-## 🧭 Troubleshooting
-
-| Symptom | Solution |
-|---------|----------|
-| Bridge server not available | Start `scripts/copilot-bridge` and verify `copilot --acp` works |
-| HTTP 404 from SDK | Ensure bridge is running on port `31031` |
-| iframe blank/white screen | Log into GitHub in the same Chrome profile |
-| Capture button not visible | Check Settings > Capture > Button Width (increase to 32+ px) |
-| Memory not injected | Enable "Include Memory in Prompt" in Settings > SDK Mode |
-| Model sync not working | Enable the specific sync toggle in Settings > Copilot CLI Sync |
+## 🗂️ Documentation
+
+| Document | Best for |
+| --- | --- |
+| [Getting Started](docs/guide/getting-started/README.md) | step-by-step setup, path examples, troubleshooting |
+| [Usage Manual](docs/USAGE.md) | configuration, settings reference, API details |
+| [Concepts](docs/guide/concepts/README.md) | mental model for modes, memory, rules, and the bridge |
+| [Feature Guide](docs/FEATURES.md) | full feature tour |
+| [API Reference](docs/guide/api/README.md) | bridge endpoints |
+| [Screenshots](docs/SCREENSHOTS.md) | UI walkthrough |
+
+## 🔎 Recommended reading path
+
+1. Read this page for the product overview
+2. Open [Getting Started](docs/guide/getting-started/README.md) — it answers the most common first-timer questions
+3. Open [Concepts](docs/guide/concepts/README.md) for the product mental model
+4. Open [Usage Manual](docs/USAGE.md) for settings and advanced configuration
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please open an **Issue** first to discuss your proposed changes.
+Contributions are welcome! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+**Quick Start:**
 
 1. Fork the repository
 2. Create a feature branch: `git checkout -b feature/my-feature`
-3. Commit changes with clear messages
-4. Open a Pull Request
+3. Make changes and test locally
+4. Commit with clear messages
+5. Open a Pull Request
 
 ---
 
 ## ⚠️ Legal Notice
 
-> This extension embeds the GitHub Copilot web interface (iframe mode) and uses the official Copilot CLI SDK (SDK mode). Use at your own risk and ensure you comply with [GitHub's Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service).
+**SDK mode** uses the official `@github/copilot-sdk` and requires a valid GitHub Copilot subscription. This is the recommended path for sustained use.
+
+**iframe mode** embeds `github.com/copilot` by removing `X-Frame-Options` and `Content-Security-Policy` response headers via the Chrome `declarativeNetRequest` API. A Copilot subscription is still required — GitHub continues to serve all content and process all requests normally. However, bypassing security headers is a gray area under [GitHub's Terms of Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service). GitHub retains the right to take action against accounts or tools that circumvent their technical safeguards, even if no direct revenue harm occurs. Use at your own risk.
 
 ---
 
@@ -737,12 +248,38 @@ This project is licensed under the [MIT License](LICENSE).
 
 ---
 
+## 📦 Third-Party Licenses
+
+### Bundled in the extension (`extension/js/vendor-content-cleaner.js`)
+
+| Library | Version | License | Author |
+| --- | --- | --- | --- |
+| [Defuddle](https://github.com/kepano/defuddle) | 0.8.x | MIT | Steph Ango |
+| [Turndown](https://github.com/mixmark-io/turndown) | 7.2.x | MIT | Dom Christie |
+
+### Bridge server runtime dependencies (`scripts/copilot-bridge`)
+
+| Library | Version | License | Notes |
+| --- | --- | --- | --- |
+| [@github/copilot-sdk](https://www.npmjs.com/package/@github/copilot-sdk) | 0.1.x | MIT | Official GitHub Copilot SDK |
+| [@agentclientprotocol/sdk](https://www.npmjs.com/package/@agentclientprotocol/sdk) | 0.14.x | MIT | Agent Client Protocol SDK |
+| [Express](https://expressjs.com/) | 5.x | MIT | HTTP server framework |
+| [cors](https://github.com/expressjs/cors) | 2.8.x | MIT | CORS middleware |
+| [archiver](https://www.archiverjs.com/) | 7.x | MIT | ZIP archive creation |
+| [node-schedule](https://github.com/node-schedule/node-schedule) | 2.1.x | MIT | Cron-style scheduler |
+
+> All third-party libraries retain their original licenses. See each library's repository for full license text.
+
+---
+
 ## 🤖 AI-Assisted Development
 
 This project was developed with AI assistance.
 
 **AI Models Used:**
+
 - Claude (Anthropic) — Architecture design, code generation, documentation
 - GPT-5 (OpenAI Codex) — Code generation, debugging
+- Gemini (Google DeepMind) — Documentation, visual assets
 
 > **Disclaimer:** While the author has made every effort to review and validate the AI-generated code, no guarantee can be made regarding its correctness, security, or fitness for any particular purpose. Use at your own risk.

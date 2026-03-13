@@ -4,30 +4,25 @@
 
 ## 架構總覽
 
-```
-┌─────────────────────────────┐
-│  Chrome Extension           │
-│  (sdk-client.js)            │
-└──────────┬──────────────────┘
-           │ HTTP / SSE
-           ▼
-┌─────────────────────────────┐
-│  Supervisor (supervisor.ts) │  ← 進程管理：心跳監控、自動重啟
-│    └─ Worker (server.ts)    │  ← Express HTTP 伺服器
-│         └─ SessionManager   │  ← ACP 連線管理
-└──────────┬──────────────────┘
-           │ JSON-RPC (stdio)
-           ▼
-┌─────────────────────────────┐
-│  copilot --acp --stdio      │  ← GitHub Copilot CLI
-└─────────────────────────────┘
+```mermaid
+graph TD
+    Ext["Chrome Extension<br>(sdk-client.js)"] -- "HTTP / SSE" --> Sup
+    
+    subgraph Sup["Supervisor (supervisor.ts) - 進程管理：心跳監控、自動重啟"]
+        direction TB
+        Worker["Worker (server.ts)<br>Express HTTP 伺服器"]
+        Session["SessionManager<br>ACP 連線管理"]
+        Worker --> Session
+    end
+    
+    Session -- "JSON-RPC (stdio)" --> CLI["copilot --acp --stdio<br>GitHub Copilot CLI"]
 ```
 
 **Supervisor / Worker 模式：** 生產環境透過 Supervisor 管理 Worker 生命週期，包含心跳偵測（10 秒間隔）、指數退避重啟（最大 30 秒）及快速重啟保護（60 秒內最多 5 次）。開發環境可直接啟動 Worker。
 
 ## 前置需求
 
-- **Node.js** ≥ 18.0.0
+- **Node.js** ≥ 24.0.0
 - **GitHub Copilot CLI** 已安裝並加入 PATH（[安裝指南](https://docs.github.com/en/copilot/how-tos/set-up/install-copilot-cli)）
 
 ## 快速開始
@@ -36,12 +31,14 @@
 # 安裝依賴
 npm install
 
-# 開發模式（hot-reload）
-npm run dev
+# 手動啟動前，先綁定 SidePilot extension id
+export SIDEPILOT_EXTENSION_ID=<your-chrome-extension-id>
 
-# 建置並以生產模式啟動（含 Supervisor）
-npm run build
+# 建議：直接 build + 啟動 Supervisor
 npm start
+
+# 開發模式（hot-reload, worker only）
+npm run dev
 ```
 
 ## NPM Scripts
@@ -51,7 +48,7 @@ npm start
 | `npm run dev`      | 以 tsx watch 啟動 Worker（熱重載）   |
 | `npm run dev:supervisor` | 以 tsx watch 啟動 Supervisor   |
 | `npm run build`    | TypeScript 編譯至 `dist/`           |
-| `npm start`        | 生產模式：啟動 Supervisor            |
+| `npm start`        | 建議啟動方式：build 後啟動 Supervisor |
 | `npm run start:worker` | 直接啟動 Worker（不含 Supervisor）|
 | `npm run clean`    | 清除 `dist/` 輸出                    |
 
@@ -62,6 +59,7 @@ npm start
 | 變數             | 預設值    | 說明                              |
 | ---------------- | --------- | --------------------------------- |
 | `PORT`           | `31031`   | HTTP 伺服器監聽埠                 |
+| `SIDEPILOT_EXTENSION_ID` | — | 允許存取 bridge 的 Chrome extension id |
 | `COPILOT_MODEL`  | `gpt-4.1` | 預設 AI 模型                     |
 | `COPILOT_MODELS` | —         | 自訂模型清單（逗號分隔）          |
 | `LOG_LEVEL`      | `info`    | 日誌等級（debug/info/warn/error） |
@@ -78,9 +76,19 @@ npm start
   "status": "ok",
   "service": "sidepilot-copilot-bridge",
   "sdk": "ready",
-  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" }
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
 }
 ```
+
+### `POST /api/auth/bootstrap`
+
+由已綁定的 SidePilot extension bootstrap loopback token。若 bridge 啟動時沒有設定 `SIDEPILOT_EXTENSION_ID`，或請求不是來自對應的 `chrome-extension://<id>`，會直接拒絕。之後所有 `/api/*` 請求都必須同時符合 extension origin 與 token 驗證。
 
 ---
 

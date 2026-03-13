@@ -1,5 +1,7 @@
 'use strict';
 
+import * as ConnectionController from './connection-controller.js';
+
 // ============================================
 // SDK Client Module
 // Handles communication with SidePilot Copilot Bridge server
@@ -8,7 +10,6 @@
 
 const DEFAULT_PORT = 31031;
 const CONNECT_TIMEOUT_MS = 5000;
-const BRIDGE_BASE = `http://localhost:${DEFAULT_PORT}`;
 const BRIDGE_SERVICE_NAME = 'sidepilot-copilot-bridge';
 
 // ============================================
@@ -23,6 +24,15 @@ let currentSessionProfileKey = null;
 let healthCheckIntervalId = null;
 
 const connectionListeners = new Set();
+const SESSION_RECOVERY_PATTERNS = [
+  /api key not found/i,
+  /invalid_argument/i,
+  /rpcstreamexception/i,
+  /request timeout/i,
+  /session not found/i,
+  /transport closed/i,
+  /connection (?:closed|lost|reset)/i,
+];
 
 // ============================================
 // Private Functions
@@ -66,33 +76,14 @@ function setConnectionState(newState) {
  * @returns {Promise<boolean>}
  */
 async function checkHealth() {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
+  const response = await ConnectionController.checkBridgeHealth({
+    port: currentPort,
+    timeoutMs: CONNECT_TIMEOUT_MS,
+  });
 
-    const response = await fetch(`${getBaseUrl()}/health`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json().catch(() => null);
-      const isExpectedBridge = data?.service === BRIDGE_SERVICE_NAME && data?.status === 'ok';
-
-      if (isExpectedBridge) {
-        setConnectionState(true);
-        return true;
-      }
-    }
-
-    setConnectionState(false);
-    return false;
-  } catch {
-    setConnectionState(false);
-    return false;
-  }
+  const healthy = response.success && response.isBridge;
+  setConnectionState(healthy);
+  return healthy;
 }
 
 /**
@@ -125,6 +116,82 @@ function getSessionProfileKey(profile = {}) {
   return `${model}::${systemMessage}`;
 }
 
+function shouldRetryWithFreshSession(errorMessage) {
+  const text = typeof errorMessage === 'string' ? errorMessage : '';
+  return SESSION_RECOVERY_PATTERNS.some(pattern => pattern.test(text));
+}
+
+async function forgetCurrentSession(reason = '') {
+  const staleSessionId = currentSessionId;
+  currentSessionId = null;
+  currentSessionProfileKey = null;
+
+  if (!staleSessionId) return;
+
+  if (reason) {
+    console.warn(`[SDKClient] Resetting stale session ${staleSessionId}: ${reason}`);
+  }
+
+  try {
+    await bridgeApiFetch(`/api/sessions/${encodeURIComponent(staleSessionId)}`, {
+      method: 'DELETE',
+    }, { retryOnUnauthorized: false });
+  } catch (err) {
+    console.warn('[SDKClient] Failed to delete stale session:', err?.message || err);
+  }
+}
+
+async function readErrorMessage(response, endpoint) {
+  const fallback = `HTTP ${response.status} (${endpoint})`;
+
+  try {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const data = await response.json().catch(() => null);
+      return data?.error || fallback;
+    }
+
+    const text = await response.text();
+    return text || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function bridgeApiFetch(path, options = {}, control = {}) {
+  const {
+    method = 'GET',
+    body,
+  } = options;
+  const {
+    retryOnUnauthorized = true,
+  } = control;
+
+  const auth = await ConnectionController.bootstrapBridgeAuth({
+    port: currentPort,
+    timeoutMs: CONNECT_TIMEOUT_MS,
+  });
+  if (!auth.success || !auth.token) {
+    throw new Error(auth.error || 'Bridge auth bootstrap failed');
+  }
+
+  const response = await fetch(`${getBaseUrl()}${path}`, {
+    method,
+    headers: ConnectionController.buildBridgeHeaders({
+      token: auth.token,
+      json: body !== undefined,
+    }),
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  if (response.status === 401 && retryOnUnauthorized) {
+    ConnectionController.clearBridgeAuth({ port: currentPort });
+    return bridgeApiFetch(path, options, { retryOnUnauthorized: false });
+  }
+
+  return response;
+}
+
 /**
  * Create a new session with optional model/systemMessage.
  * @param {{model?: string, systemMessage?: string}} profile
@@ -135,10 +202,9 @@ async function createSession(profile = {}) {
   if (profile.model) body.model = profile.model;
   if (profile.systemMessage) body.systemMessage = profile.systemMessage;
 
-  const response = await fetch(`${getBaseUrl()}/api/sessions`, {
+  const response = await bridgeApiFetch('/api/sessions', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body,
   });
 
   if (!response.ok) {
@@ -152,6 +218,14 @@ async function createSession(profile = {}) {
   }
 
   return data.sessionId;
+}
+
+async function createFreshSession(profile = {}) {
+  await forgetCurrentSession('fresh session requested');
+  const sessionId = await createSession(profile);
+  currentSessionId = sessionId;
+  currentSessionProfileKey = getSessionProfileKey(profile);
+  return sessionId;
 }
 
 /**
@@ -210,9 +284,12 @@ async function init() {
  * @returns {void}
  */
 function cleanup() {
+  const portToClear = currentPort;
   stopHealthCheck();
   initialized = false;
   connected = false;
+  ConnectionController.clearBridgeAuth({ port: portToClear });
+  currentPort = DEFAULT_PORT;
   currentSessionId = null;
   currentSessionProfileKey = null;
   connectionListeners.clear();
@@ -252,24 +329,17 @@ async function connect(port = DEFAULT_PORT) {
   
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
-
-      const response = await fetch(`${getBaseUrl()}/health`, {
-        method: 'GET',
-        signal: controller.signal
+      const health = await ConnectionController.checkBridgeHealth({
+        port,
+        timeoutMs: CONNECT_TIMEOUT_MS,
       });
 
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        throw new Error(`Health check failed: HTTP ${response.status}`);
+      if (!health.success) {
+        throw new Error(health.error || `Health check failed: HTTP ${health.status || 500}`);
       }
 
-      const payload = await response.json().catch(() => null);
-      const isExpectedBridge = payload?.service === BRIDGE_SERVICE_NAME && payload?.status === 'ok';
-      if (!isExpectedBridge) {
-        throw new Error(`Port ${port} is reachable but not SidePilot Bridge`);
+      if (!health.isBridge) {
+        throw new Error(`Port ${port} is reachable but not ${BRIDGE_SERVICE_NAME}`);
       }
 
       setConnectionState(true);
@@ -277,9 +347,7 @@ async function connect(port = DEFAULT_PORT) {
       return;
       
     } catch (err) {
-      clearTimeout(timeoutId);
-      
-      if (err.name === 'AbortError') {
+      if (String(err?.message || '').includes('timeout')) {
         if (attempt < MAX_RETRIES) {
           const delay = INITIAL_RETRY_DELAY * Math.pow(2, attempt);
           console.log(`[SDKClient] Connection timeout, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES})`);
@@ -313,8 +381,11 @@ async function connect(port = DEFAULT_PORT) {
  * @returns {void}
  */
 function disconnect() {
+  const portToClear = currentPort;
   stopHealthCheck();
   setConnectionState(false);
+  ConnectionController.clearBridgeAuth({ port: portToClear });
+  currentPort = DEFAULT_PORT;
   currentSessionId = null;
   currentSessionProfileKey = null;
 }
@@ -331,10 +402,7 @@ async function listModels() {
     }
   }
 
-  const response = await fetch(`${getBaseUrl()}/api/models`, {
-    method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const response = await bridgeApiFetch('/api/models');
 
   if (!response.ok) {
     const err = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -355,7 +423,7 @@ async function listModels() {
  * @param {{type?: string, content: string, model?: string, systemMessage?: string, images?: Array<{mimeType: string, data: string}>}} msg
  * @returns {Promise<{success: boolean, content: string, sessionId: string}>}
  */
-async function sendMessage(msg) {
+async function sendMessage(msg, attempt = 0) {
   if (!connected) {
     const healthy = await checkHealth();
     if (!healthy) {
@@ -377,10 +445,9 @@ async function sendMessage(msg) {
     payload.images = msg.images;
   }
 
-  const response = await fetch(`${getBaseUrl()}/api/chat/sync`, {
+  const response = await bridgeApiFetch('/api/chat/sync', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: payload,
   });
 
   // Backward compatibility:
@@ -390,7 +457,7 @@ async function sendMessage(msg) {
       content: msg.content,
       model: msg.model,
       systemMessage: msg.systemMessage,
-    });
+    }, undefined, undefined, attempt);
 
     return {
       success: true,
@@ -400,8 +467,17 @@ async function sendMessage(msg) {
   }
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new Error(err.error || `HTTP ${response.status} (/api/chat/sync)`);
+    const errorMessage = await readErrorMessage(response, '/api/chat/sync');
+
+    if (attempt === 0 && shouldRetryWithFreshSession(errorMessage)) {
+      await createFreshSession({
+        model: msg.model,
+        systemMessage: msg.systemMessage,
+      });
+      return sendMessage(msg, attempt + 1);
+    }
+
+    throw new Error(errorMessage);
   }
 
   const data = await response.json();
@@ -428,7 +504,7 @@ async function sendMessage(msg) {
  * @param {function(object): void} [onTool] - Called with tool execution events
  * @returns {Promise<string>} - Final complete response
  */
-async function sendMessageStreaming(msg, onDelta, onTool) {
+async function sendMessageStreaming(msg, onDelta, onTool, attempt = 0) {
   if (!connected) {
     const healthy = await checkHealth();
     if (!healthy) {
@@ -442,20 +518,41 @@ async function sendMessageStreaming(msg, onDelta, onTool) {
   });
 
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
+    const requestBody = {
       sessionId: ensuredSessionId || currentSessionId,
       prompt: msg.content,
       model: msg.model,
-    });
+    };
 
     // 使用 fetch + ReadableStream 處理 SSE
-    fetch(`${getBaseUrl()}/api/chat`, {
+    bridgeApiFetch('/api/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-    }).then(response => {
+      body: requestBody,
+    }).then(async response => {
       if (!response.ok) {
-        reject(new Error(`HTTP ${response.status} (/api/chat)`));
+        const errorMessage = await readErrorMessage(response, '/api/chat');
+
+        if (attempt === 0 && shouldRetryWithFreshSession(errorMessage)) {
+          try {
+            await createFreshSession({
+              model: msg.model,
+              systemMessage: msg.systemMessage,
+            });
+            const retriedContent = await sendMessageStreaming(
+              msg,
+              onDelta,
+              onTool,
+              attempt + 1,
+            );
+            resolve(retriedContent);
+            return;
+          } catch (retryErr) {
+            reject(retryErr);
+            return;
+          }
+        }
+
+        reject(new Error(errorMessage));
         return;
       }
 

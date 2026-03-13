@@ -40,4 +40,14 @@ describe('Mode Manager Module', () => {
     await ModeManager.setMode('iframe');
     expect(ModeManager.getActiveMode()).toBe('iframe');
   });
+
+  it('cleanup should clear a custom detector override', async () => {
+    ModeManager.setModeDetector(async () => 'sdk');
+    await expect(ModeManager.detectMode()).resolves.toBe('sdk');
+
+    ModeManager.cleanup();
+    global.fetch = jest.fn().mockResolvedValue({ ok: false });
+
+    await expect(ModeManager.detectMode()).resolves.toBe('iframe');
+  });
 });

@@ -21,6 +21,7 @@ const DETECTION_TIMEOUT_MS = 5000;
 let initialized = false;
 let currentMode = null;
 const listeners = new Set();
+let customDetector = null;
 
 // ============================================
 // Private Functions
@@ -128,6 +129,7 @@ function cleanup() {
   listeners.clear();
   initialized = false;
   currentMode = null;
+  customDetector = null;
 }
 
 /**
@@ -147,6 +149,10 @@ function getStatus() {
  * @returns {Promise<'sdk'|'iframe'>}
  */
 async function detectMode() {
+  if (typeof customDetector === 'function') {
+    return customDetector();
+  }
+
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DETECTION_TIMEOUT_MS);
@@ -166,6 +172,10 @@ async function detectMode() {
     // Network error, timeout, or abort - fall back to iframe
     return 'iframe';
   }
+}
+
+function setModeDetector(detector) {
+  customDetector = typeof detector === 'function' ? detector : null;
 }
 
 /**
@@ -228,5 +238,6 @@ export {
   detectMode,
   getActiveMode,
   setMode,
-  onModeChange
+  onModeChange,
+  setModeDetector
 };
