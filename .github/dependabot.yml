@@ -1,0 +1,29 @@
+# Dependabot configuration for SidePilot
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Root-level npm dependencies (extension dev tooling: jest, esbuild, etc.)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # Bridge server npm dependencies (Express, Copilot SDK, etc.)
+  - package-ecosystem: "npm"
+    directory: "/scripts/copilot-bridge"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+
+  # GitHub Actions workflow dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "github-actions"
