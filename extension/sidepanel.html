@@ -81,7 +81,14 @@
         </button>
       </nav>
 
-      <div class="tab-content active" id="copilot-tab">
+      <!-- Developer memo:
+           New tabs must live inside .tab-viewport and follow the shared panel model.
+           1. Add a matching .tab button with data-tab="foo".
+           2. Add one sibling .tab-content#foo-tab inside this viewport.
+           3. Let the tab root or one inner child own vertical scrolling, not both.
+           4. Avoid reintroducing absolute-positioned tab stacking. -->
+      <div class="tab-viewport">
+        <div class="tab-content active" id="copilot-tab">
         <!-- 頁面資訊列 -->
         <div class="page-info" id="pageInfo">
           <div class="page-info-icon">📄</div>
@@ -450,8 +457,8 @@
       </div>
 
       <!-- Settings Tab -->
-      <div class="tab-content" id="settings-tab">
-        <div class="settings-container">
+        <div class="tab-content" id="settings-tab">
+          <div class="settings-container">
           <div
             class="settings-section settings-section-group-start collapsed"
             id="settingsSectionLanguage"
@@ -539,6 +546,25 @@
                     -
                   </div>
                 </div>
+                <div class="bridge-setup-actions bridge-setup-actions-primary">
+                  <button class="btn btn-primary btn-sm" id="bridgePrimaryBtn">
+                    嘗試自動啟動 Bridge
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    id="bridgeCheckBtn"
+                    data-i18n="settings.bridge.actions.check"
+                  >
+                    重新檢查
+                  </button>
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    id="bridgeAdvancedToggleBtn"
+                    aria-expanded="false"
+                  >
+                    顯示進階選項
+                  </button>
+                </div>
                 <label class="settings-item settings-toggle">
                   <div class="settings-item-text">
                     <div class="settings-item-title" data-i18n="settings.bridge.autostart.title">
@@ -566,18 +592,6 @@
                     placeholder="Q:\path\to\SidePilot"
                     spellcheck="false"
                   />
-                </div>
-                <div class="bridge-setup-actions">
-                  <button class="btn btn-primary btn-sm" id="bridgePrimaryBtn">
-                    嘗試自動啟動 Bridge
-                  </button>
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    id="bridgeAdvancedToggleBtn"
-                    aria-expanded="false"
-                  >
-                    顯示進階選項
-                  </button>
                 </div>
                 <div class="bridge-advanced-panel hidden" id="bridgeAdvancedPanel">
                   <div class="settings-item settings-item-vertical">
@@ -661,14 +675,7 @@
                       readonly
                     ></textarea>
                   </div>
-                  <div class="settings-inline-actions">
-                    <button
-                      class="btn btn-secondary settings-inline-btn"
-                      id="bridgeCheckBtn"
-                      data-i18n="settings.bridge.actions.check"
-                    >
-                      重新檢查
-                    </button>
+                  <div class="settings-inline-actions bridge-setup-actions-tools">
                     <button
                       class="btn btn-secondary settings-inline-btn"
                       id="bridgeCopyInstallBtn"
@@ -1423,6 +1430,7 @@
             <button class="btn btn-text" id="welcomeDeclineBtn">
               不同意，關閉
             </button>
+          </div>
           </div>
         </div>
       </div>

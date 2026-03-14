@@ -123,6 +123,15 @@ npm run dev
 
 ### Bridge Auto-Launcher (Windows)
 
+> **OS support summary:**
+>
+> | Component | Windows | macOS | Linux |
+> |-----------|---------|-------|-------|
+> | Bridge server (manual start) | ✅ | ✅ | ✅ |
+> | Bridge Auto-Launcher (one-click) | ✅ | ❌ | ❌ |
+>
+> macOS / Linux users: start the bridge manually via the commands in [Bridge Startup — Manual Commands](#bridge-startup--manual-commands).
+
 Registers `sidepilot://` as a custom OS URI protocol so the extension can start the bridge without a terminal.
 
 | Operation | Command |

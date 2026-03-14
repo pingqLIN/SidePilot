@@ -194,6 +194,15 @@ npm run build:vendor
 
 ### 第四步 — 安裝 Bridge Launcher（Windows）
 
+> **作業系統支援對照：**
+>
+> | 功能 | Windows | macOS | Linux |
+> |------|---------|-------|-------|
+> | Bridge 伺服器（手動啟動） | ✅ | ✅ | ✅ |
+> | Bridge Launcher（一鍵自動啟動） | ✅ | ❌ | ❌ |
+>
+> **macOS / Linux 使用者：** Bridge 本身可以正常執行，只是需要手動啟動。請跳到第六步執行手動啟動指令，跳過本步驟。
+
 在 repo 根目錄執行（不是在 `scripts/` 裡面）：
 
 ```powershell
@@ -201,8 +210,6 @@ npm run bridge-launcher:install:win
 ```
 
 這會在 Windows 裡註冊一個 `sidepilot://` URI handler。Extension 切到 SDK 模式時，會用這個機制自動把 Bridge 拉起來。每台電腦只需要做一次。
-
-> **macOS / Linux 使用者：** 自動啟動功能目前尚未支援。請用第六步的手動指令啟動 Bridge。
 
 ### 第五步 — 切換到 SDK 模式
 
@@ -261,6 +268,13 @@ npm start
 **症狀：** 切到 SDK 模式立刻出現錯誤。
 
 **修法：** Extension 連線之前，Bridge 必須先跑起來。安裝 Bridge Launcher（第四步），或是手動在 `scripts/copilot-bridge/` 裡執行 `npm start`。
+
+> **macOS / Linux 使用者注意：** Bridge 本身支援 Windows、macOS、Linux，可以正常手動啟動。但 Bridge Launcher（一鍵自動啟動）目前只有 Windows 版本。macOS / Linux 請直接跳第六步手動啟動，跳過第四步。
+>
+> | 功能 | Windows | macOS | Linux |
+> |------|---------|-------|-------|
+> | Bridge 伺服器（手動啟動） | ✅ | ✅ | ✅ |
+> | Bridge Launcher（一鍵自動啟動） | ✅ | ❌ | ❌ |
 
 ### 3. Node.js 版本太舊
 

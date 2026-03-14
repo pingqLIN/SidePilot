@@ -12,6 +12,11 @@
  *   ✅ PASS — 封印吻合，檔案未被竄改
  *   ❌ FAIL — 封印不符，檔案可能已被修改
  *   ⚠️ NO SEAL — manifest.json 中沒有 version_name 封印
+ *
+ * 開發提醒：
+ *   - 若 FAIL 發生在你剛修改 extension 關鍵檔案之後，先確認 diff 是否符合預期
+ *   - 確認是預期變更後，再執行 npm run integrity:seal 更新封印
+ *   - 若不是預期變更，請不要直接重跑 seal，先找出 drift 來源
  */
 
 import { createHash } from 'crypto';
@@ -91,6 +96,7 @@ const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
 if (!manifest.version_name) {
   console.log('⚠️  NO SEAL — manifest.json 中沒有 version_name 封印');
   console.log('   執行 node scripts/seal-integrity.mjs 產生封印');
+  console.log('   開發時建議先確認目前 worktree 是否就是你預期的內容');
   process.exit(2);
 }
 
@@ -114,5 +120,7 @@ if (sealedDigest === computed) {
   process.exit(0);
 } else {
   console.log(`\n   ❌ FAIL — 封印不符，檔案可能已被修改`);
+  console.log(`   若這是預期中的開發修改：先檢查 diff，再執行 npm run integrity:seal`);
+  console.log(`   若不是預期修改：請先找出變更來源，不要直接重跑 seal`);
   process.exit(1);
 }

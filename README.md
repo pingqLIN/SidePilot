@@ -162,6 +162,11 @@ If you only want to install SidePilot and do not want to clone the repo first, d
 
 > Maintainers can generate this package from the repo root with `npm run package:extension`.
 
+> **Developer note: SEAL**
+> When you intentionally change critical files under `extension/` such as `manifest.json`, `background.js`, `sidepanel.js`, `sidepanel.html`, `styles.css`, or the rules templates, the SEAL digest stored in `manifest.version_name` can go out of sync.
+> For expected development changes, review the diff first, then run `npm run integrity:seal`, and finish with `npm run basw:verify`.
+> If the drift is unexpected, do not reseal immediately. Find the source of the change first.
+
 **Step 1 — Clone and build**
 
 ```bash

@@ -80,6 +80,13 @@ See [GitHub Copilot CLI documentation](https://docs.github.com/en/copilot/using-
 
 ### Step B1: Install Bridge Launcher (Windows only)
 
+> | Component | Windows | macOS | Linux |
+> |-----------|---------|-------|-------|
+> | Bridge server (manual start) | ✅ | ✅ | ✅ |
+> | Bridge Auto-Launcher (one-click) | ✅ | ❌ | ❌ |
+>
+> **macOS / Linux:** The bridge itself runs fine — you just start it manually (Step B3). The auto-launch installer is Windows-only.
+
 Run from **repo root** (not from inside `scripts/`):
 
 ```powershell
@@ -87,8 +94,6 @@ npm run bridge-launcher:install:win
 ```
 
 Registers `sidepilot://` URI protocol in `HKCU:\Software\Classes\sidepilot`. No admin required. Enables one-click bridge auto-start from the extension UI.
-
-**macOS / Linux:** Auto-start launcher not available — use manual bridge start (Step B3 fallback).
 
 ### Step B2: Switch to SDK Mode and Complete Login Guide
 
@@ -151,7 +156,7 @@ Expected: `{ "status": "ok", ... }`
 | Bridge starts but chat returns auth errors | Copilot CLI not authenticated | Run Step B4 |
 | Bridge Setup shows Offline after bridge started | Wrong repo root path in Settings | Settings → Bridge Setup → SidePilot Repo Root → set to repo root (not a subfolder) |
 | WSL bridge fails to start | Wrong WSL distro configured | Settings → Bridge Setup → WSL Distro → match the distro where repo lives |
-| Auto-start never triggers | Bridge Launcher not installed | Run Step B1 |
+| Auto-start never triggers | Bridge Launcher not installed | Run Step B1 (Windows only — macOS/Linux: use Step B3 manual start) |
 
 ---
 

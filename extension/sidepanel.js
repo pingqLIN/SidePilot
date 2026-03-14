@@ -52,7 +52,6 @@ const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
 const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
 const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
 const BRIDGE_AUTO_START_COOLDOWN_MAX_MS = 300000;
-const SETTINGS_MAX_OPEN_SECTIONS = 3;
 const IFRAME_RISK_DOC_URLS = {
   [UI_LANGUAGE_ZH_TW]:
     "https://github.com/pingqLIN/SidePilot/blob/main/docs/USAGE.zh-TW.md#-iframe-模式",
@@ -610,6 +609,7 @@ const RULES_SOURCE_SYSTEM_BASELINE = "system_baseline";
 const RULES_SOURCE_USER = "user";
 
 const state = {
+  currentTab: "copilot",
   currentPageContent: null,
   currentPageScreenshot: null,
   currentPartialScreenshot: null,
@@ -1123,6 +1123,8 @@ function updateModeBadge() {
 // ============================================
 
 function switchTab(tabId) {
+  state.currentTab = tabId;
+
   // Update tab buttons
   dom.tabs.forEach((tab) => {
     if (tab.dataset.tab === tabId) {
@@ -1141,6 +1143,8 @@ function switchTab(tabId) {
     }
   });
 
+  // Panels now collapse inside the shared tab viewport instead of stacking
+  // via absolute positioning, so switching tabs is just an active-state toggle.
   // Keep the iframe document alive while hidden so Copilot can finish rendering
   // replies even if the user briefly switches to Logs/History during a request.
   if (dom.copilotFrame) {
@@ -1170,14 +1174,25 @@ function switchTab(tabId) {
     loadLogFiles();
   } else if (tabId === "settings") {
     applySettingsToUI();
-    // Start section polling if the matching settings sections are open.
+    // Refresh bridge/provider status once on entry so the badges do not stay
+    // stuck on the last cached state before the user expands a section.
     const installSection = document.getElementById("settingsSectionInstall");
-    if (installSection && !installSection.classList.contains("collapsed")) {
-      startBridgeSectionPolling();
+    if (installSection) {
+      if (installSection.classList.contains("collapsed")) {
+        checkBridgeHealth({ showToast: false }).catch(() => {});
+      } else {
+        startBridgeSectionPolling();
+      }
     }
     const providerSection = document.getElementById("settingsSectionProviders");
-    if (providerSection && !providerSection.classList.contains("collapsed")) {
-      startAntigravitySectionPolling();
+    if (providerSection) {
+      if (providerSection.classList.contains("collapsed")) {
+        runAntigravityProviderProbe("health", { showToast: false }).catch(
+          () => {},
+        );
+      } else {
+        startAntigravitySectionPolling();
+      }
     }
   } else {
     // Stop bridge polling when leaving settings tab
@@ -5172,12 +5187,6 @@ function updatePendingImagesBadge() {
   badge.textContent = `📎 ${count}`;
 }
 
-function getToggleableSettingsSections() {
-  return Array.from(
-    document.querySelectorAll('.settings-section[data-toggleable="true"]'),
-  );
-}
-
 function applySettingsSectionSideEffects(section, expanded) {
   if (!section) return;
 
@@ -5198,7 +5207,7 @@ function applySettingsSectionSideEffects(section, expanded) {
   }
 }
 
-function setSettingsSectionExpanded(section, expanded, options = {}) {
+function setSettingsSectionExpanded(section, expanded) {
   if (!section) return;
 
   const nextCollapsed = !expanded;
@@ -5212,37 +5221,6 @@ function setSettingsSectionExpanded(section, expanded, options = {}) {
   }
 
   applySettingsSectionSideEffects(section, expanded);
-
-  if (expanded && options.enforceLimit !== false) {
-    const sections = getToggleableSettingsSections();
-    const anchorIndex = sections.indexOf(section);
-    while (
-      sections.filter((item) => !item.classList.contains("collapsed")).length >
-      SETTINGS_MAX_OPEN_SECTIONS
-    ) {
-      const openSections = sections.filter(
-        (item) => !item.classList.contains("collapsed") && item !== section,
-      );
-      if (openSections.length === 0) break;
-
-      let farthestSection = openSections[0];
-      let farthestDistance = Math.abs(
-        sections.indexOf(farthestSection) - anchorIndex,
-      );
-
-      openSections.forEach((item) => {
-        const distance = Math.abs(sections.indexOf(item) - anchorIndex);
-        if (distance > farthestDistance) {
-          farthestSection = item;
-          farthestDistance = distance;
-        }
-      });
-
-      setSettingsSectionExpanded(farthestSection, false, {
-        enforceLimit: false,
-      });
-    }
-  }
 }
 
 function toggleSettingsSection(section) {

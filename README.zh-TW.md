@@ -144,25 +144,20 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 | 先快速試用 SidePilot | **不需要** — 只裝 extension，打開就能用 |
 | 使用串流對話、記憶庫或規則 | **需要** — 先從 repo 裡啟動 Bridge |
 
-> **Bridge 是什麼（一句話版）：** 它不是獨立產品，也不需要另外下載。它就在這個 repo 的 `scripts/copilot-bridge/` 裡。你把 repo clone 到哪裡，Bridge 就在那裡。
+Bridge 不是獨立產品，也不需要另外下載。它就在這個 repo 的 `scripts/copilot-bridge/` 裡，clone repo 後就在那裡。
 
 ---
 
 ### 路線 A — 立即開始（不需要 Bridge）
 
-**更簡單的方式 — 下載封裝擴充包**
-
-如果你只是想安裝，不想先 clone repo，可以直接到 GitHub Releases 下載 `SidePilot-extension-v*.zip`。
+最快的方式是直接到 GitHub Releases 下載 `SidePilot-extension-v*.zip`，不需要 clone repo：
 
 1. 下載並解壓縮封裝包
 2. 開啟 `chrome://extensions/`
-3. 啟用 **開發人員模式**
-4. 點擊 **載入未封裝項目**
-5. 選取解壓後的資料夾
+3. 啟用 **開發人員模式**（右上角切換）
+4. 點擊 **載入未封裝項目**，選取解壓後的資料夾
 
-> 維護者可在 repo 根目錄執行 `npm run package:extension` 產生這個封裝包。
-
-**第一步 — Clone 並建置**
+如果你想從原始碼建置，可以先 clone 並安裝，再重複步驟 2–4，選擇 repo 裡的 `extension/` 資料夾：
 
 ```bash
 git clone https://github.com/pingqLIN/SidePilot.git
@@ -171,45 +166,32 @@ npm install
 npm run build:vendor
 ```
 
-**第二步 — 載入 Chrome**
+完成後點擊工具列的 SidePilot 圖示，或按 `Alt + Shift + P` 開啟側邊欄。側邊欄以 **iframe 模式** 啟動 — 不需要 Bridge、不需要終端機、不需要額外設定。
 
-1. 開啟 `chrome://extensions/`
-2. 啟用 **開發人員模式**（右上角切換）
-3. 點擊 **載入未封裝項目**
-4. 選擇 repo 裡的 `extension/` 資料夾
+> 維護者可在 repo 根目錄執行 `npm run package:extension` 產生封裝包。
 
-**第三步 — 開啟側邊欄**
-
-點擊工具列的 SidePilot 圖示，或按 `Alt + Shift + P`。
-
-側邊欄會以 **iframe 模式** 開啟 — Copilot 立即可用。不需要 Bridge、不需要終端機、不需要額外設定。
+> **開發者注意：SEAL / 封印**
+> `extension/` 底下的關鍵檔案（例如 `manifest.json`、`background.js`、`sidepanel.js`、`sidepanel.html`、`styles.css`、rules templates）變更後，`manifest.version_name` 內的 SEAL digest 可能會失配。
+> 若這些修改是你預期中的開發變更，請先確認 diff，再執行 `npm run integrity:seal` 更新封印，最後用 `npm run basw:verify` 再驗一次。
+> 如果變更不是你預期的，請不要直接重跑 seal，先找出是哪個檔案或流程造成 drift。
 
 ---
 
 ### 路線 B — 完整功能（需要 Bridge）
 
-完成路線 A 之後，執行一次：
+完成路線 A 之後，執行以下步驟：
 
-**第一步 — 安裝 Bridge 啟動器**（Windows，在 repo 根目錄執行）
+1. 在 repo 根目錄執行安裝指令（Windows）：
 
-```powershell
-npm run bridge-launcher:install:win
-```
+   ```powershell
+   npm run bridge-launcher:install:win
+   ```
 
-這會在系統層級註冊一個背景啟動器，讓 extension 切模式時自動把 Bridge 拉起來。
+   這會在系統層級註冊背景啟動器，讓 extension 切換模式時自動把 Bridge 拉起來。
 
-**第二步 — 切換到 SDK 模式**
+2. 點擊側邊欄右上角的模式切換按鈕，切換到 **SDK 模式**。extension 會自動偵測並透過啟動器拉起 Bridge，並顯示一次性的登入引導對話框。
 
-點擊側邊欄右上角的模式切換按鈕。extension 會自動：
-1. 偵測 Bridge 是否已在執行
-2. 透過剛安裝的啟動器自動拉起 Bridge
-3. 顯示一次性的登入引導對話框
-
-**第三步 — 登入 GitHub**
-
-在引導對話框中點擊 **Open GitHub Login**，以 GitHub 帳號登入。需要 [GitHub Copilot 訂閱](https://github.com/features/copilot)。
-
-**第四步 — 完成**
+3. 在引導對話框中點擊 **Open GitHub Login**，以 GitHub 帳號登入。需要 [GitHub Copilot 訂閱](https://github.com/features/copilot)。
 
 初次設定完成後，每次切到 SDK 模式都會自動啟動 Bridge，不需要再開終端機。
 

@@ -13,6 +13,11 @@
  *   - 演算法、鹽值、檔案清單存在於此腳本與 verify 腳本（均為公開來源）
  *   - 只封印關鍵程式內容，不把 version_name 本身納入摘要
  *   - 目的是偵測意外或本地修改，而非對擁有原始碼存取權的攻擊者提供防護
+ *
+ * 開發提醒：
+ *   - 這個腳本是用來確認「預期中的變更」後更新封印，不是用來掩蓋未知 drift
+ *   - 重跑前請先看 diff，確認變更的是你打算修改的檔案
+ *   - 建議封印後立刻執行 npm run integrity:verify 或 npm run basw:verify
  */
 
 import { createHash } from 'crypto';
