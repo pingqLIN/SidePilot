@@ -1,334 +1,251 @@
-# SidePilot — 完整功能指南
+# SidePilot — Feature Inventory
 
-> **適用版本**：v0.5.0 ｜ **最後更新**：2026-03-13
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║  FOR AI AGENT                                                ║
+║  Primary reader  : AI assistant / language model agent       ║
+║  Purpose         : Complete feature map for context recall   ║
+║  Confidence      : HIGH — authoritative source               ║
+║  Last updated    : 2026-03-14                                ║
+║  Version         : v0.5.0                                    ║
+╚══════════════════════════════════════════════════════════════╝
+-->
 
-本文件是 SidePilot 的**完整功能巡覽**：比 README 更深入、比 API 文件更貼近實際使用。
-
-| 你現在在看 | 最適合誰 | 下一步 |
-| --- | --- | --- |
-| 功能拆解與截圖導覽 | 想從畫面理解功能、評估工作流的人 | [guide/concepts/README.zh-TW.md](guide/concepts/README.zh-TW.md) / [USAGE.zh-TW.md](USAGE.zh-TW.md) |
-
-## 先看這三件事
-
-| 主題 | 你會理解什麼 | 先讀哪裡 |
-| --- | --- | --- |
-| 模式差異 | iframe 與 SDK 的取捨 | [#iframe-模式](#iframe-模式), [#sdk-模式](#sdk-模式) |
-| 上下文系統 | Memory、Rules、Capture 如何一起工作 | [#記憶庫-memory-bank](#記憶庫-memory-bank), [#規則管理-rules](#規則管理-rules), [#上下文注入-context-injection](#上下文注入-context-injection) |
-| 設定與維運 | Settings、Logs、History、VS Code 整合 | [#settings-面板](#settings-面板), [#logs--history](#logs--history), [#vs-code-整合](#vs-code-整合) |
+> **Related:** [USAGE.md](USAGE.md) (operational reference) · [USAGE.human.md](USAGE.human.md) (human guide)
 
 ---
 
-## 目錄
+## Mode Comparison
 
-1. [概覽](#概覽)
-2. [iframe 模式](#iframe-模式)
-3. [SDK 模式](#sdk-模式)
-4. [記憶庫 (Memory Bank)](#記憶庫-memory-bank)
-5. [規則管理 (Rules)](#規則管理-rules)
-6. [頁面擷取 (Page Capture)](#頁面擷取-page-capture)
-7. [連結守衛 (Link Guard)](#連結守衛-link-guard)
-8. [上下文注入 (Context Injection)](#上下文注入-context-injection)
-9. [Prompt 策略](#prompt-策略)
-10. [Settings 面板](#settings-面板)
-11. [Logs & History](#logs--history)
-12. [VS Code 整合](#vs-code-整合)
-
----
-
-## 概覽
-
-SidePilot 是一個 Chrome 擴充功能，將 GitHub Copilot AI 對話助手嵌入瀏覽器的側邊欄，提供兩種運作模式：
-
-| 模式       | 架構                                | 特色                           |
-| ---------- | ----------------------------------- | ------------------------------ |
-| **iframe** | 直接嵌入 Copilot 網頁               | 零設定、即開即用               |
-| **SDK**    | 經由本地 Bridge Server 呼叫官方 API | 完整功能、串流回應、上下文注入 |
-
-<img src="../pic/12-workflow-diagram.png" width="700" alt="使用流程">
-
-> 若你剛到這裡，建議先看 [guide/getting-started/README.zh-TW.md](guide/getting-started/README.zh-TW.md)；若你想先建立心智模型，請看 [guide/concepts/README.zh-TW.md](guide/concepts/README.zh-TW.md)。
+| Dimension | iframe mode | SDK mode |
+|-----------|-------------|----------|
+| Architecture | Embeds `github.com/copilot` via iframe | Extension → Bridge (localhost:31031) → Copilot CLI |
+| Setup required | None | Node.js 24+, Copilot CLI, Bridge running |
+| Legal status | Gray area (GitHub ToS) | Official `@github/copilot-sdk` |
+| Context injection | Not supported | Memory + Rules + Identity + System |
+| Streaming | Native web (GitHub's implementation) | SSE via Bridge |
+| Memory Bank | Not injected | Auto-injected (≤5 entries, ≤3,600 chars) |
+| Rules | Not injected | Auto-injected (≤2,200 chars) |
+| Model selector | GitHub web dropdown | Extension dropdown → Bridge |
+| Page capture | Supported (float button) | Supported |
+| Link Guard | Supported | Not applicable |
+| History / Logs | Agent links (iframe) | Bridge-stored conversation history |
+| VS Code integration | Not available | Memory entry → IDE URI |
 
 ---
 
-## iframe 模式
+## Feature: iframe Mode
 
-### 運作原理
+**Mechanism:** `declarativeNetRequest` strips `X-Frame-Options` + `Content-Security-Policy` headers → enables embedding `github.com/copilot` in side panel.
 
-iframe 模式將 `github.com/copilot` 直接嵌入擴充的側邊面板中。擴充會透過 `declarativeNetRequest` API 移除 `X-Frame-Options` 和 CSP 標頭，使嵌入成為可能。
+**Available actions inside iframe:**
+- Chat, Task, Create Issue, Spark, Git, Pull Requests
+- Model switcher (GitHub's native dropdown)
+- Recent agent sessions list
 
-### 畫面展示
-
-<img src="../pic/01-iframe-mode.png" width="400" alt="iframe 模式主畫面">
-
-### 功能特點
-
-- ✅ 零設定，安裝即用
-- ✅ 完整的 Copilot 網頁功能（對話、Agents、Spark）
-- ✅ 支援頁面擷取（浮動按鈕）
-- ✅ Link Guard 連結控制
-- ⚠️ 不支援記憶注入與規則系統
-- ⚠️ GitHub ToS 灰色地帶
-
-### 使用情境
-
-- 快速存取 Copilot 對話
-- 不需要自訂上下文或規則的簡單使用
-- 不想設定 Bridge Server 的使用者
+**Components:**
+- Page info bar — shows active tab title + URL
+- Floating capture button — left edge of every page, draggable vertically
+- Link Guard — intercepts clicks in iframe, routes per allow/denylist
 
 ---
 
-## SDK 模式
+## Feature: SDK Mode
 
-### 運作原理
-
-SDK 模式透過本地 Bridge Server 與 GitHub Copilot CLI 通訊：
-
+**Architecture:**
 ```
-Extension ←→ HTTP/SSE ←→ Bridge (localhost:31031) ←→ CLI (copilot --acp) ←→ AI
+sidepanel.js → sdk-client.js ──HTTP/SSE──▶ server.ts (Express, :31031)
+                                              ──JSON-RPC/stdio──▶ copilot --acp
 ```
 
-### 畫面展示
+**Key capabilities:**
+- SSE streaming (real-time token delivery)
+- Multi-model selection (gpt-4o, gpt-5.2, claude-sonnet-4.5, …)
+- Context injection pipeline: `[Identity] + [Memory] + [Rules] + [System] + [User]`
+- Prompt strategy: `normal` / `concise` / `one-sentence`
+- Structured output: AI wraps response in `sidepilot_packet` + `assistant_response`
+- Permission UI: Bridge sends permission request via SSE → side panel shows consent modal
+- Conversation history: Bridge stores + serves history, grouped by date
 
-<table>
-  <tr>
-    <td><img src="../pic/02-sdk-chat.png" width="300" alt="SDK 對話"><br><sub>SDK 模式對話畫面</sub></td>
-    <td><img src="../pic/09-sdk-initial.png" width="300" alt="首次登入"><br><sub>首次登入引導</sub></td>
-  </tr>
-</table>
-
-### 功能特點
-
-- ✅ 官方 `@github/copilot-sdk` API
-- ✅ 即時 SSE 串流回應
-- ✅ 多模型切換（gpt-5.2、claude-sonnet-4.5 等）
-- ✅ 記憶庫自動注入
-- ✅ 規則系統
-- ✅ 多層上下文注入
-- ✅ Prompt 策略切換
-- ✅ 對話歷史記錄
-- ✅ 權限控制（Permission API）
-
-### 使用情境
-
-- 需要完整 AI 開發助手功能
-- 需要持久化記憶與自訂行為指令
-- 希望控制 AI 回應風格與詳細程度
-- 專業開發工作流程
+**Auth flow:**
+1. Bridge started with `SIDEPILOT_EXTENSION_ID=<id>`
+2. Extension calls `POST /api/auth/bootstrap` → receives loopback token
+3. All subsequent `/api/*` requests include `X-SidePilot-Token` header
 
 ---
 
-## 記憶庫 (Memory Bank)
+## Feature: Memory Bank
 
-### 概覽
+**Storage:** `chrome.storage.local` → key `sidepilot.memory.entries`
 
-記憶庫是 SidePilot 的核心功能之一，提供結構化的持久儲存，跨 Session 保存重要資訊。
+**Entry schema:**
 
-### 四種條目類型
+| Field | Values |
+|-------|--------|
+| type | `task` · `note` · `reference` · `context` |
+| status | `pending` · `in-progress` · `done` |
+| content | max 700 chars |
+| weight | task=1, note=2, reference=3, context=4 |
 
-| 類型                 | 圖示 | 權重 | 用途範例                                |
-| -------------------- | ---- | ---- | --------------------------------------- |
-| **任務 (Task)**      | 📌   | 1    | 「實作 Login API」、「修復 CSS Bug」    |
-| **筆記 (Note)**      | 📝   | 2    | 「發現 X 套件有記憶體洩漏」             |
-| **上下文 (Context)** | 🧩   | 4    | 「Node.js 18, Express 5.x, TypeScript」 |
-| **參考 (Reference)** | 📎   | 3    | 「API 文件：https://...」               |
+**Injection:** Descending weight order, up to 5 entries, total ≤3,600 chars. Lower-weight entries truncated first when budget exceeded.
 
-### 操作流程
+**Operations:** CRUD via Memory tab UI · Full-text search · Filter by type/status
 
-1. 前往 **Memory** 分頁
-2. 點擊 **+ 新增**
-3. 選擇類型、填寫標題與內容、設定狀態
-4. 點擊 **儲存**
-
-### 搜尋與篩選
-
-- **搜尋** — 全文搜尋所有條目
-- **類型篩選** — 僅顯示特定類型
-- **狀態篩選** — 待處理 / 進行中 / 已完成
-
-### 上下文注入
-
-開啟「Include Memory」後，每次 SDK 對話會自動帶入最多 5 筆最相關條目（依權重排序），上限 3,600 字元。
-
-<img src="../pic/08-sdk-context.png" width="400" alt="上下文注入效果">
+**VS Code integration:** Entry modal → IDE button → sends `vscode://` / `cursor://` / `windsurf://` URI with encoded content.
 
 ---
 
-## 規則管理 (Rules)
+## Feature: Rules Management
 
-### 概覽
+**Storage:** `chrome.storage.local` → key `rules.content` (markdown string, max 2,200 chars)
 
-規則是長篇行為指令，用於引導 Copilot 的回應風格與內容（僅 SDK 模式）。
+**Function:** Prepended as system instruction when "Include Rules in Prompt" = ON in SDK mode.
 
-### 畫面展示
+**Prompt position:** `[Rules text]` appears before Memory and before user message.
 
-<img src="../pic/03-rules-tab.png" width="400" alt="Rules 管理介面">
+**Built-in templates:**
 
-### 內建樣板
+| Template | Purpose |
+|----------|---------|
+| Default | General coding assistant — clear/concise, commented code |
+| TypeScript | Strict mode, interfaces, proper typing |
+| React | Functional components, hooks, state management |
+| 自我疊代 | AI proactively suggests updating memory/rules |
+| 擴充開發 | SidePilot project dev conventions |
+| 絕對安全 | Strict change control and risk classification |
 
-| 樣板          | 說明                     | 適用場景            |
-| ------------- | ------------------------ | ------------------- |
-| 🔧 Default    | 通用編碼助手指令         | 一般開發            |
-| 📘 TypeScript | TS 最佳實踐與慣例        | TypeScript 專案     |
-| ⚛️ React      | React 元件模式與 Hooks   | React 前端開發      |
-| 🔄 自我疊代   | AI 主動建議更新記憶/規則 | 持續改進工作流程    |
-| 🧩 擴充開發   | SidePilot 專案開發慣例   | 開發 SidePilot 本身 |
-| 🛡️ 絕對安全   | 嚴格變更控制與風險分級   | 高風險環境          |
-
-### 匯入 / 匯出
-
-- **匯出** — 將目前規則下載為 `.md` 檔案
-- **匯入** — 從 `.md` 或 `.txt` 檔案載入規則
-- 規則以 Markdown 格式撰寫，上限 2,200 字元
+**Import/export:** `.md` file via UI buttons.
 
 ---
 
-## 頁面擷取 (Page Capture)
+## Feature: Context Injection
 
-### 概覽
+**Injection layers (SDK mode only):**
 
-頁面擷取功能透過每個網頁左側邊緣的浮動按鈕觸發，可將當前頁面的內容快速擷取並傳入 Copilot 對話。
+| Layer | Key | Default | Content |
+|-------|-----|---------|---------|
+| Identity | identity | ON | "I am SidePilot assistant" self-description |
+| Memory | memory | ON | Up to 5 entries sorted by weight |
+| Rules | rules | ON | Rules markdown text |
+| System Instructions | system | ON | Structured output format spec |
 
-### 四種擷取模式
-
-| 模式           | 說明                   | 最適合                             |
-| -------------- | ---------------------- | ---------------------------------- |
-| **文字內容**   | 萃取全頁文字，保留結構 | 分析文章、文件內容                 |
-| **程式碼區塊** | 偵測頁面中的程式碼區塊 | 分析 Stack Overflow、GitHub 程式碼 |
-| **全頁截圖**   | 擷取可見視窗           | 記錄 UI 狀態                       |
-| **部分截圖**   | 拖曳框選區域           | 擷取特定元素                       |
-
-### 畫面展示
-
-<table>
-  <tr>
-    <td><img src="../pic/06-page-capture-text.png" width="300" alt="文字擷取"><br><sub>文字內容擷取</sub></td>
-    <td><img src="../pic/07-page-capture-screenshot.png" width="300" alt="截圖擷取"><br><sub>部分截圖擷取</sub></td>
-  </tr>
-</table>
-
-### 擷取後操作
-
-1. 擷取的內容會在側邊面板的擷取面板中顯示
-2. 點擊「複製全部內容」即可複製
-3. 直接貼到 Copilot 對話輸入框中使用
+**Final prompt sent to Copilot:**
+```
+[Identity] [Rules] [Memory entries] [System] [User message]
+```
 
 ---
 
-## 連結守衛 (Link Guard)
+## Feature: Prompt Strategy
 
-### 運作原理
+| Strategy | API value | Modification |
+|----------|-----------|-------------|
+| Normal | `normal` | No suffix |
+| Concise | `concise` | Appends "請精簡回覆" |
+| One-sentence | `one-sentence` | Appends "僅用一句話回覆" |
 
-Link Guard 是一個 Content Script (`js/link-guard.js`)，監控 iframe 內的連結點擊事件，根據設定決定連結是留在 iframe 內還是在新分頁開啟。
-
-### 模式
-
-| 模式                   | 預設規則            | 行為                       |
-| ---------------------- | ------------------- | -------------------------- |
-| **白名單 (Allowlist)** | GitHub Copilot URLs | 只有匹配的 URL 留在 iframe |
-| **黑名單 (Denylist)**  | —                   | 匹配的 URL 在新分頁開啟    |
-
-### 設定
-
-在「設定 > iframe 模式」中設定 URL 前綴，每行一個。支援結尾萬用字元 `*`。
+**Location:** Settings → SDK Mode → Prompt Strategy toggle group.
 
 ---
 
-## 上下文注入 (Context Injection)
+## Feature: Page Capture
 
-### 概覽
+**Trigger:** Floating button on left edge of every page (visible when panel open). Draggable vertically. Width configurable 1–128 px.
 
-SDK 模式的核心差異化功能。在每次發送訊息給 Copilot 之前，自動帶入多層背景資訊。
+**Capture types:**
 
-### 注入層級
+| Type | Mechanism | Output |
+|------|-----------|--------|
+| Text content | DOM extraction — headings, paragraphs, lists, tables, code blocks, link URLs | Text in capture panel |
+| Code blocks | Targets `<code>` / `<pre>` — preserves language annotations | Text in capture panel |
+| Full screenshot | Visible viewport as PNG | Saved to configured path |
+| Partial screenshot | Click-drag region selector | Saved to configured path |
 
-| 層級                    | 說明                                      | 預設    |
-| ----------------------- | ----------------------------------------- | ------- |
-| **Identity**            | AI 自我認知描述 — 「我是 SidePilot 助手」 | ✅ 開啟 |
-| **Memory**              | 記憶庫條目（最多 5 筆，3,600 字元）       | ✅ 開啟 |
-| **Rules**               | 行為指令（2,200 字元）                    | ✅ 開啟 |
-| **System Instructions** | Sandbox 結構化輸出格式                    | ✅ 開啟 |
-
-### 畫面展示
-
-<img src="../pic/05-settings-sdk.png" width="400" alt="Context Injection 設定">
-
-### 結構化輸出
-
-啟用 Structured Output 後，AI 回應會包裝在 `sidepilot_packet` + `assistant_response` 格式中，擴充會解析並渲染。
+**Post-capture actions:** Copy / Send to chat / Save to file.
 
 ---
 
-## Prompt 策略
+## Feature: Link Guard
 
-### 三種模式
+**Scope:** iframe mode only. Implemented in `extension/js/link-guard.js` (content script).
 
-| 策略   | API 值         | 後綴                       | 效果             |
-| ------ | -------------- | -------------------------- | ---------------- |
-| 一般   | `normal`       | 無                         | 完整、詳盡的回應 |
-| 精簡   | `concise`      | 附加「請精簡回覆」指示     | 較短的重點回答   |
-| 一句話 | `one-sentence` | 附加「僅用一句話回覆」指示 | 極簡回覆         |
+**Modes:**
 
-### 設定位置
+| Mode | Behavior |
+|------|----------|
+| `allow` (default) | Only allowlisted URL prefixes load in iframe |
+| `deny` | All URLs in iframe except denylisted prefixes |
 
-「設定 > SDK 模式 > Prompt 策略」中切換按鈕組。
+**Default allowlist:** `https://github.com/copilot`, `https://github.com/login`, `https://github.com/sessions`
 
----
-
-## Settings 面板
-
-### 概覽
-
-所有偏好設定集中在「Settings」分頁，採用可折疊區塊設計。
-
-### 畫面展示
-
-<img src="../pic/04-settings-panel.png" width="400" alt="Settings 面板">
-
-### 區塊列表
-
-| 區塊            | 說明                           | 預設狀態 |
-| --------------- | ------------------------------ | -------- |
-| 語言            | 介面語言切換                   | 展開     |
-| Bridge 安裝助手 | 健康檢查、啟動指令             | 展開     |
-| 啟動畫面        | Intro 動畫、風險提示           | 折疊     |
-| SDK 模式        | Context Injection、Prompt 策略 | 折疊     |
-| iframe 模式     | Link Guard URL 前綴            | 折疊     |
-| 擷取按鍵        | 浮動按鈕寬度                   | 折疊     |
-| 對話紀錄        | 歷史路徑設定                   | 折疊     |
+**Pattern matching:** URL prefix match. `https://github.com/copilot` matches `https://github.com/copilot/c/abc123`.
 
 ---
 
-## Logs & History
+## Feature: Bridge Server
 
-### Logs 分頁
+**Process model:** Supervisor process spawns Worker process. Supervisor monitors and auto-restarts Worker on crash.
 
-即時顯示 Bridge Server 的運行日誌，支援：
+**Key source files:**
 
-- 依等級篩選（Error / Warn / Info）
-- 全文搜尋
-- 複製與清除
+| File | Role |
+|------|------|
+| `server.ts` | Express app, all API routes |
+| `supervisor.ts` | Process supervision + auto-restart |
+| `session-manager.ts` | ACP session lifecycle |
+| `backup-manager.ts` | Backup/restore + scheduler |
+| `ipc-types.ts` | Supervisor ↔ Worker message types |
 
-### History 分頁
+**Backup types:**
 
-- **SDK 模式** — 顯示 Bridge Server 儲存的對話歷史，按日期分組
-- **iframe 模式** — 顯示 Copilot Agents 連結
+| Type | Contents | Format |
+|------|----------|--------|
+| `full` | Entire `extension/` (excl. node_modules, dist) | `.zip` |
+| `settings` | Rules JSON + rule templates | `.zip` |
+
+**Scheduler frequencies:** `h` (hourly) · `d` (daily) · `w` (weekly) · `m` (monthly)
 
 ---
 
-## VS Code 整合
+## Feature: Logs & History
 
-### 運作原理
+**Logs tab:** Real-time Bridge Server log stream. Filter by level (Error/Warn/Info). Full-text search. Copy + clear.
 
-Memory Bank 的每筆條目都可透過 URI Scheme 傳送至 IDE。
+**History tab (SDK mode):** Bridge-stored conversation history, grouped by date. Links to individual sessions.
 
-### 支援的 IDE
+**History tab (iframe mode):** Links to Copilot Agent sessions on GitHub.
 
-| IDE      | URI Scheme    |
-| -------- | ------------- |
-| VS Code  | `vscode://`   |
-| Cursor   | `cursor://`   |
+---
+
+## Feature: VS Code Integration
+
+**Supported IDEs:**
+
+| IDE | URI scheme |
+|-----|-----------|
+| VS Code | `vscode://` |
+| Cursor | `cursor://` |
 | Windsurf | `windsurf://` |
 
-### 使用方式
+**Implemented in:** `extension/js/vscode-connector.js`
 
-在記憶條目的 Modal 中，點擊下方的「VS Code」按鈕即可將條目內容傳送至 IDE。
+**Trigger:** Memory entry modal → IDE button → sends `<scheme>://extension.command?content=<encoded>` URI.
+
+---
+
+## Screenshot Asset Map
+
+| File | Content |
+|------|---------|
+| `pic/01-iframe-mode.png` | iframe mode main UI |
+| `pic/02-sdk-chat.png` | SDK chat interface |
+| `pic/03-rules-tab.png` | Rules editor |
+| `pic/04-settings-panel.png` | Settings overview |
+| `pic/05-settings-sdk.png` | SDK settings + context injection |
+| `pic/06-page-capture-text.png` | Text capture panel |
+| `pic/07-page-capture-screenshot.png` | Partial screenshot capture |
+| `pic/08-sdk-context.png` | Context injection in action |
+| `pic/09-sdk-initial.png` | First-time SDK login guide |
+| `pic/10-architecture-diagram.png` | System architecture diagram |
+| `pic/11-feature-highlights.png` | Feature highlights overview |
+| `pic/12-workflow-diagram.png` | User journey flow diagram |

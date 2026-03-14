@@ -1,172 +1,44 @@
-# Getting Started with SidePilot
+# SidePilot — Setup Procedures
 
-> For first-time visitors: everything you need to install, understand, and start using SidePilot — without needing to know how it works internally.
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║  FOR AI AGENT                                                ║
+║  Primary reader  : AI assistant / language model agent       ║
+║  Purpose         : Authoritative setup and installation      ║
+║                    procedures for executing on behalf of     ║
+║                    a human user                              ║
+║  Confidence      : HIGH — authoritative source               ║
+║  Last updated    : 2026-03-14                                ║
+║  Human companion : QUICKSTART.human.md                       ║
+╚══════════════════════════════════════════════════════════════╝
+-->
 
----
-
-## Contents
-
-- [Do I Need the Bridge?](#do-i-need-the-bridge)
-- [Two Ways to Use SidePilot](#two-ways-to-use-sidepilot)
-- [What the Bridge Actually Is](#what-the-bridge-actually-is)
-- [Where the Bridge Lives on Disk](#where-the-bridge-lives-on-disk)
-- [What Path You Should Enter](#what-path-you-should-enter)
-- [How to Tell Whether the Extension Is Connected](#how-to-tell-whether-the-extension-is-connected)
-- [Recommended First-Time Path](#recommended-first-time-path)
-- [Common First-Time Mistakes](#common-first-time-mistakes)
-
----
-
-## Do I Need the Bridge?
-
-**Short answer: no, not to get started.**
-
-SidePilot has two modes. One works without any extra setup. The other needs a local server (the "Bridge") running on your machine.
-
-| What you want to do | Do you need the Bridge? |
-| --- | --- |
-| Open SidePilot and start chatting with Copilot | **No** |
-| Try it for the first time | **No** |
-| Use streaming responses, Memory Bank, or Rules | **Yes** |
-| Inject page context or run advanced prompts | **Yes** |
-
-Start without the Bridge. Add it later when you want the extra features.
+> **Operational reference:** [../../USAGE.md](../../USAGE.md) · **Human guide:** [QUICKSTART.human.md](QUICKSTART.human.md)
 
 ---
 
-## Two Ways to Use SidePilot
+## Decision Tree: What Does the Human Need?
 
-### iframe mode — no setup required
-
-SidePilot embeds the GitHub Copilot web page directly inside the browser side panel. This is the same Copilot you'd use at `github.com/copilot`, just always visible while you browse.
-
-**What you get:**
-- Full Copilot chat interface
-- Quick actions (Task, Spark, Git, Pull Requests)
-- Always-on side panel while browsing
-
-**What you need:**
-- The Chrome extension installed
-- A GitHub account with a Copilot subscription
-- Nothing else
-
-### SDK mode — Bridge required
-
-SidePilot connects to GitHub Copilot through the official SDK, using a local server (the Bridge) that runs on your machine. This unlocks features that the web interface alone cannot provide.
-
-**What you get, additionally:**
-- Streaming responses (text appears as it's generated)
-- Memory Bank (persistent tasks, notes, references injected into prompts)
-- Rules (custom instructions that travel with every message)
-- Page capture context injection
-- Full control over model selection
-
-**What you need, additionally:**
-- Node.js 24 or later
-- GitHub Copilot CLI installed and authenticated
-- The Bridge running (the extension can start it automatically)
-
----
-
-## What the Bridge Actually Is
-
-The Bridge is a small local HTTP server written in Node.js. It sits between the Chrome extension and the GitHub Copilot CLI, translating messages between them.
-
-**Key points:**
-
-- It is **not a separate product** — it is a folder inside this repo
-- It does **not send your data to any third-party cloud** — all traffic goes directly to GitHub's servers via the official SDK
-- It runs only on `localhost:31031` — nothing is exposed to the network
-- It starts and stops with your computer session; nothing installs as a persistent background service unless you use the optional Bridge Launcher
-
----
-
-## Where the Bridge Lives on Disk
-
-The Bridge is always at: `<repo root>/scripts/copilot-bridge/`
-
-Examples:
-
-| If you cloned the repo to… | The Bridge is at… |
-| --- | --- |
-| `C:\Dev\SidePilot` | `C:\Dev\SidePilot\scripts\copilot-bridge` |
-| `C:\Users\alice\Projects\SidePilot` | `C:\Users\alice\Projects\SidePilot\scripts\copilot-bridge` |
-| `/home/user/SidePilot` | `/home/user/SidePilot/scripts/copilot-bridge` |
-
-**You do not choose where to install the Bridge.** It is already there when you clone the repo.
-
----
-
-## What Path You Should Enter
-
-In the extension's **Settings → Bridge Setup** page, you will see a field called **SidePilot Repo Root**.
-
-Fill in the path to the **repo root folder** — not the Bridge folder, and not the extension folder.
-
-| Your setup | What to enter |
-| --- | --- |
-| Repo cloned to `C:\Dev\SidePilot` | `C:\Dev\SidePilot` |
-| Repo cloned to `/home/user/SidePilot` | `/home/user/SidePilot` |
-| Running inside WSL | the **Linux path** (e.g., `/home/user/SidePilot`), not the Windows path |
-
-The extension figures out where `scripts/copilot-bridge/` is from there. You only need to tell it where the repo lives.
-
-### WSL note
-
-If you are using Windows Subsystem for Linux (WSL), the repo path you enter should be the path **inside your Linux environment**, not the Windows path.
-
-| Setup | Correct path |
-| --- | --- |
-| Repo at `/home/user/SidePilot` in Ubuntu | `/home/user/SidePilot` |
-| Repo at `/home/user/SidePilot` in Debian | `/home/user/SidePilot` |
-
-Do **not** enter a path like `C:\Users\...` or `\\wsl$\Ubuntu\...` — that is a Windows path, not what the WSL runtime expects.
-
-If you have more than one WSL distribution installed, also verify that **WSL Distro** in Settings → Bridge Setup matches the distribution where your repo lives.
-
----
-
-## How to Tell Whether the Extension Is Connected
-
-### Indicator 1 — Bridge Setup panel
-
-Go to **Settings → Bridge Setup**. The status indicator shows:
-
-| Status | What it means |
-| --- | --- |
-| 🟢 **Ready** / **Healthy** | Bridge is running and the extension is connected |
-| 🔴 **Offline** / **Disconnected** | Bridge is not running, or the repo root path is wrong |
-| 🟡 **Starting** | The extension sent a launch signal; wait a few seconds |
-
-### Indicator 2 — Health check
-
-Click **Health Check** in Settings → Bridge Setup. A green result means the connection is working.
-
-### Indicator 3 — Terminal check
-
-Open a terminal and run:
-
-```bash
-curl http://localhost:31031/health
+```
+Human wants to use SidePilot
+├── "Just try it / quick chat" → iframe mode only → execute Plan A (steps 1–3)
+└── "Full features / Memory / Rules / streaming" → SDK mode → execute Plan A + Plan B
 ```
 
-If you see a JSON response with `"status": "ok"`, the Bridge is running.
-
-### Indicator 4 — SDK chat works
-
-Switch to SDK mode and send a message. If you receive a response, everything is connected. If you see an error message instead, check the indicators above.
-
-### If the Bridge is not connected, can I still use SidePilot?
-
-Yes. Switch back to **iframe mode** using the mode toggle in the top-right corner of the panel. iframe mode does not require the Bridge and is always available.
-
 ---
 
-## Recommended First-Time Path
+## Plan A: Install Extension (always required)
 
-Follow these steps in order. Stop at any point if you have what you need.
+### Prerequisites
 
-### Step 1 — Clone the repo
+| Requirement | Check |
+|-------------|-------|
+| Chrome ≥ 114 | `chrome://settings/help` |
+| GitHub account + Copilot subscription | github.com/features/copilot |
+
+### Steps
+
+**1. Clone repo**
 
 ```bash
 git clone https://github.com/pingqLIN/SidePilot.git
@@ -175,133 +47,139 @@ npm install
 npm run build:vendor
 ```
 
-### Step 2 — Load the extension into Chrome
+**2. Load into Chrome**
 
-1. Open `chrome://extensions/`
-2. Enable **Developer mode** (toggle in the top-right corner)
-3. Click **Load unpacked**
-4. Select the `extension/` folder inside the repo
+1. Navigate to `chrome://extensions/`
+2. Enable **Developer mode** (toggle, top-right)
+3. Click **Load unpacked** → select `<repo-root>/extension/`
+4. Note the extension ID shown below the name (format: 32 lowercase letters)
 
-> **Find the extension ID:** After loading, Chrome shows an ID below the extension name (e.g., `abcdefghijklmnopqrstuvwxyz123456`). You'll need this later.
+**3. Open side panel**
 
-### Step 3 — Open the side panel
+- Click SidePilot icon in toolbar, OR
+- Press `Alt+Shift+P` (Windows/Linux) / `Opt+Shift+P` (macOS)
 
-Click the SidePilot icon in the toolbar, or press `Alt + Shift + P`.
+Panel opens in **iframe mode** — immediately usable for basic Copilot chat.
 
-The panel opens in **iframe mode**. You can start using Copilot immediately.
+→ **Stop here if iframe mode is sufficient.**
 
-→ **If iframe mode is enough for you, stop here.** Steps 4–7 are only needed for SDK mode.
+---
 
-### Step 4 — Install the Bridge Launcher (Windows)
+## Plan B: SDK Mode Setup (for full feature access)
 
-Run this from the repo root (not from inside `scripts/`):
+### Prerequisites
+
+| Requirement | Verify |
+|-------------|--------|
+| Node.js ≥ 24 | `node --version` → must show `v24.x.x` or higher |
+| GitHub Copilot CLI | `copilot --version` and `copilot auth status` |
+| Plan A complete | Extension loaded and ID noted |
+
+**Install Copilot CLI if missing:**
+See [GitHub Copilot CLI documentation](https://docs.github.com/en/copilot/using-github-copilot/using-github-copilot-in-the-command-line)
+
+### Step B1: Install Bridge Launcher (Windows only)
+
+Run from **repo root** (not from inside `scripts/`):
 
 ```powershell
 npm run bridge-launcher:install:win
 ```
 
-This registers a `sidepilot://` URI handler in Windows. The extension uses this URI to start the Bridge automatically when you switch to SDK mode. You only need to do this once per machine.
+Registers `sidepilot://` URI protocol in `HKCU:\Software\Classes\sidepilot`. No admin required. Enables one-click bridge auto-start from the extension UI.
 
-> **macOS / Linux users:** Auto-start is not yet available. Use the manual startup command in Step 6 instead.
+**macOS / Linux:** Auto-start launcher not available — use manual bridge start (Step B3 fallback).
 
-### Step 5 — Switch to SDK mode
+### Step B2: Switch to SDK Mode and Complete Login Guide
 
-Click the mode toggle in the side panel (top-right corner, shows **IFRAME** / **SDK**). Select **SDK**.
+1. Click mode toggle (panel top-right) → select **SDK**
+2. Extension runs `ensureSDKBridgeReadyWithAutoStart`:
+   - Checks `GET http://localhost:31031/health`
+   - If bridge not running → sends `sidepilot://` URI to OS → waits ≤10 s
+3. If first SDK switch: `maybeShowSDKLoginGuideOnFirstUse` shows login guide modal (one-time)
+4. Click **Open GitHub Login** → sign in → return to panel
 
-The extension will:
-1. Check if the Bridge is running at `localhost:31031`
-2. If not, send a launch signal via the Bridge Launcher
-3. Wait up to ~10 seconds for the Bridge to start
-4. Show a one-time login guide if this is your first time
+### Step B3: Manual Bridge Start (fallback if auto-start fails)
 
-### Step 6 — Start the Bridge manually (if auto-start fails)
-
-If the Bridge doesn't start automatically, copy the Quick Setup command:
-
-**Settings → Bridge Setup → Copy Quick Setup** — then paste and run it in a terminal.
-
-Or run it manually:
+**Option 1 — Quick Setup (from Settings › Bridge Setup › Copy Quick Setup):**
 
 ```bash
 cd scripts/copilot-bridge
-npm install          # First time only
+npm install
+export SIDEPILOT_EXTENSION_ID=<your-extension-id>   # macOS/Linux
+# $env:SIDEPILOT_EXTENSION_ID="<id>"               # Windows PowerShell
 npm start
 ```
 
-On Windows PowerShell, also set the Extension ID before starting:
-
-```powershell
-$env:SIDEPILOT_EXTENSION_ID = "your-extension-id-here"
-npm start
-```
-
-### Step 7 — Sign in to GitHub
-
-A login guide dialog appears the first time. Click **Open GitHub Login** and sign in. You need a GitHub account with an active [Copilot subscription](https://github.com/features/copilot).
-
-After signing in, return to the side panel. The connection check runs automatically. Once the Bridge shows **Ready**, you can start chatting in SDK mode.
-
----
-
-## Common First-Time Mistakes
-
-### 1. Wrong repo root path
-
-**Symptom:** Bridge Setup shows Offline even though you started the Bridge.
-
-**Fix:** In Settings → Bridge Setup → SidePilot Repo Root, check that the path points to the repo root, not a subfolder.
-
-| Wrong | Correct |
-| --- | --- |
-| `C:\Dev\SidePilot\scripts\copilot-bridge` | `C:\Dev\SidePilot` |
-| `C:\Dev\SidePilot\extension` | `C:\Dev\SidePilot` |
-
-### 2. Bridge never started
-
-**Symptom:** SDK mode shows an error immediately.
-
-**Fix:** The Bridge must be running before the extension can connect. Either install the Bridge Launcher (Step 4 above) or run `npm start` in `scripts/copilot-bridge/` manually.
-
-### 3. Node.js version too old
-
-**Symptom:** `npm start` fails with a Node version error.
-
-**Fix:** The Bridge requires Node.js 24 or later.
+**Option 2 — Dev mode (hot-reload):**
 
 ```bash
-node --version    # Should show v24.x.x or higher
+cd scripts/copilot-bridge
+export SIDEPILOT_EXTENSION_ID=<your-extension-id>
+npm run dev
 ```
 
-Download Node.js 24 from [nodejs.org](https://nodejs.org/).
+`SIDEPILOT_EXTENSION_ID` is mandatory — bridge binds auth to this Chrome extension origin.
 
-### 4. Copilot CLI not authenticated
-
-**Symptom:** Bridge starts but SDK chat returns auth errors.
-
-**Fix:** Authenticate the Copilot CLI:
+### Step B4: Authenticate Copilot CLI (once per machine)
 
 ```bash
 copilot auth login
 ```
 
-Or sign in via the login guide in the extension (Settings → SDK Mode → Open Login Guide).
+### Step B5: Verify Connection
 
-### 5. WSL distro is wrong or empty
+**From extension:** Settings → Bridge Setup → Click **Health Check** → indicator must be green.
 
-**Symptom:** Bridge Launcher finds the repo but fails to start.
+**From terminal:**
 
-**Fix:** In Settings → Bridge Setup → WSL Distro, make sure the value matches the distribution name where your repo lives (e.g., `Ubuntu`, `Debian`). If it is blank, the launcher may use the wrong environment.
+```bash
+curl http://localhost:31031/health
+```
 
-### 6. You're still in iframe mode and don't realize it
-
-**Symptom:** Memory Bank and Rules don't seem to do anything.
-
-**Fix:** Check the mode toggle in the top-right corner of the panel. Memory and Rules only work in **SDK mode**. The toggle label shows which mode is currently active.
+Expected: `{ "status": "ok", ... }`
 
 ---
 
-## Next steps
+## Troubleshooting Decision Table
 
-- [Usage Manual](../../USAGE.md) — full settings reference and API docs
-- [Concepts Guide](../concepts/README.md) — mental model for modes, memory, and the bridge
-- [Bridge Server README](../../../scripts/copilot-bridge/README.md) — advanced bridge configuration
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| SDK mode shows error immediately | Bridge not running | Run Step B3 |
+| Memory/Rules have no effect | Still in iframe mode | Check mode toggle (top-right) |
+| `npm start` fails with Node version error | Node.js too old | Install Node.js 24+ |
+| Bridge starts but chat returns auth errors | Copilot CLI not authenticated | Run Step B4 |
+| Bridge Setup shows Offline after bridge started | Wrong repo root path in Settings | Settings → Bridge Setup → SidePilot Repo Root → set to repo root (not a subfolder) |
+| WSL bridge fails to start | Wrong WSL distro configured | Settings → Bridge Setup → WSL Distro → match the distro where repo lives |
+| Auto-start never triggers | Bridge Launcher not installed | Run Step B1 |
+
+---
+
+## Path Lookup: Common Mistakes
+
+| Wrong path entered | Correct path |
+|-------------------|-------------|
+| `C:\Dev\SidePilot\scripts\copilot-bridge` | `C:\Dev\SidePilot` |
+| `C:\Dev\SidePilot\extension` | `C:\Dev\SidePilot` |
+| Windows path in WSL context | Linux path inside WSL (e.g., `/home/user/SidePilot`) |
+
+---
+
+## Bridge Health Check Response Schema
+
+```json
+{
+  "status": "ok",
+  "service": "sidepilot-copilot-bridge",
+  "sdk": "ready",
+  "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<extension-id>"
+  }
+}
+```
+
+If `sdk` is not `"ready"` or `extensionBindingConfigured` is `false`, the bridge started without `SIDEPILOT_EXTENSION_ID` set.

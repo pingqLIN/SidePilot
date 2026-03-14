@@ -1,199 +1,61 @@
-# SidePilot 截圖導覽
+# SidePilot — Screenshot Asset Index
 
-> 本文件提供 SidePilot 所有截圖的詳細導覽，說明每張圖片對應的功能區域與使用情境。
-
-| 你會在這裡看到 | 適合用途 | 延伸閱讀 |
-| --- | --- | --- |
-| 精選功能截圖 + 最新原始 UI 補充截圖 | README 視覺素材、發佈導覽、文件引用 | [../README.zh-TW.md](../README.zh-TW.md), [../pic/INDEX.md](../pic/INDEX.md) |
-
----
-
-## 最新版 UI 補充截圖（2026-03-13）
-
-以下為你最新提供、尚未重新命名的原始擷圖。先正式收錄，方便後續 README / 文件挑圖與替換：
-
-| 檔名 | 狀態 | 備註 |
-| --- | --- | --- |
-| `pic/raw-2026-03-13-145550.png` | 新增 | 最新版 UI 原始截圖 |
-| `pic/raw-2026-03-13-145619.png` | 新增 | 最新版 UI 原始截圖 |
-| `pic/raw-2026-03-13-145648.png` | 新增 | 最新版 UI 原始截圖 |
-| `pic/raw-2026-03-13-145703.png` | 新增 | 最新版 UI 原始截圖 |
-| `pic/raw-2026-03-13-145719.png` | 新增 | 最新版 UI 原始截圖 |
-| `pic/raw-2026-03-13-145750.png` | 新增 | 最新版 UI 原始截圖 |
-
-> 如果後續你想把這批圖正式升格成 README 主視覺，我建議下一步先重新命名成用途導向檔名，例如 `13-sdk-dashboard.png` 這類，文件會更穩定也更好維護。
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║  FOR AI AGENT                                                ║
+║  Primary reader  : AI assistant / language model agent       ║
+║  Purpose         : Screenshot asset map for doc/README use   ║
+║  Confidence      : HIGH — authoritative source               ║
+║  Last updated    : 2026-03-14                                ║
+╚══════════════════════════════════════════════════════════════╝
+-->
 
 ---
 
-## 1. iframe 模式主畫面
+## Canonical Assets (`pic/`)
 
-**檔案：** `pic/01-iframe-mode.png`
-
-<img src="../pic/01-iframe-mode.png" width="500" alt="iframe 模式">
-
-| 項目         | 說明                                                                |
-| ------------ | ------------------------------------------------------------------- |
-| **功能區域** | iframe 模式 — Copilot 分頁                                          |
-| **展示內容** | GitHub Copilot 網頁介面嵌入在擴充側邊面板中                         |
-| **使用情境** | 零設定即可使用的 Copilot 對話模式                                   |
-| **關鍵元素** | 頂部模式切換按鈕（iframe/sdk）、嵌入的 Copilot 對話介面、Tab 導覽列 |
-
----
-
-## 2. SDK 模式對話
-
-**檔案：** `pic/02-sdk-chat.png`
-
-<img src="../pic/02-sdk-chat.png" width="500" alt="SDK 模式對話">
-
-| 項目         | 說明                                                                 |
-| ------------ | -------------------------------------------------------------------- |
-| **功能區域** | SDK 模式 — Copilot 分頁                                              |
-| **展示內容** | 透過 Bridge Server 的即時串流對話介面                                |
-| **使用情境** | 需要完整功能（記憶注入、規則系統）的開發工作                         |
-| **關鍵元素** | 模型選擇下拉選單、串流回應顯示、Memory injection 狀態指示、Send 按鈕 |
+| File | UI area | Feature shown |
+|------|---------|---------------|
+| `pic/01-iframe-mode.png` | iframe mode — Copilot tab | GitHub Copilot web UI embedded in side panel; mode toggle (iframe/sdk); tab nav |
+| `pic/02-sdk-chat.png` | SDK mode — Copilot tab | Bridge-powered streaming chat; model dropdown; memory injection indicator; Send button |
+| `pic/03-rules-tab.png` | Rules tab | Rules markdown editor; template dropdown; import/export buttons; source/module labels |
+| `pic/04-settings-panel.png` | Settings tab (overview) | Collapsible settings sections; toggle controls; Bridge setup step buttons |
+| `pic/05-settings-sdk.png` | Settings — SDK Mode section | Context injection sub-toggles (Identity/Memory/Rules/System); prompt strategy buttons |
+| `pic/06-page-capture-text.png` | Page Capture — text mode | Extracted page text in capture panel; "Copy all" button |
+| `pic/07-page-capture-screenshot.png` | Page Capture — screenshot mode | Drag-select region overlay; capture preview |
+| `pic/08-sdk-context.png` | SDK mode — context injection | Captured page context injected into SDK prompt; injection status indicator |
+| `pic/09-sdk-initial.png` | SDK mode — first-time login | GitHub auth guide modal; "Open GitHub Login" button |
+| `pic/10-architecture-diagram.png` | Generated visual | Extension → Bridge → CLI data flow diagram |
+| `pic/11-feature-highlights.png` | Generated visual | 8 core feature icons + labels overview card |
+| `pic/12-workflow-diagram.png` | Generated visual | User journey: install → choose mode → configure → chat → capture |
+| `pic/22-browser-usage-demo.png` | Full browser view | SidePilot side panel open alongside GitHub.com; streaming AI conversation in action |
+| `pic/23-github-readme-context.png` | Full browser view | SidePilot alongside GitHub README; content extraction panel; Copy All Content button |
+| `pic/24-page-capture-crop-detail.png` | Page Capture — screenshot crop mode | Drag-select region overlay; crop preview; 選取範圍/下載截圖/傳送到對話 action buttons |
+| `pic/25-settings-sdk-connected.png` | Settings — SDK Mode section | SDK 模式 toggles; GitHub login + Test Bridge buttons; API endpoint strategy; SDK Bridge 已連線 status |
 
 ---
 
-## 3. Rules 管理介面
+## Raw Captures (2026-03-13, not yet renamed)
 
-**檔案：** `pic/03-rules-tab.png`
+| File | Status | Notes |
+|------|--------|-------|
+| `pic/raw-2026-03-13-145550.png` | Pending rename | Latest UI raw capture |
+| `pic/raw-2026-03-13-145619.png` | Pending rename | Latest UI raw capture |
+| `pic/raw-2026-03-13-145648.png` | Pending rename | Latest UI raw capture |
+| `pic/raw-2026-03-13-145703.png` | Pending rename | Latest UI raw capture |
+| `pic/raw-2026-03-13-145719.png` | Pending rename | Latest UI raw capture |
+| `pic/raw-2026-03-13-145750.png` | Pending rename | Latest UI raw capture |
 
-<img src="../pic/03-rules-tab.png" width="500" alt="Rules 管理">
-
-| 項目         | 說明                                                                       |
-| ------------ | -------------------------------------------------------------------------- |
-| **功能區域** | Rules 分頁                                                                 |
-| **展示內容** | 行為指令編輯器，含樣板選擇與工具列                                         |
-| **使用情境** | 定義 AI 回應風格、編碼慣例等行為指令                                       |
-| **關鍵元素** | 樣板下拉選單、匯入/匯出按鈕、來源標籤、模組標籤、Markdown 編輯器、儲存按鈕 |
-
----
-
-## 4. Settings 面板
-
-**檔案：** `pic/04-settings-panel.png`
-
-<img src="../pic/04-settings-panel.png" width="500" alt="Settings 面板">
-
-| 項目         | 說明                                              |
-| ------------ | ------------------------------------------------- |
-| **功能區域** | Settings 分頁（總覽）                             |
-| **展示內容** | 可折疊的設定區塊總覽                              |
-| **使用情境** | 調整擴充的各項偏好設定                            |
-| **關鍵元素** | 折疊式區塊標題、開關元件、Bridge 安裝助手步驟按鈕 |
+**Recommended action:** Rename raw captures to purpose-oriented names (e.g., `13-sdk-dashboard.png`) before using in README or docs. See `pic/INDEX.md` for the full asset index.
 
 ---
 
-## 5. SDK 設定
+## Usage Reference
 
-**檔案：** `pic/05-settings-sdk.png`
-
-<img src="../pic/05-settings-sdk.png" width="500" alt="SDK 設定">
-
-| 項目         | 說明                                                                                   |
-| ------------ | -------------------------------------------------------------------------------------- |
-| **功能區域** | Settings 分頁 — SDK 模式區塊                                                           |
-| **展示內容** | Context Injection 開關、Prompt 策略、API 端點設定                                      |
-| **使用情境** | 細調 SDK 對話的上下文注入與回應風格                                                    |
-| **關鍵元素** | Identity/Memory/Rules/System Instructions 子開關、Endpoint 策略顯示、Prompt 策略按鈕組 |
-
----
-
-## 6. 頁面擷取 — 文字內容
-
-**檔案：** `pic/06-page-capture-text.png`
-
-<img src="../pic/06-page-capture-text.png" width="500" alt="文字內容擷取">
-
-| 項目         | 說明                                                     |
-| ------------ | -------------------------------------------------------- |
-| **功能區域** | Page Capture — 文字模式                                  |
-| **展示內容** | 萃取頁面文字內容並在擷取面板中預覽                       |
-| **使用情境** | 將網頁文章或文件內容傳入 Copilot 分析                    |
-| **關鍵元素** | 擷取面板標題、內容預覽區、「複製全部內容」按鈕、提示文字 |
-
----
-
-## 7. 頁面擷取 — 截圖
-
-**檔案：** `pic/07-page-capture-screenshot.png`
-
-<img src="../pic/07-page-capture-screenshot.png" width="500" alt="部分截圖擷取">
-
-| 項目         | 說明                                      |
-| ------------ | ----------------------------------------- |
-| **功能區域** | Page Capture — 截圖模式                   |
-| **展示內容** | 框選任意區域進行截圖                      |
-| **使用情境** | 擷取 UI 元素或特定區域供 Copilot 視覺分析 |
-| **關鍵元素** | 選取框、截圖預覽、擷取面板                |
-
----
-
-## 8. SDK 上下文注入
-
-**檔案：** `pic/08-sdk-context.png`
-
-<img src="../pic/08-sdk-context.png" width="500" alt="SDK 上下文注入">
-
-| 項目         | 說明                                  |
-| ------------ | ------------------------------------- |
-| **功能區域** | SDK 模式 — Context Injection          |
-| **展示內容** | 擷取的頁面上下文自動注入 SDK 對話提示 |
-| **使用情境** | 將頁面內容作為背景資訊附在對話中      |
-| **關鍵元素** | 擷取的上下文內容、注入狀態、對話訊息  |
-
----
-
-## 9. SDK 登入引導
-
-**檔案：** `pic/09-sdk-initial.png`
-
-<img src="../pic/09-sdk-initial.png" width="500" alt="SDK 登入引導">
-
-| 項目         | 說明                                           |
-| ------------ | ---------------------------------------------- |
-| **功能區域** | SDK 模式 — 首次登入                            |
-| **展示內容** | 首次切換至 SDK 模式時的 GitHub 認證引導        |
-| **使用情境** | 引導新使用者完成 GitHub 認證設定               |
-| **關鍵元素** | 登入引導對話框、「立即開啟 GitHub 登入頁」按鈕 |
-
----
-
-## 10–12. 生成視覺素材
-
-### 10. 系統架構圖
-
-**檔案：** `pic/10-architecture-diagram.png`
-
-<img src="../pic/10-architecture-diagram.png" width="500" alt="系統架構圖">
-
-| 項目     | 說明                                  |
-| -------- | ------------------------------------- |
-| **類型** | 生成的視覺素材                        |
-| **用途** | README 架構說明段落                   |
-| **內容** | Extension → Bridge → CLI 的完整資料流 |
-
-### 11. 功能亮點概覽
-
-**檔案：** `pic/11-feature-highlights.png`
-
-<img src="../pic/11-feature-highlights.png" width="500" alt="功能亮點">
-
-| 項目     | 說明                     |
-| -------- | ------------------------ |
-| **類型** | 生成的視覺素材           |
-| **用途** | README 功能亮點段落      |
-| **內容** | 8 大核心功能的圖示與標籤 |
-
-### 12. 使用流程示意圖
-
-**檔案：** `pic/12-workflow-diagram.png`
-
-<img src="../pic/12-workflow-diagram.png" width="500" alt="使用流程">
-
-| 項目     | 說明                                              |
-| -------- | ------------------------------------------------- |
-| **類型** | 生成的視覺素材                                    |
-| **用途** | FEATURES.md 概覽段落                              |
-| **內容** | 安裝 → 選擇模式 → 設定 → 對話 → 擷取 的使用者旅程 |
+| Document | Assets used |
+|----------|-------------|
+| `README.md` / `README.zh-TW.md` | `10`, `11`, `12`, `22` + selected canonical |
+| `docs/USAGE.human.md` | `22`, `23`, `24` |
+| `docs/guide/getting-started/QUICKSTART.human.md` | `22`, `23`, `24` |
+| `docs/FEATURES.md` | `01`–`09`, `10`–`12` |
+| `docs/SCREENSHOTS.md` | All of the above (this file) |

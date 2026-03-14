@@ -9,6 +9,7 @@ const STORAGE_KEY_DECLINED = "copilot_sidepanel_declined";
 const STORAGE_KEY_SDK_ASSISTANT_ONLY = "sidepilot_sdk_assistant_only";
 const STORAGE_KEY_SDK_MODEL = "sidepilot_sdk_model";
 const STORAGE_KEY_SDK_LOGIN_GUIDE_SHOWN = "sidepilot_sdk_login_guide_shown";
+const STORAGE_KEY_IFRAME_CHOICE = "sidepilot_iframe_choice_shown";
 const STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT =
   "sidepilot_sdk_input_container_height";
 const FRAME_LOAD_TIMEOUT = 15000;
@@ -37,7 +38,8 @@ const SIDEPILOT_PACKET_SCHEMA = "sidepilot.turn-packet.v1";
 const SIDEPILOT_SANDBOX_SCHEMA = "sidepilot.sandbox.v1";
 const LOG_STORAGE_KEY = "sidepilot.logs.v1";
 const LOG_MAX_ENTRIES = 300;
-const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
+const MANIFEST_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{16})$/i;
+const MANIFEST_LEGACY_SEAL_PATTERN = /^(\d+\.\d+\.\d+)\+([0-9a-f]{8})$/i;
 const SDK_INPUT_CONTAINER_MIN_HEIGHT = 120;
 const SDK_INPUT_CONTAINER_DEFAULT_SCALE = 1.5;
 const SDK_INPUT_CONTAINER_FALLBACK_MAX_HEIGHT = 460;
@@ -749,6 +751,9 @@ async function init() {
   dom.welcomeSuppressCheckbox = document.getElementById(
     "welcomeSuppressCheckbox",
   );
+  dom.iframeChoiceOverlay = document.getElementById("iframeChoiceOverlay");
+  dom.iframeChoiceYesBtn = document.getElementById("iframeChoiceYesBtn");
+  dom.iframeChoiceNoBtn = document.getElementById("iframeChoiceNoBtn");
 
   // Intro Video
   dom.introContainer = document.getElementById("introContainer");
@@ -1417,9 +1422,10 @@ function normalizeSettings(raw = {}) {
     typeof source.selfIterationLastSealDigest === "string"
       ? source.selfIterationLastSealDigest.trim().toLowerCase()
       : "";
-  const selfIterationLastSealDigest = /^[0-9a-f]{8}$/.test(digestCandidate)
-    ? digestCandidate
-    : "";
+  const selfIterationLastSealDigest =
+    /^[0-9a-f]{16}$/.test(digestCandidate) || /^[0-9a-f]{8}$/.test(digestCandidate)
+      ? digestCandidate
+      : "";
 
   return {
     uiLanguage,
@@ -1546,7 +1552,9 @@ function getManifestSealInfo() {
   try {
     const manifest = chrome.runtime.getManifest();
     const versionName = String(manifest?.version_name || "");
-    const matched = versionName.match(MANIFEST_SEAL_PATTERN);
+    const matched =
+      versionName.match(MANIFEST_SEAL_PATTERN) ||
+      versionName.match(MANIFEST_LEGACY_SEAL_PATTERN);
     if (!matched) {
       return {
         valid: false,
@@ -1767,7 +1775,7 @@ async function persistSettings(settings, options = {}) {
         /Digest:\s*([0-9a-f]{8,64})/i,
       );
       const sealDigest = digestMatch
-        ? digestMatch[1].slice(0, 8).toLowerCase()
+        ? digestMatch[1].toLowerCase()
         : "";
       if (!sealDigest) {
         throw new Error("auto-seal completed but digest not found in output");
@@ -4049,6 +4057,10 @@ function setupEventListeners() {
   dom.welcomeCloseBtn?.addEventListener("click", closeWelcome);
   dom.welcomeDeclineBtn?.addEventListener("click", declineAndClose);
 
+  // iframe 模式選擇（首次開啟）
+  dom.iframeChoiceYesBtn?.addEventListener("click", handleIframeChoiceYes);
+  dom.iframeChoiceNoBtn?.addEventListener("click", handleIframeChoiceNo);
+
   // 監聽來自 background 的訊息
   chrome.runtime.onMessage.addListener(handleBackgroundMessage);
   dom.homeBtn?.addEventListener("click", () => {
@@ -4715,6 +4727,16 @@ function checkWarningStatus() {
     return;
   }
 
+  // 首次開啟：先詢問是否啟用 iframe 模式
+  const iframeChoiceShown = localStorage.getItem(STORAGE_KEY_IFRAME_CHOICE);
+  if (!iframeChoiceShown && dom.iframeChoiceOverlay) {
+    dom.iframeChoiceOverlay.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      dom.iframeChoiceOverlay.classList.add("visible");
+    });
+    return;
+  }
+
   const isSuppressed = localStorage.getItem("copilot_warning_suppressed");
 
   if (!isSuppressed && dom.welcomeOverlay) {
@@ -4724,6 +4746,38 @@ function checkWarningStatus() {
       dom.welcomeOverlay.classList.add("visible");
     });
   }
+}
+
+function dismissIframeChoiceOverlay() {
+  dom.iframeChoiceOverlay?.classList.remove("visible");
+  setTimeout(() => {
+    dom.iframeChoiceOverlay?.classList.add("hidden");
+  }, 300);
+}
+
+async function handleIframeChoiceYes() {
+  localStorage.setItem(STORAGE_KEY_IFRAME_CHOICE, "true");
+  dismissIframeChoiceOverlay();
+  // 啟用 iframe 模式並儲存設定
+  await persistSettingsPatch({ iframeEnabled: true });
+  // 更新 UI 勾選框
+  if (dom.settingIframeEnabled) {
+    dom.settingIframeEnabled.checked = true;
+  }
+  // 繼續顯示 ToS 聲明
+  const isSuppressed = localStorage.getItem("copilot_warning_suppressed");
+  if (!isSuppressed && dom.welcomeOverlay) {
+    dom.welcomeOverlay.classList.remove("hidden");
+    requestAnimationFrame(() => {
+      dom.welcomeOverlay.classList.add("visible");
+    });
+  }
+}
+
+function handleIframeChoiceNo() {
+  localStorage.setItem(STORAGE_KEY_IFRAME_CHOICE, "true");
+  localStorage.setItem("copilot_warning_suppressed", "true");
+  dismissIframeChoiceOverlay();
 }
 
 function showDeclinedState() {
@@ -4893,10 +4947,15 @@ function renderCaptureContent() {
   const descriptionRaw =
     content?.meta?.description || content?.meta?.["og:description"] || "";
   const description = descriptionRaw ? escapeHtml(descriptionRaw) : "";
+  const captureScope = content?.selectedText ? "已選取文字" : "整頁內容";
 
   const textBodyHtml = content
     ? `
         <div class="capture-text-meta">
+          <div class="capture-meta-row">
+            <span class="capture-meta-label">範圍</span>
+            <span class="capture-meta-value">${captureScope}</span>
+          </div>
           <div class="capture-meta-row">
             <span class="capture-meta-label">標題</span>
             <span class="capture-meta-value">${title}</span>
@@ -4998,6 +5057,9 @@ function renderCaptureContent() {
 
 function buildTextPreview(content) {
   if (!content) return "";
+  if (content.selectedText) {
+    return content.selectedText.trim();
+  }
   const paragraphs =
     Array.isArray(content.paragraphs) && content.paragraphs.length
       ? content.paragraphs
@@ -5009,6 +5071,9 @@ function buildTextPreview(content) {
 function buildTextStats(content) {
   if (!content) return "尚無文字";
   const parts = [];
+  if (content.selectedText) {
+    parts.push("已選取");
+  }
   if (content.charCount) {
     parts.push(`${content.charCount} 字`);
   } else if (content.wordCount) {
@@ -5808,6 +5873,9 @@ function formatAsMarkdown(content) {
   if (content.extractor) {
     lines.push(`**擷取:** ${content.extractor}`);
   }
+  if (content.selectedText) {
+    lines.push(`**範圍:** 已選取文字`);
+  }
   lines.push("");
 
   // If Defuddle produced markdown, use it directly — it's already clean
@@ -5839,7 +5907,10 @@ function formatAsMarkdown(content) {
     lines.push("");
   }
 
-  if (content.paragraphs?.length > 0) {
+  if (content.selectedText) {
+    lines.push("## 已選取內容");
+    lines.push(content.selectedText.substring(0, 5000));
+  } else if (content.paragraphs?.length > 0) {
     lines.push("## 主要內容");
     lines.push(content.paragraphs.join("\n\n").substring(0, 5000));
   } else if (content.text) {
@@ -5854,6 +5925,8 @@ function formatAsStructured(content) {
   const payload = {
     title: content.title || "",
     url: content.url || "",
+    selectedText: content.selectedText || "",
+    selectionActive: content.selectionActive === true,
     meta: content.meta || {},
     headings: content.headings || [],
     paragraphs: content.paragraphs || [],

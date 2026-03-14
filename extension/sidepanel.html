@@ -1428,6 +1428,40 @@
       </div>
     </div>
 
+    <!-- iframe 模式首次詢問 overlay -->
+    <div class="welcome-overlay hidden" id="iframeChoiceOverlay">
+      <div class="welcome-card">
+        <div class="welcome-header">
+          <img src="icons/icon128.png" class="welcome-logo" alt="SidePilot Logo" />
+          <h2>要啟用 iframe 模式嗎？</h2>
+          <p class="welcome-tagline">把 GitHub Copilot 網頁直接嵌入側邊欄</p>
+        </div>
+
+        <div class="welcome-divider"></div>
+
+        <ul class="welcome-features">
+          <li><span class="feature-icon">✅</span><span>免安裝、免設定，開啟即用</span></li>
+          <li><span class="feature-icon">⚠️</span><span>需移除 GitHub 安全標頭，屬 ToS 灰色地帶</span></li>
+          <li><span class="feature-icon">🔧</span><span>偏好進階功能（記憶庫、規則、串流）請選「否」使用 SDK 模式</span></li>
+        </ul>
+
+        <div class="welcome-divider"></div>
+
+        <p style="font-size:12px;color:var(--color-text-muted);text-align:center;margin:0 0 12px;">
+          隨時可在 <strong>設定 › iframe 模式</strong> 中修改此選項
+        </p>
+
+        <div class="welcome-actions">
+          <button class="btn btn-primary btn-full" id="iframeChoiceYesBtn">
+            是，啟用 iframe 模式
+          </button>
+          <button class="btn btn-secondary btn-full" id="iframeChoiceNoBtn" style="margin-top:8px;">
+            否，使用 SDK 模式
+          </button>
+        </div>
+      </div>
+    </div>
+
 <script src="sidepanel.js"></script>
   </body>
 </html>

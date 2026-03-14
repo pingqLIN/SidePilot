@@ -877,6 +877,9 @@ body {
   flex-direction: column;
   gap: 8px;
   flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .capture-card-actions {
@@ -909,6 +912,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex-shrink: 0;
 }
 
 .capture-meta-row {
@@ -935,9 +939,11 @@ body {
   font-size: 11px;
   color: var(--text-secondary);
   line-height: 1.5;
-  max-height: 140px;
-  overflow: hidden;
-  padding-right: 4px;
+  max-height: min(28vh, 260px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: 8px;
   white-space: pre-wrap;
 }
 

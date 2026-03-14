@@ -14,6 +14,7 @@ import * as ConnectionController from './js/connection-controller.js';
 const COPILOT_URL = 'https://github.com/copilot';
 const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{16}$/i;
 const SEAL_DIGEST_PATTERN = /^[0-9a-f]{16}$/i;
+const LEGACY_SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
 const ANTIGRAVITY_DEFAULT_BASE_URL = 'http://127.0.0.1:47619';
 
@@ -39,6 +40,22 @@ function addStartupGuardFailure(message) {
   startupGuard.reasons.push(String(message || 'unknown failure'));
 }
 
+function normalizeSealDigest(value) {
+  const digest = typeof value === 'string'
+    ? value.trim().toLowerCase()
+    : '';
+
+  if (SEAL_DIGEST_PATTERN.test(digest)) {
+    return { digest, legacy: false };
+  }
+
+  if (LEGACY_SEAL_DIGEST_PATTERN.test(digest)) {
+    return { digest, legacy: true };
+  }
+
+  return { digest: '', legacy: false };
+}
+
 function getStartupGuardStatus() {
   return {
     ready: startupGuard.ready,
@@ -51,20 +68,33 @@ function getStartupGuardStatus() {
 
 function normalizeSelfIterationSettings(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
-  const digest = typeof source.selfIterationLastSealDigest === 'string'
-    ? source.selfIterationLastSealDigest.trim().toLowerCase()
-    : '';
+  const normalizedDigest = normalizeSealDigest(source.selfIterationLastSealDigest);
 
   return {
     selfIterationEnabled: source.selfIterationEnabled === true,
     selfIterationFirstSealDone: source.selfIterationFirstSealDone === true,
-    selfIterationLastSealDigest: SEAL_DIGEST_PATTERN.test(digest) ? digest : ''
+    selfIterationLastSealDigest: normalizedDigest.digest,
+    selfIterationLegacySealDigest: normalizedDigest.legacy
   };
 }
 
 async function readSelfIterationSettings() {
   const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
   return normalizeSelfIterationSettings(result?.[SETTINGS_STORAGE_KEY]);
+}
+
+async function persistSelfIterationSettingsPatch(patch) {
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  const current = result?.[SETTINGS_STORAGE_KEY] && typeof result[SETTINGS_STORAGE_KEY] === 'object'
+    ? result[SETTINGS_STORAGE_KEY]
+    : {};
+
+  await chrome.storage.local.set({
+    [SETTINGS_STORAGE_KEY]: {
+      ...current,
+      ...patch
+    }
+  });
 }
 
 function getManifestSealDigest() {
@@ -180,7 +210,30 @@ async function runStartupGuardChecks() {
   }
 
   if (!settings.selfIterationLastSealDigest) {
-    addStartupGuardFailure('selfIterationLastSealDigest missing when self-iteration is enabled');
+    if (settings.selfIterationFirstSealDone && manifestSeal.digest) {
+      await persistSelfIterationSettingsPatch({
+        selfIterationLastSealDigest: manifestSeal.digest
+      });
+      settings.selfIterationLastSealDigest = manifestSeal.digest;
+      settings.selfIterationLegacySealDigest = false;
+      console.warn('[SidePilot] Startup guard auto-recovered missing selfIterationLastSealDigest from manifest seal');
+    } else {
+      addStartupGuardFailure('selfIterationLastSealDigest missing when self-iteration is enabled');
+    }
+  }
+
+  if (
+    settings.selfIterationLegacySealDigest &&
+    settings.selfIterationLastSealDigest &&
+    manifestSeal.digest &&
+    manifestSeal.digest.startsWith(settings.selfIterationLastSealDigest)
+  ) {
+    await persistSelfIterationSettingsPatch({
+      selfIterationLastSealDigest: manifestSeal.digest
+    });
+    settings.selfIterationLastSealDigest = manifestSeal.digest;
+    settings.selfIterationLegacySealDigest = false;
+    console.warn('[SidePilot] Startup guard auto-migrated legacy 8-char seal digest to 16-char digest');
   }
 
   // Check 3: persisted digest should match current manifest digest
@@ -1279,9 +1332,15 @@ function isRestrictedUrl(url) {
 // ============================================
 
 function extractPageContent() {
+  const selectedText = window.getSelection?.()?.toString?.().trim?.() || '';
+  const selectionWordCount = selectedText
+    ? selectedText.split(/\s+/).filter(Boolean).length
+    : 0;
   const content = {
     title: document.title || '',
     url: window.location.href,
+    selectedText,
+    selectionActive: !!selectedText,
     text: '',
     markdown: '',
     paragraphs: [],
@@ -1293,7 +1352,30 @@ function extractPageContent() {
     extractor: 'basic'
   };
 
+  if (selectedText) {
+    content.text = selectedText.substring(0, 12000);
+    content.paragraphs = selectedText
+      .split(/\n{2,}/g)
+      .map(part => part.trim())
+      .filter(Boolean)
+      .slice(0, 120);
+    content.wordCount = selectionWordCount;
+    content.charCount = selectedText.replace(/\s+/g, '').length;
+    content.extractor = 'selection';
+  }
+
   try {
+    if (selectedText) {
+      document.querySelectorAll('meta[name], meta[property]').forEach(meta => {
+        const name = meta.getAttribute('name') || meta.getAttribute('property');
+        const value = meta.getAttribute('content');
+        if (name && value && ['description', 'keywords', 'og:title', 'og:description'].includes(name) && !content.meta[name]) {
+          content.meta[name] = value.substring(0, 300);
+        }
+      });
+      return content;
+    }
+
     // Try Defuddle + Turndown for high-quality extraction
     if (typeof __SidePilotVendor !== 'undefined' && __SidePilotVendor.Defuddle) {
       try {

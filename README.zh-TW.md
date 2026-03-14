@@ -37,6 +37,14 @@
 
 ---
 
+<p align="center">
+  <img src="pic/22-browser-usage-demo.png" width="860" alt="SidePilot 瀏覽器使用示意 — 在 GitHub 旁邊直接與 AI 對話">
+  <br>
+  <sub>SidePilot 在瀏覽器側邊欄直接與 GitHub Copilot 對話，無需切換分頁。</sub>
+</p>
+
+---
+
 ## 🧭 SidePilot 是什麼？
 
 SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilot AI 助手放進瀏覽器的側邊面板。核心目標很簡單：**讓你在原本工作的地方就能跟 AI 協作。**
@@ -66,38 +74,45 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="pic/14-header-tabs.png" width="420" alt="SidePilot 頂列與分頁"><br>
+      <img src="pic/09-sdk-initial.png" width="420" height="260" alt="SDK 首次登入引導"><br>
       <b>側邊欄立即可用</b><br>
       <sub>把 Copilot 放進瀏覽器側邊欄，一鍵切換 IFRAME / SDK 模式。</sub>
     </td>
     <td width="50%" align="center">
-      <img src="pic/16-rules-templates.png" width="420" alt="Rules 樣板選擇器"><br>
+      <img src="pic/16-rules-templates.png" width="420" height="260" alt="Rules 樣板選擇器"><br>
       <b>規則可塑形</b><br>
       <sub>內建 TypeScript、React、安全等樣板，或自訂指令讓 AI 回應風格更一致。</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="pic/19-page-capture.png" width="420" alt="頁面擷取面板"><br>
+      <img src="pic/19-page-capture.png" width="420" height="260" alt="頁面擷取面板"><br>
       <b>所見即所擷取</b><br>
       <sub>直接從網頁抓文字、程式碼區塊與截圖。</sub>
     </td>
     <td width="50%" align="center">
-      <img src="pic/15-sdk-model-select.png" width="420" alt="SDK 模型選擇器"><br>
-      <b>SDK 串流對話</b><br>
-      <sub>切到本地 bridge 後，取得更完整的模型、串流與控制力。</sub>
+      <img src="pic/24-page-capture-crop-detail.png" width="420" height="260" alt="截圖框選傳 AI"><br>
+      <b>截圖框選傳 AI</b><br>
+      <sub>拖曳選取頁面任意區域，直接把截圖傳入 Copilot 對話。</sub>
     </td>
   </tr>
   <tr>
     <td width="50%" align="center">
-      <img src="pic/18-settings-bridge.png" width="420" alt="Bridge 設定面板"><br>
+      <img src="pic/18-settings-bridge.png" width="420" height="260" alt="Bridge 設定面板"><br>
       <b>Bridge 自動啟動</b><br>
       <sub>進入 SDK 模式時自動偵測並啟動本地 bridge，不用手動拉起。</sub>
     </td>
     <td width="50%" align="center">
-      <img src="pic/13-welcome-screen.png" width="420" alt="歡迎 Onboarding 畫面"><br>
-      <b>引導式 Onboarding</b><br>
-      <sub>從快速上手自然過渡到 bridge 進階工作流，不需離開側邊欄。</sub>
+      <img src="pic/23-github-readme-context.png" width="420" height="260" alt="在任何頁面旁邊直接協作"><br>
+      <b>在任何頁面直接協作</b><br>
+      <sub>瀏覽 GitHub、看文件、審 PR — AI 就在旁邊，不需要切換分頁。</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="pic/22-browser-usage-demo.png" width="860" alt="SidePilot 瀏覽器實際使用 — 在 GitHub 旁邊直接與 AI 對話"><br>
+      <b>瀏覽器實際使用示意</b><br>
+      <sub>在 GitHub 旁邊直接與 Copilot 對話 — AI 就待在你工作的頁面旁邊，不需要切換分頁。</sub>
     </td>
   </tr>
 </table>
@@ -197,6 +212,12 @@ npm run bridge-launcher:install:win
 **第四步 — 完成**
 
 初次設定完成後，每次切到 SDK 模式都會自動啟動 Bridge，不需要再開終端機。
+
+<p align="center">
+  <img src="pic/25-settings-sdk-connected.png" width="420" alt="設定面板 — SDK Bridge 已連線">
+  <br>
+  <sub>Settings → SDK 模式 — 底部顯示「SDK Bridge 已連線」即表示設定成功。上方 <b>SDK</b> 字樣呈現綠色，也可作為連線狀態的快速判斷。</sub>
+</p>
 
 > **如果 Bridge 沒有自動啟動**，請到 **設定 → Bridge Setup → Copy Quick Setup**，把指令貼到終端機執行。完整說明：[docs/guide/getting-started/README.zh-TW.md](docs/guide/getting-started/README.zh-TW.md)
 

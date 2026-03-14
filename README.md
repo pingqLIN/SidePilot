@@ -37,6 +37,14 @@
 
 ---
 
+<p align="center">
+  <img src="pic/22-browser-usage-demo.png" width="900" alt="SidePilot in action — AI chat alongside GitHub in the browser side panel">
+  <br>
+  <sub>SidePilot keeps GitHub Copilot in the browser side panel — no tab switching needed.</sub>
+</p>
+
+---
+
 ## 🧭 What Is SidePilot?
 
 SidePilot is a **Chrome Extension** (Manifest V3) that puts GitHub Copilot AI into the browser side panel. Its goal is simple: **let you work with AI where you're already working**.
@@ -98,6 +106,13 @@ Instead of bouncing between tabs, apps, and terminals, you can keep Copilot besi
       <img src="pic/13-welcome-screen.png" width="420" alt="Welcome onboarding screen"><br>
       <b>Guided onboarding</b><br>
       <sub>Move from quick start to advanced mode without leaving the panel.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <img src="pic/22-browser-usage-demo.png" width="860" alt="SidePilot in action — AI chat alongside GitHub in the browser"><br>
+      <b>Browser usage in action</b><br>
+      <sub>Copilot stays beside the page you're already on — no tab switching needed.</sub>
     </td>
   </tr>
 </table>

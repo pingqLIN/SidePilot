@@ -1,77 +1,100 @@
-# SidePilot 開發計畫書
+# SidePilot — Development Status & Roadmap
 
-## 專案名稱
-
-SidePilot - Chrome 側邊欄 AI 助手
-
-## 版本目標
-
-v2.0 - 雙模式架構（iframe + 官方 SDK）
-
----
-
-## 目標
-
-### 主要目標
-
-提供「官方 SDK 模式」與「網頁嵌入模式」雙軌切換，透過 `@github/copilot-sdk` 接入官方 Copilot CLI。
-
-### 具體目標
-
-| #   | 目標           | 說明                                  |
-| --- | -------------- | ------------------------------------- |
-| 1   | **合規化**     | 透過官方 Copilot SDK 提供合法存取管道 |
-| 2   | **雙模式切換** | 用戶可自由選擇 SDK 或 iframe 模式     |
-| 3   | **視覺一致性** | 兩種模式維持相同外觀與操作體驗        |
-| 4   | **向下相容**   | 保留現有 iframe 模式供快速使用        |
+<!--
+╔══════════════════════════════════════════════════════════════╗
+║  FOR AI AGENT                                                ║
+║  Primary reader  : AI assistant / language model agent       ║
+║  Purpose         : Project state, milestone history,         ║
+║                    pending work, and architectural goals     ║
+║  Confidence      : HIGH — authoritative source               ║
+║  Last updated    : 2026-03-14                                ║
+╚══════════════════════════════════════════════════════════════╝
+-->
 
 ---
 
-## 架構
+## Project Identity
 
-```text
+| Field | Value |
+|-------|-------|
+| Name | SidePilot |
+| Type | Chrome MV3 side panel extension |
+| Current milestone | v0.5.0 (post-v2.0 architecture) |
+| Version target | v2.0 — dual-mode (iframe + official SDK) |
+
+---
+
+## Architecture Goals
+
+| # | Goal | Status |
+|---|------|--------|
+| 1 | Compliance via official `@github/copilot-sdk` | Achieved |
+| 2 | Dual-mode switching (SDK ↔ iframe) | Achieved |
+| 3 | Visual consistency across modes | Achieved |
+| 4 | Backward-compatible iframe mode | Achieved |
+
+**Data flow:**
+```
 Chrome Extension (sdk-client.js)
-       ↓ HTTP / SSE
-  Copilot Bridge (scripts/copilot-bridge)
-       ↓ JSON-RPC
-  Copilot CLI (managed by @github/copilot-sdk)
+  ──HTTP/SSE──▶  Bridge Server (scripts/copilot-bridge, :31031)
+                   ──JSON-RPC/stdio──▶  Copilot CLI (copilot --acp)
 ```
 
-## 模式比較
+---
 
-| 面向     | 🔒 SDK 模式                         | ⚡ iframe 模式 |
-| -------- | ----------------------------------- | -------------- |
-| 法律地位 | ✅ 官方支援                         | ⚠️ 灰色地帶    |
-| 帳號風險 | ✅ 無                               | ⚠️ 有風險      |
-| 前置需求 | Copilot CLI + Bridge Server         | 無             |
-| 功能     | Streaming, Custom Tools, 多 Session | 網頁原生功能   |
-| 適用場景 | 長期使用                            | 快速體驗       |
+## Mode Tradeoff Summary
+
+| Dimension | SDK mode | iframe mode |
+|-----------|----------|-------------|
+| Legal status | Official SDK — compliant | GitHub ToS gray area |
+| Account risk | None | Present |
+| Prerequisites | Copilot CLI + Bridge Server | None |
+| Features | Streaming, context injection, multi-session | Native Copilot web |
+| Use case | Long-term / production use | Quick access / trial |
 
 ---
 
-## 已完成
+## Completed Milestones
 
-- [x] **M1**: 模式切換 UI 與基礎架構
-- [x] **M2**: 官方 SDK Bridge Server（`@github/copilot-sdk`）
-- [x] **M3**: SDK Chat UI + SSE Streaming 支援
-- [x] **擷取功能**: 頁面內容、截圖、程式碼區塊擷取
-- [x] **Memory Bank**: 任務管理、VS Code 整合
-- [x] **Rules 管理**: 模板、匯入匯出
-- [x] **對話歷史**: SDK 對話歷史持久化、History 分頁分組顯示
-- [x] **Context Injection**: Identity / Memory / Rules / System / Structured Output 開關
-- [x] **Bridge 自動啟動（MVP）**: 偵測橋接器狀態並嘗試喚起啟動器
-- [x] **Permission UI**: Bridge 權限請求 SSE 與側欄同意彈窗
-- [x] **Link Guard**: iframe allowlist / denylist 邊界控制
-- [x] **Antigravity Provider Probe**: 設定頁可探測本機 bridge health / meta / detect
-
-## 待完成
-
-- [ ] Bridge Server 實測（需 Copilot CLI）
-- [ ] sidepanel 模組化拆分（降低單檔複雜度）
-- [ ] 補齊 sidepanel / prompt orchestration 的自動化測試
-- [ ] iframe 模式相容性與 GitHub UI 變動的回歸驗證
-- [ ] Chrome Web Store 發布準備
+| Item | Description |
+|------|-------------|
+| M1 | Mode-switching UI + base architecture |
+| M2 | Official SDK Bridge Server (`@github/copilot-sdk`) |
+| M3 | SDK Chat UI + SSE streaming |
+| Page Capture | Text, screenshot, code block extraction |
+| Memory Bank | Task management, VS Code integration |
+| Rules Management | Templates, import/export |
+| Conversation History | Bridge-persisted SDK history, History tab grouped by date |
+| Context Injection | Identity / Memory / Rules / System / Structured Output toggles |
+| Bridge Auto-Start (MVP) | Detect bridge state + trigger OS launcher |
+| Permission UI | Bridge permission request SSE + side panel consent modal |
+| Link Guard | iframe allowlist / denylist boundary control |
+| Antigravity Provider Probe | Settings page can probe local bridge `/health`, `/meta`, `/detect` |
 
 ---
 
-_最後更新: 2026-03-10_
+## Pending Work
+
+| Priority | Item | Notes |
+|----------|------|-------|
+| High | Bridge Server real-world testing | Requires active Copilot CLI |
+| High | sidepanel.js modularization | Reduce single-file complexity |
+| Medium | Automated tests for sidepanel + prompt orchestration | Coverage gap |
+| Medium | iframe mode regression validation | GitHub UI change monitoring |
+| Low | Chrome Web Store publish prep | Packaging, screenshots, store listing |
+
+---
+
+## Key Source Files
+
+| File | Role |
+|------|------|
+| `extension/sidepanel.js` | Main UI controller (large, pending modularization) |
+| `extension/background.js` | Service worker |
+| `extension/js/sdk-client.js` | Bridge HTTP/SSE client |
+| `extension/js/mode-manager.js` | iframe ↔ SDK mode switching |
+| `extension/js/memory-bank.js` | Memory CRUD + injection |
+| `extension/js/connection-controller.js` | Bridge health management |
+| `scripts/copilot-bridge/src/server.ts` | Express app + all API routes |
+| `scripts/copilot-bridge/src/supervisor.ts` | Process supervision + auto-restart |
+| `scripts/bridge-launcher/windows/` | Windows URI handler installer |
