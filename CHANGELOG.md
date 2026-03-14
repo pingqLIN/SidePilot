@@ -6,6 +6,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased] — Systematic Infrastructure Fixes
+
+### Analysis: Systematic Errors in PR History
+
+A review of all pull requests (#1–#41) revealed three recurring patterns that
+caused the same bugs to be introduced, fixed, re-introduced, and re-fixed
+multiple times:
+
+**Error 1 — Copilot-agent fix/regress/re-fix cycle**
+Each Copilot coding-agent session starts stateless and without awareness of what
+previous agents have already fixed.  This caused:
+- The integrity-seal digest length to be fixed three times (PRs #5, #12, #26):
+  PR #12 raised `DIGEST_LENGTH` 8 → 16 hex chars, PR #5's merge-conflict
+  resolution silently reverted the runtime validators in `background.js` /
+  `sidepanel.js` back to `{8}`, and PR #26 was required to reconcile the
+  mismatch again.
+- The CORS / 127.0.0.1 binding to be fixed twice (PRs #4, #7).
+- Full-page-screenshot page-state cleanup to be fixed twice (PRs #5, #25).
+- The Jest test suite (ESM support, import paths) to be fixed twice (PRs #16,
+  #17), producing a merge conflict resolved by PR #23.
+
+**Error 2 — Debug/test artifact committed to CI config ("OH.NO" branch)**
+An agent committed the string `"OH.NO"` into the `push.branches` list of
+`ci.yml` while testing a workflow change.  The branch does not exist, so every
+push to `main` triggered a CI run that immediately failed with a missing-ref
+error.  Fixed by PR #39; PR #40 would revert that fix — do **not** merge #40.
+
+**Error 3 — CodeQL SARIF upload race condition and unnecessary Python scan**
+The CodeQL workflow ran three parallel jobs (`actions`, `javascript-typescript`,
+`python`) with no concurrency cap.  All three finished at similar times and
+raced to upload their SARIF reports, causing intermittent
+`RequestError: SARIF upload conflict` failures unrelated to any code change.
+Additionally, the repository is JavaScript/TypeScript only; the single Python
+test helper does not warrant a full Python CodeQL scan.
+Fixed by PR #39: `max-parallel: 1` added, Python language removed.
+
+### One-Time Resolution (this PR)
+
+- **`.github/workflows/ci.yml`** — add explicit comment documenting that only
+  `"main"` belongs in `branches` and why debug branch names must not be added.
+- **`.github/workflows/codeql.yml`** — add inline comments explaining the
+  `max-parallel: 1` setting and the intentional exclusion of Python, making it
+  obvious to any future agent or reviewer that these choices are deliberate and
+  must not be reverted.
+- **`CHANGELOG.md`** — this entry, providing a permanent audit trail of what
+  went wrong and why.
+
+### Changed
+
+- `.github/workflows/ci.yml`: add protective comment against debug branch names
+- `.github/workflows/codeql.yml`: add protective comments explaining `max-parallel: 1` and Python exclusion
+
+---
+
 ## [0.5.1] — 2026-03-13
 
 ### Added
