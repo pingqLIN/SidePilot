@@ -41,6 +41,11 @@ jobs:
 
     strategy:
       fail-fast: false
+      # IMPORTANT: max-parallel: 1 is intentional.
+      # Without it, all language jobs finish at nearly the same time and race to
+      # upload their SARIF reports, causing intermittent "SARIF upload conflict"
+      # errors that fail CI without any actual code problem.
+      # Do NOT remove this setting. See: https://github.com/pingqLIN/SidePilot/pull/39
       max-parallel: 1
       matrix:
         include:
@@ -48,6 +53,11 @@ jobs:
           build-mode: none
         - language: javascript-typescript
           build-mode: none
+        # NOTE: 'python' is intentionally excluded from this matrix.
+        # This repository is JavaScript/TypeScript only; the single Python test
+        # helper (tests/run_sidecar_converter_mvp_e2e.py) does not warrant a
+        # full Python CodeQL scan and only adds noise + concurrent SARIF uploads.
+        # See: https://github.com/pingqLIN/SidePilot/pull/39
         # CodeQL supports the following values keywords for 'language': 'actions', 'c-cpp', 'csharp', 'go', 'java-kotlin', 'javascript-typescript', 'python', 'ruby', 'rust', 'swift'
         # Use `c-cpp` to analyze code written in C, C++ or both
         # Use 'java-kotlin' to analyze code written in Java, Kotlin or both

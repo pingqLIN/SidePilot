@@ -1,5 +1,9 @@
 name: CI
 
+# IMPORTANT: This workflow intentionally targets only "main".
+# Do NOT add debug/test branch names (e.g. "OH.NO") to the branches list —
+# that causes CI to run on non-existent refs and produces spurious failures.
+# See: https://github.com/pingqLIN/SidePilot/pull/39
 on:
   push:
     branches: ["main"]

@@ -147,6 +147,45 @@ chore(deps): update @github/copilot-sdk to 0.1.9
 
 ---
 
+## CI & Integrity Seal
+
+### Integrity Seal
+
+SidePilot uses a SHA-256 integrity seal over its critical extension files.
+Whenever you change any file listed in `scripts/seal-integrity.mjs`
+(`CRITICAL_FILES`), you must re-run the seal before pushing:
+
+```bash
+npm run integrity:seal   # recomputes and writes the digest into manifest.json
+npm run integrity:verify # validates the seal (also runs in CI)
+```
+
+The CI step **Verify integrity seal** will fail if the seal is outdated.
+
+### CI Workflow Conventions
+
+The `.github/workflows/ci.yml` file intentionally targets **only `"main"`** in
+its `push.branches` list.  Do **not** add debug/test branch names to that list
+— doing so causes CI to run on refs that do not exist and produces confusing
+failures unrelated to any code change.
+
+### CodeQL Workflow Conventions
+
+The `.github/workflows/codeql.yml` file uses `max-parallel: 1` and scans only
+`actions` and `javascript-typescript`.  These choices are **intentional**:
+
+- **`max-parallel: 1`** — prevents concurrent SARIF upload conflicts.  All
+  language jobs finish at approximately the same time; without the cap they race
+  to upload their reports and fail with `RequestError: SARIF upload conflict`.
+- **Python excluded** — the repository is JavaScript/TypeScript; the single
+  Python test helper does not warrant a full Python CodeQL scan and only adds
+  noise.
+
+Do **not** revert these settings.  See [PR #39](https://github.com/pingqLIN/SidePilot/pull/39)
+for full context.
+
+---
+
 ## Questions?
 
 Feel free to open an issue or start a discussion. We're happy to help! 🚀
