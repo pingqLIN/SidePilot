@@ -41,6 +41,7 @@ const CRITICAL_FILES = [
   'sidepanel.js',
   'sidepanel.html',
   'js/connection-controller.js',
+  'js/bridge-event-stream.js',
   'js/mode-manager.js',
   'js/sdk-client.js',
   'js/link-guard.js',

@@ -2390,14 +2390,31 @@ async function getBridgeAuthToken(options = {}) {
 }
 
 async function createAuthorizedBridgeEventSource(path, options = {}) {
-  const token = await getBridgeAuthToken({
-    port: options.port,
-    timeoutMs: options.timeoutMs,
-    forceRefresh: options.forceRefresh,
+  const streamFactory =
+    globalThis.SidePilotBridgeEventStream?.createAuthenticatedEventSource;
+  if (typeof streamFactory !== "function") {
+    throw new Error("Bridge event stream helper unavailable");
+  }
+
+  const port = Number(options.port) || SDK_BRIDGE_PORT;
+
+  return streamFactory({
+    async getRequest({ attempt }) {
+      const token = await getBridgeAuthToken({
+        port,
+        timeoutMs: options.timeoutMs,
+        forceRefresh: options.forceRefresh || attempt > 0,
+      });
+
+      return {
+        url: `http://localhost:${port}${path}`,
+        headers: {
+          "X-SidePilot-Token": token,
+          "X-SidePilot-Extension-Id": chrome.runtime.id,
+        },
+      };
+    },
   });
-  const url = new URL(`http://localhost:${Number(options.port) || SDK_BRIDGE_PORT}${path}`);
-  url.searchParams.set("token", token);
-  return new EventSource(url.toString());
 }
 
 function normalizeBridgeManualRuntime(value) {
