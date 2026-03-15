@@ -5,7 +5,7 @@
 <h1 align="center">SidePilot</h1>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/Version-0.5.0-blue?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/Version-0.5.2-blue?style=flat-square">
   <img alt="Chrome" src="https://img.shields.io/badge/Chrome-114+-4285F4?style=flat-square&logo=google-chrome&logoColor=white">
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-34a853?style=flat-square">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
@@ -241,7 +241,7 @@ Bridge startup, diagnostics, and copied commands now live in one place: **Settin
 
 `SidePilot v3` is being documented as a new project line inside this repo. It keeps the same product and repo name, but explores the next-generation architecture around live page context, bounded browser control, and dev-mode self-iteration.
 
-Current setup, usage, and feature docs in this README still describe the shipped `v0.5.x / v2` line. For forward-looking design work, start from [docs/v3/README.md](docs/v3/README.md).
+Current setup, usage, and feature docs in this README still describe the shipped `v0.5.2 / v2` line. For forward-looking design work, start from [docs/v3/README.md](docs/v3/README.md).
 
 ## 🔎 Recommended reading path
 

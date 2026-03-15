@@ -5,7 +5,7 @@
 <h1 align="center">SidePilot</h1>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/Version-0.5.0-blue?style=flat-square">
+  <img alt="Version" src="https://img.shields.io/badge/Version-0.5.2-blue?style=flat-square">
   <img alt="Chrome" src="https://img.shields.io/badge/Chrome-114+-4285F4?style=flat-square&logo=google-chrome&logoColor=white">
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-34a853?style=flat-square">
   <img alt="Node.js" src="https://img.shields.io/badge/Node.js-24+-339933?style=flat-square&logo=node.js&logoColor=white">
