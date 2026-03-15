@@ -50,4 +50,17 @@ describe('Mode Manager Module', () => {
 
     await expect(ModeManager.detectMode()).resolves.toBe('iframe');
   });
+
+  it('init should load the stored mode without probing localhost', async () => {
+    chrome.storage.local.get.mockResolvedValueOnce({
+      'sidepilot.mode.active': 'sdk',
+      'sidepilot.mode.lastCheck': Date.now(),
+    });
+    global.fetch = jest.fn();
+
+    await ModeManager.init();
+
+    expect(ModeManager.getActiveMode()).toBe('sdk');
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
 });

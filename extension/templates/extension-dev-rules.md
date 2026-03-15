@@ -22,6 +22,7 @@
 - Register event listeners inside `setupEventListeners()`
 - Use named exports for modules
 - Bridge API paths: `/api/chat`, `/api/chat/sync`, `/api/permissions/*`, `/api/prompt/strategy`
+- Any user-visible UI text or display change must preserve an English baseline in the same edit
 
 ## Modification Checklist
 - [ ] After editing `server.ts`, always re-run `npm run build`
@@ -29,6 +30,7 @@
 - [ ] New CSS must follow the existing block structure (section comments as dividers)
 - [ ] Windows `spawn` for external commands requires `shell: true`
 - [ ] Use `display:none` (not `visibility:hidden`) when toggling iframe visibility
+- [ ] If UI copy changed, confirm the English version exists and is updated in the same patch
 
 ## Test Requirements
 - Run the full test suite after any change to confirm no regressions

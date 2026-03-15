@@ -50,7 +50,7 @@
 #### 1. 下載擴充功能
 
 ```bash
-git clone https://github.com/user/SidePilot.git
+git clone https://github.com/pingqLIN/SidePilot.git
 cd SidePilot
 ```
 
@@ -179,8 +179,8 @@ npm run dev          # 啟動僅 Worker 的熱重載，並綁定到該 extension
 
 **從擴充功能：**
 1. 前往**設定 > Bridge Setup**
-2. 點擊 **Health Check**
-3. 綠色指示燈表示 Bridge 已連線
+2. 先看 **Quick Start**，確認主按鈕已變成 **Bridge 已就緒**，或至少能看到下一步（啟動 Bridge / 開啟 GitHub 登入頁 / 重試）
+3. 再看 **Connection Details**，確認 Bridge / CLI 狀態都已更新
 
 **從終端機：**
 
@@ -314,6 +314,9 @@ vscode://extension.command?content=encoded-entry-content
 | **Default** | 通用：清晰簡潔的回應；帶有註解的程式碼 |
 | **TypeScript** | TypeScript 專用：嚴格模式、介面、正確的型別定義 |
 | **React** | React 模式：函式元件、Hooks、狀態管理 |
+| **自我疊代** | AI 主動建議更新記憶庫與規則 |
+| **擴充開發** | SidePilot 專案開發規範 |
+| **絕對安全** | 嚴格變更控制與風險分類 |
 
 ### 建立規則
 
@@ -463,7 +466,7 @@ https://github.com/login
 | 按鈕 | 區段 |
 |------|------|
 | Intro | 介紹動畫和歡迎設定 |
-| Bridge Setup | Bridge 伺服器健康狀態和指令 |
+| Bridge Setup | Quick Start、Connection Details 與進階診斷 |
 | SDK Mode | 記憶庫/規則注入、儲存路徑 |
 | iframe Mode | 連結守衛設定 |
 | Capture | 按鈕寬度調整 |
@@ -481,11 +484,11 @@ https://github.com/login
 
 | 元素 | 類型 | 說明 |
 |------|------|------|
-| Bridge Status | 指示燈 | 綠色 = 已連線，紅色 = 已斷線 |
-| Health Check URL | 顯示 | `http://localhost:31031/health` |
-| Check Bridge | 按鈕 | 發送健康檢查請求 |
-| Copy Start Command | 按鈕 | 將 Bridge 啟動指令複製到剪貼簿 |
-| Copy Health Command | 按鈕 | 複製 curl 健康檢查指令 |
+| Quick Start | 卡片 | 顯示目前 Bridge 狀態與唯一主操作（啟動 Bridge / 開啟 GitHub 登入頁 / 重試 / Bridge 已就緒） |
+| Connection Details | 資訊列 | 顯示 Repo Root、Runtime、Launcher、Bridge 版本、CLI 狀態 |
+| 重新檢查 | 按鈕 | 重新抓取 `/api/status` 快照並刷新設定畫面 |
+| Copy Quick Setup | 按鈕 | 複製 launcher 安裝 / 啟動所需的 Quick Setup 指令 |
+| Advanced | 區塊 | 收納 WSL Distro、手動啟動指令、診斷資訊與最近結果 |
 
 #### SDK Mode
 

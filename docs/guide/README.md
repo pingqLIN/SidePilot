@@ -6,7 +6,7 @@
 ║  Primary reader  : AI assistant / language model agent       ║
 ║  Purpose         : Navigation index for all doc files        ║
 ║  Confidence      : HIGH — authoritative source               ║
-║  Last updated    : 2026-03-14                                ║
+║  Last updated    : 2026-03-15                                ║
 ╚══════════════════════════════════════════════════════════════╝
 -->
 
@@ -26,6 +26,7 @@
 | [concepts/README.md](concepts/README.md) | **AI agent** | System model — modes, context pipeline, bridge |
 | [api/README.md](api/README.md) | **AI agent** | Bridge API quick-reference and auth flow |
 | [../guide/API.md](API.md) | **AI agent** | Full bridge endpoint reference |
+| [../v3/README.md](../v3/README.md) | **AI agent** | v3 project-line doc hub for next-generation architecture and planning |
 
 ---
 
@@ -53,6 +54,12 @@
 1. Read [getting-started/README.md](getting-started/README.md) → full setup procedure
 2. Read [../USAGE.md](../USAGE.md) → settings reference for post-setup tuning
 
+### Task: Explore the next SidePilot project line
+
+1. Read [../v3/README.md](../v3/README.md) → understand the v3 doc set
+2. Read [../v3/ARCHITECTURE.md](../v3/ARCHITECTURE.md) → review the new architecture direction
+3. Read the rest of `docs/v3/` in hub order for context model, control API, dev mode, and MVP tasks
+
 ---
 
 ## Document Ownership
@@ -68,3 +75,4 @@
 | getting-started/QUICKSTART.human.md | Chinese (zh-TW) | Human |
 | concepts/README.md | English | AI |
 | api/README.md | English | AI |
+| v3/README.md | English | AI |

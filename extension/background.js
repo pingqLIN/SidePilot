@@ -12,11 +12,43 @@ import * as ConnectionController from './js/connection-controller.js';
 // ============================================
 
 const COPILOT_URL = 'https://github.com/copilot';
+const SDK_LOGIN_URL =
+  'https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot';
 const SEAL_PATTERN = /^\d+\.\d+\.\d+\+[0-9a-f]{16}$/i;
 const SEAL_DIGEST_PATTERN = /^[0-9a-f]{16}$/i;
 const LEGACY_SEAL_DIGEST_PATTERN = /^[0-9a-f]{8}$/i;
 const SETTINGS_STORAGE_KEY = 'sidepilot.settings.v1';
 const ANTIGRAVITY_DEFAULT_BASE_URL = 'http://127.0.0.1:47619';
+const BRIDGE_STATUS_API_VERSION = '2026-03-bridge-status-v1';
+const BRIDGE_AUTO_START_PROTOCOL_BASE = 'sidepilot://start-bridge';
+const DEFAULT_BRIDGE_PORT = 31031;
+const BRIDGE_AUTO_START_TIMEOUT_MS = 45000;
+const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
+const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
+const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
+const BRIDGE_AUTO_START_COOLDOWN_MAX_MS = 300000;
+const BRIDGE_DEFAULT_SETTINGS = {
+  autoStartBridgeEnabled: true,
+  autoStartBridgeCooldownMs: BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS,
+  autoStartBridgeLastAttemptAt: 0,
+  autoStartBridgeLastResult: 'idle',
+  autoStartBridgeLastError: '',
+  bridgeManualRuntime: 'auto',
+  bridgeProjectRootWindows: '',
+  bridgeProjectRootWsl: '',
+  bridgeWslDistro: '',
+};
+const BRIDGE_LAUNCHER_ERROR_CODES = {
+  launcherUnavailable: 'BRG-AUTO-001',
+  timeout: 'BRG-AUTO-002',
+  cooldown: 'BRG-AUTO-003',
+  offline: 'BRG-OFFLINE',
+  unauthorized: 'BRG-AUTH-401',
+  unsupported: 'BRG-STATUS-404',
+  wrongService: 'BRG-SERVICE-MISMATCH',
+  degraded: 'BRG-CLI-DEGRADED',
+  requestFailed: 'BRG-REQUEST-FAILED',
+};
 
 const startupGuard = {
   ready: false,
@@ -34,7 +66,647 @@ const CORE_MODULES = [
   ['VSCodeConnector', () => VSCodeConnector.init()]
 ];
 
-ModeManager.setModeDetector(() => ConnectionController.detectPreferredMode());
+const sdkMonitorState = {
+  connectionState: 'idle',
+  chatState: 'standby',
+  activeRequestId: null,
+  lastTool: '',
+  lastError: '',
+  lastUpdatedAt: 0,
+  resyncInFlight: false,
+};
+
+const bridgeOrchestratorState = {
+  autoStartPromise: null,
+  lastError: {
+    code: '',
+    message: '',
+    at: 0,
+  },
+  lastSnapshot: null,
+};
+
+function updateSdkMonitorState(patch = {}) {
+  Object.assign(sdkMonitorState, patch, {
+    lastUpdatedAt: Date.now(),
+  });
+}
+
+function getSdkMonitorSnapshot() {
+  return {
+    ...sdkMonitorState,
+    sdkStatus: SDKClient.getStatus(),
+    startupGuard: getStartupGuardStatus(),
+  };
+}
+
+SDKClient.onConnectionChange((isConnected) => {
+  updateSdkMonitorState({
+    connectionState: isConnected ? 'connected' : 'offline',
+  });
+});
+
+function clampBridgeAutoStartCooldownMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS;
+  }
+  return Math.min(
+    BRIDGE_AUTO_START_COOLDOWN_MAX_MS,
+    Math.max(BRIDGE_AUTO_START_COOLDOWN_MIN_MS, Math.trunc(parsed)),
+  );
+}
+
+function normalizeBridgeManualRuntime(value) {
+  return value === 'windows' || value === 'wsl' ? value : 'auto';
+}
+
+function normalizeBridgeUiSettings(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  return {
+    autoStartBridgeEnabled: source.autoStartBridgeEnabled !== false,
+    autoStartBridgeCooldownMs: clampBridgeAutoStartCooldownMs(
+      source.autoStartBridgeCooldownMs,
+    ),
+    autoStartBridgeLastAttemptAt:
+      Number(source.autoStartBridgeLastAttemptAt) || 0,
+    autoStartBridgeLastResult:
+      typeof source.autoStartBridgeLastResult === 'string'
+        ? source.autoStartBridgeLastResult
+        : BRIDGE_DEFAULT_SETTINGS.autoStartBridgeLastResult,
+    autoStartBridgeLastError:
+      typeof source.autoStartBridgeLastError === 'string'
+        ? source.autoStartBridgeLastError
+        : '',
+    bridgeManualRuntime: normalizeBridgeManualRuntime(
+      source.bridgeManualRuntime,
+    ),
+    bridgeProjectRootWindows:
+      typeof source.bridgeProjectRootWindows === 'string'
+        ? source.bridgeProjectRootWindows.trim()
+        : '',
+    bridgeProjectRootWsl:
+      typeof source.bridgeProjectRootWsl === 'string'
+        ? source.bridgeProjectRootWsl.trim()
+        : '',
+    bridgeWslDistro:
+      typeof source.bridgeWslDistro === 'string'
+        ? source.bridgeWslDistro.trim()
+        : '',
+  };
+}
+
+async function readBridgeSettings() {
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  return normalizeBridgeUiSettings(result?.[SETTINGS_STORAGE_KEY]);
+}
+
+async function persistBridgeSettingsPatch(patch = {}) {
+  const result = await chrome.storage.local.get(SETTINGS_STORAGE_KEY);
+  const current =
+    result?.[SETTINGS_STORAGE_KEY] &&
+    typeof result[SETTINGS_STORAGE_KEY] === 'object'
+      ? result[SETTINGS_STORAGE_KEY]
+      : {};
+
+  const next = normalizeBridgeUiSettings({
+    ...current,
+    ...patch,
+  });
+
+  await chrome.storage.local.set({
+    [SETTINGS_STORAGE_KEY]: {
+      ...current,
+      ...next,
+    },
+  });
+
+  return next;
+}
+
+function inferBridgeManualRuntime(settings) {
+  const normalized = normalizeBridgeUiSettings(settings);
+  if (
+    normalized.bridgeProjectRootWindows &&
+    !normalized.bridgeProjectRootWsl
+  ) {
+    return 'windows';
+  }
+  if (
+    normalized.bridgeProjectRootWsl &&
+    !normalized.bridgeProjectRootWindows
+  ) {
+    return 'wsl';
+  }
+  if (/runtime=wsl|\/mnt\//i.test(normalized.autoStartBridgeLastError)) {
+    return 'wsl';
+  }
+  return 'windows';
+}
+
+function getResolvedBridgeRuntime(settings) {
+  const normalized = normalizeBridgeUiSettings(settings);
+  return normalized.bridgeManualRuntime === 'auto'
+    ? inferBridgeManualRuntime(normalized)
+    : normalized.bridgeManualRuntime;
+}
+
+function getConfiguredBridgeProjectRoot(settings, runtime) {
+  const normalized = normalizeBridgeUiSettings(settings);
+  return runtime === 'wsl'
+    ? normalized.bridgeProjectRootWsl || ''
+    : normalized.bridgeProjectRootWindows || '';
+}
+
+function getBridgeRuntimeSnapshot(settings) {
+  const normalized = normalizeBridgeUiSettings(settings);
+  const resolved = getResolvedBridgeRuntime(normalized);
+  return {
+    selected: normalized.bridgeManualRuntime,
+    resolved,
+    repoRoot: getConfiguredBridgeProjectRoot(normalized, resolved),
+    wslDistro: normalized.bridgeWslDistro || '',
+    autoStartEnabled: normalized.autoStartBridgeEnabled === true,
+  };
+}
+
+function getBridgeAutoStartProtocolUrl() {
+  const params = new URLSearchParams({
+    source: 'sidepilot-extension',
+    v: '1',
+  });
+  if (chrome?.runtime?.id) {
+    params.set('ext', chrome.runtime.id);
+  }
+  return `${BRIDGE_AUTO_START_PROTOCOL_BASE}?${params.toString()}`;
+}
+
+function rememberBridgeError(code, message) {
+  bridgeOrchestratorState.lastError = {
+    code: String(code || ''),
+    message: String(message || ''),
+    at: Date.now(),
+  };
+}
+
+function clearBridgeError() {
+  bridgeOrchestratorState.lastError = {
+    code: '',
+    message: '',
+    at: 0,
+  };
+}
+
+function extractBridgeErrorCode(text = '') {
+  const matched = String(text).match(
+    /(BRG-(?:AUTO-\d{3}|AUTH-\d{3}|STATUS-\d{3}|SERVICE-MISMATCH|OFFLINE|CLI-DEGRADED|REQUEST-FAILED))/,
+  );
+  return matched ? matched[1] : '';
+}
+
+function normalizeBridgeActionState(chatState = '', bridgeAvailability = 'offline') {
+  switch (chatState) {
+    case 'sending':
+    case 'preparing':
+      return 'connecting';
+    case 'streaming':
+    case 'tool_running':
+      return 'streaming';
+    case 'permission_required':
+      return 'waiting_permission';
+    case 'resyncing':
+    case 'auto_reconnecting':
+    case 'reconnecting':
+      return 'recovering';
+    case 'failed':
+      return 'failed';
+    default:
+      return bridgeAvailability === 'starting' ? 'launching' : 'idle';
+  }
+}
+
+function isBridgeCliHealthy(cli = {}) {
+  const state = String(cli?.sdkState || '').trim();
+  return ['idle', 'ready', 'connected'].includes(state);
+}
+
+function isAuthFailureMessage(message = '') {
+  return /auth|login|copilot|api key|unauthorized/i.test(String(message));
+}
+
+async function openUrlInTab(url) {
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL');
+  }
+  await chrome.tabs.create({ url, active: true });
+  chrome.runtime.sendMessage({
+    action: 'externalLinkRedirected',
+    url,
+  }).catch(() => {});
+}
+
+async function triggerBridgeAutoStartProtocol() {
+  try {
+    await openUrlInTab(getBridgeAutoStartProtocolUrl());
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      code: BRIDGE_LAUNCHER_ERROR_CODES.launcherUnavailable,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+async function waitForBridgeReady(timeoutMs = BRIDGE_AUTO_START_TIMEOUT_MS) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    const health = await ConnectionController.checkBridgeHealth({
+      port: DEFAULT_BRIDGE_PORT,
+      timeoutMs: 2500,
+    });
+    if (health.success && health.isBridge) {
+      return true;
+    }
+    await new Promise((resolve) =>
+      setTimeout(resolve, BRIDGE_AUTO_START_POLL_INTERVAL_MS),
+    );
+  }
+  return false;
+}
+
+function isBridgeAutoStartCoolingDown(settings) {
+  const normalized = normalizeBridgeUiSettings(settings);
+  const lastAttemptAt = Number(normalized.autoStartBridgeLastAttemptAt) || 0;
+  if (lastAttemptAt <= 0) {
+    return { coolingDown: false, remainingMs: 0 };
+  }
+  const remainingMs =
+    normalized.autoStartBridgeCooldownMs - (Date.now() - lastAttemptAt);
+  return {
+    coolingDown: remainingMs > 0,
+    remainingMs: remainingMs > 0 ? remainingMs : 0,
+  };
+}
+
+async function attemptBridgeAutoStart(options = {}) {
+  if (bridgeOrchestratorState.autoStartPromise) {
+    return bridgeOrchestratorState.autoStartPromise;
+  }
+
+  const task = (async () => {
+    const settings = await readBridgeSettings();
+    if (settings.autoStartBridgeEnabled !== true && options.force !== true) {
+      const detail = 'Bridge auto-start is disabled.';
+      rememberBridgeError(BRIDGE_LAUNCHER_ERROR_CODES.offline, detail);
+      return {
+        success: false,
+        code: BRIDGE_LAUNCHER_ERROR_CODES.offline,
+        detail,
+      };
+    }
+
+    if (options.bypassCooldown !== true) {
+      const cooldown = isBridgeAutoStartCoolingDown(settings);
+      if (cooldown.coolingDown) {
+        const remainSec = Math.max(1, Math.ceil(cooldown.remainingMs / 1000));
+        const detail = `${BRIDGE_LAUNCHER_ERROR_CODES.cooldown} | cooldown ${remainSec}s`;
+        await persistBridgeSettingsPatch({
+          autoStartBridgeLastError: detail,
+          autoStartBridgeLastResult: 'failed',
+        });
+        rememberBridgeError(BRIDGE_LAUNCHER_ERROR_CODES.cooldown, detail);
+        return {
+          success: false,
+          code: BRIDGE_LAUNCHER_ERROR_CODES.cooldown,
+          detail,
+        };
+      }
+    }
+
+    await persistBridgeSettingsPatch({
+      autoStartBridgeLastAttemptAt: Date.now(),
+      autoStartBridgeLastResult: 'launching',
+      autoStartBridgeLastError: '',
+    });
+
+    const launch = await triggerBridgeAutoStartProtocol();
+    if (!launch.success) {
+      const detail = `${launch.code} | ${launch.error || 'launcher unavailable'}`;
+      await persistBridgeSettingsPatch({
+        autoStartBridgeLastResult: 'failed',
+        autoStartBridgeLastError: detail,
+      });
+      rememberBridgeError(launch.code, detail);
+      return {
+        success: false,
+        code: launch.code,
+        detail,
+      };
+    }
+
+    const ready = await waitForBridgeReady();
+    if (!ready) {
+      const detail = `${BRIDGE_LAUNCHER_ERROR_CODES.timeout} | timeout ${Math.round(
+        BRIDGE_AUTO_START_TIMEOUT_MS / 1000,
+      )}s`;
+      await persistBridgeSettingsPatch({
+        autoStartBridgeLastResult: 'failed',
+        autoStartBridgeLastError: detail,
+      });
+      rememberBridgeError(BRIDGE_LAUNCHER_ERROR_CODES.timeout, detail);
+      return {
+        success: false,
+        code: BRIDGE_LAUNCHER_ERROR_CODES.timeout,
+        detail,
+      };
+    }
+
+    await persistBridgeSettingsPatch({
+      autoStartBridgeLastResult: 'ready',
+      autoStartBridgeLastError: '',
+    });
+    clearBridgeError();
+    return { success: true, code: '' };
+  })().finally(() => {
+    bridgeOrchestratorState.autoStartPromise = null;
+  });
+
+  bridgeOrchestratorState.autoStartPromise = task;
+  return task;
+}
+
+function mapBridgeAvailability({
+  health,
+  statusData,
+  sdkStatus,
+}) {
+  if (!health?.success) return 'offline';
+  if (!health?.isBridge) return 'unsupported';
+  if (!statusData?.success) return 'unsupported';
+  const cliState = String(statusData?.cli?.sdkState || sdkStatus || '').trim();
+  return isBridgeCliHealthy({ sdkState: cliState }) ? 'ready' : 'degraded';
+}
+
+function buildBridgePrimaryAction(snapshot) {
+  const lastErrorCode = snapshot?.lastError?.code || '';
+  if (snapshot?.bridge?.availability === 'starting') {
+    return {
+      action: 'start',
+      label: 'Bridge 啟動中...',
+      disabled: true,
+    };
+  }
+  if (
+    snapshot?.bridge?.availability === 'ready' &&
+    isAuthFailureMessage(snapshot?.lastError?.message)
+  ) {
+    return {
+      action: 'open_login',
+      label: '開啟 GitHub 登入頁',
+      disabled: false,
+    };
+  }
+  if (snapshot?.bridge?.availability === 'ready') {
+    return {
+      action: 'check',
+      label: 'Bridge 已就緒',
+      disabled: false,
+    };
+  }
+  if (lastErrorCode === BRIDGE_LAUNCHER_ERROR_CODES.launcherUnavailable) {
+    return {
+      action: 'copy_manual_command',
+      label: '複製 Quick Setup',
+      disabled: false,
+    };
+  }
+  if (snapshot?.lastError?.code) {
+    return {
+      action: 'start',
+      label: '重試啟動 Bridge',
+      disabled: false,
+    };
+  }
+  return {
+    action: 'start',
+    label: '啟動 Bridge',
+    disabled: false,
+  };
+}
+
+function buildBridgeSummary(snapshot) {
+  const availability = snapshot?.bridge?.availability || 'offline';
+  if (availability === 'ready') {
+    return {
+      headline: 'Bridge 已就緒',
+      detail: 'SDK 模式可直接使用；若聊天異常，再看詳細鏈路。',
+    };
+  }
+  if (availability === 'starting') {
+    return {
+      headline: '正在啟動 Bridge',
+      detail: '系統正在等待本機 bridge 就緒，通常幾秒內會完成。',
+    };
+  }
+  if (availability === 'unsupported') {
+    return {
+      headline: 'Bridge 版本不相容',
+      detail: '請升級到支援 /api/status 的新版 bridge。',
+    };
+  }
+  if (snapshot?.lastError?.code === BRIDGE_LAUNCHER_ERROR_CODES.launcherUnavailable) {
+    return {
+      headline: '還沒有可用的啟動器',
+      detail: '先執行 Quick Setup，再回來重新檢查或啟動 Bridge。',
+    };
+  }
+  return {
+    headline: 'Bridge 尚未連線',
+    detail: '先確認 repo 路徑與 runtime，再啟動本機 bridge。',
+  };
+}
+
+function buildBridgeSnapshotRows(snapshot) {
+  return [
+    {
+      label: 'Repo Root',
+      value: snapshot?.runtime?.repoRoot || '尚未設定',
+    },
+    {
+      label: 'Runtime',
+      value: snapshot?.runtime?.resolved || 'windows',
+    },
+    {
+      label: 'Launcher',
+      value: snapshot?.bridge?.launcherConfigured
+        ? '已設定'
+        : '尚未確認',
+    },
+    {
+      label: 'Bridge',
+      value: snapshot?.bridge?.version
+        ? `v${snapshot.bridge.version} · ${snapshot.bridge.availability}`
+        : snapshot?.bridge?.availability || 'offline',
+    },
+    {
+      label: 'CLI',
+      value: snapshot?.cli?.sdkState || 'idle',
+    },
+  ];
+}
+
+async function fetchBridgeStatusSnapshot(options = {}) {
+  const settings = await readBridgeSettings();
+  const runtime = getBridgeRuntimeSnapshot(settings);
+  const health = await ConnectionController.checkBridgeHealth({
+    port: Number(options?.port) || DEFAULT_BRIDGE_PORT,
+    timeoutMs: Number(options?.timeoutMs) || 3000,
+  });
+
+  if (
+    !health.success &&
+    options?.allowAutoStart === true &&
+    runtime.autoStartEnabled
+  ) {
+    await attemptBridgeAutoStart({
+      force: options?.force === true,
+      bypassCooldown: options?.bypassCooldown === true,
+    });
+    return fetchBridgeStatusSnapshot({
+      ...options,
+      allowAutoStart: false,
+    });
+  }
+
+  let statusResult = {
+    success: false,
+    status: 0,
+    data: null,
+    error: '',
+  };
+  if (health.success && health.isBridge) {
+    statusResult = await handleBridgeJsonRequestInternal({
+      port: Number(options?.port) || DEFAULT_BRIDGE_PORT,
+      path: '/api/status',
+      method: 'GET',
+      timeoutMs: Number(options?.timeoutMs) || 3000,
+      requireAuth: true,
+    });
+  }
+
+  if (!health.success) {
+    rememberBridgeError(
+      BRIDGE_LAUNCHER_ERROR_CODES.offline,
+      health.error || 'bridge offline',
+    );
+  } else if (!health.isBridge) {
+    rememberBridgeError(
+      BRIDGE_LAUNCHER_ERROR_CODES.wrongService,
+      health.data?.service
+        ? `unexpected service: ${health.data.service}`
+        : 'unexpected service on bridge port',
+    );
+  } else if (!statusResult.success) {
+    const code =
+      statusResult.status === 401
+        ? BRIDGE_LAUNCHER_ERROR_CODES.unauthorized
+        : statusResult.status === 404
+          ? BRIDGE_LAUNCHER_ERROR_CODES.unsupported
+          : BRIDGE_LAUNCHER_ERROR_CODES.requestFailed;
+    rememberBridgeError(code, statusResult.error || `HTTP ${statusResult.status || 500}`);
+  } else {
+    const cliState = String(statusResult.data?.cli?.sdkState || '').trim();
+    if (isBridgeCliHealthy({ sdkState: cliState })) {
+      clearBridgeError();
+    } else {
+      const lastCliError =
+        statusResult.data?.lastError?.message ||
+        statusResult.data?.cli?.prompt?.lastError ||
+        'bridge degraded';
+      rememberBridgeError(BRIDGE_LAUNCHER_ERROR_CODES.degraded, lastCliError);
+    }
+  }
+
+  const bridgeVersion =
+    statusResult.data?.bridge?.version || chrome.runtime.getManifest()?.version || '';
+  const availability = bridgeOrchestratorState.autoStartPromise
+    ? 'starting'
+    : mapBridgeAvailability({
+        health,
+        statusData: statusResult.data,
+        sdkStatus: health?.data?.sdk,
+      });
+
+  const snapshot = {
+    bridge: {
+      service:
+        statusResult.data?.bridge?.service ||
+        health?.data?.service ||
+        ConnectionController.BRIDGE_SERVICE_NAME,
+      version: bridgeVersion,
+      port: Number(options?.port) || DEFAULT_BRIDGE_PORT,
+      availability,
+      authConfigured:
+        statusResult.data?.bridge?.authConfigured ??
+        health?.data?.auth?.extensionBindingConfigured ??
+        false,
+      launcherConfigured:
+        extractBridgeErrorCode(settings.autoStartBridgeLastError) !==
+        BRIDGE_LAUNCHER_ERROR_CODES.launcherUnavailable,
+      backend:
+        statusResult.data?.bridge?.backend || health?.data?.backend || null,
+    },
+    cli: {
+      sdkState:
+        statusResult.data?.cli?.sdkState ||
+        health?.data?.sdk ||
+        'idle',
+      sessionCount: Number(statusResult.data?.cli?.sessionCount || 0),
+      pendingPermissionCount: Number(
+        statusResult.data?.cli?.pendingPermissionCount || 0,
+      ),
+      prompt: statusResult.data?.cli?.prompt || null,
+    },
+    compatibility: {
+      apiVersion:
+        statusResult.data?.compatibility?.apiVersion ||
+        BRIDGE_STATUS_API_VERSION,
+      supported:
+        availability !== 'unsupported' &&
+        availability !== 'offline' &&
+        health.isBridge === true,
+      missingCapabilities:
+        statusResult.status === 404 ? ['/api/status'] : [],
+    },
+    runtime,
+    auth: {
+      required: true,
+      configured:
+        health?.data?.auth?.extensionBindingConfigured === true ||
+        statusResult.data?.bridge?.authConfigured === true,
+      bootstrapPath:
+        health?.data?.auth?.bootstrapPath || '/api/auth/bootstrap',
+    },
+    lastError: {
+      ...bridgeOrchestratorState.lastError,
+    },
+    action: {
+      state: normalizeBridgeActionState(
+        sdkMonitorState.chatState,
+        availability,
+      ),
+    },
+    checkedAt: Date.now(),
+  };
+
+  snapshot.summary = buildBridgeSummary(snapshot);
+  snapshot.primaryAction = buildBridgePrimaryAction(snapshot);
+  snapshot.connectionRows = buildBridgeSnapshotRows(snapshot);
+
+  bridgeOrchestratorState.lastSnapshot = snapshot;
+  return snapshot;
+}
 
 function addStartupGuardFailure(message) {
   startupGuard.reasons.push(String(message || 'unknown failure'));
@@ -331,6 +1003,160 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
+async function runSdkResync(options = {}) {
+  const port = Number(options?.port) || 31031;
+  const reconnect = options?.reconnect !== false;
+
+  updateSdkMonitorState({
+    resyncInFlight: true,
+    chatState: 'resyncing',
+    lastError: '',
+  });
+
+  try {
+    SDKClient.disconnect();
+    ConnectionController.clearBridgeAuth({ port });
+
+    if (reconnect) {
+      await SDKClient.connect(port);
+    }
+
+    updateSdkMonitorState({
+      connectionState: reconnect ? 'connected' : 'idle',
+      chatState: 'standby',
+      activeRequestId: null,
+      resyncInFlight: false,
+      lastTool: '',
+    });
+
+    return { success: true, monitor: getSdkMonitorSnapshot() };
+  } catch (err) {
+    updateSdkMonitorState({
+      connectionState: 'offline',
+      chatState: 'failed',
+      activeRequestId: null,
+      resyncInFlight: false,
+      lastError: err?.message || String(err),
+    });
+
+    return {
+      success: false,
+      error: err?.message || String(err),
+      monitor: getSdkMonitorSnapshot(),
+    };
+  }
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== 'sdk-chat-stream') return;
+
+  let closed = false;
+  const safePost = (payload) => {
+    if (closed) return;
+    try {
+      port.postMessage(payload);
+    } catch {
+      closed = true;
+    }
+  };
+
+  port.onDisconnect.addListener(() => {
+    closed = true;
+  });
+
+  port.onMessage.addListener(async (message) => {
+    if (startupGuard.locked || !startupGuard.ready) {
+      safePost({
+        type: 'error',
+        error: startupGuard.locked ? 'STARTUP_GUARD_LOCKED' : 'STARTUP_GUARD_PENDING',
+      });
+      return;
+    }
+
+    if (message?.type !== 'send') return;
+
+    if (sdkMonitorState.activeRequestId && sdkMonitorState.activeRequestId !== message.requestId) {
+      safePost({
+        type: 'error',
+        requestId: message.requestId,
+        error: 'Another SDK request is already running',
+      });
+      return;
+    }
+
+    const requestId = message.requestId || `sdk_${Date.now()}`;
+    const payload = message.payload || {};
+
+    updateSdkMonitorState({
+      activeRequestId: requestId,
+      chatState: 'preparing',
+      lastError: '',
+      lastTool: '',
+    });
+    safePost({ type: 'status', requestId, state: 'preparing' });
+
+    try {
+      updateSdkMonitorState({
+        chatState: 'sending',
+      });
+      safePost({ type: 'status', requestId, state: 'sending' });
+      updateSdkMonitorState({
+        chatState: 'waiting_cli',
+      });
+      safePost({ type: 'status', requestId, state: 'waiting_cli' });
+
+      const result = await SDKClient.sendMessageStreaming(
+        payload,
+        (delta) => {
+          if (delta) {
+            updateSdkMonitorState({
+              chatState: 'streaming',
+            });
+            safePost({ type: 'delta', requestId, delta });
+          }
+        },
+        (toolEvent) => {
+          const toolName = toolEvent?.toolName || toolEvent?.title || toolEvent?.name || 'tool';
+          updateSdkMonitorState({
+            chatState: toolEvent?.pendingPermissions ? 'permission_required' : 'tool_running',
+            lastTool: String(toolName),
+          });
+          safePost({
+            type: 'tool',
+            requestId,
+            tool: toolName,
+            detail: toolEvent,
+          });
+          safePost({
+            type: 'status',
+            requestId,
+            state: toolEvent?.pendingPermissions ? 'permission_required' : 'tool_running',
+            detail: toolName,
+          });
+        },
+      );
+
+      updateSdkMonitorState({
+        chatState: 'completed',
+        activeRequestId: null,
+      });
+      safePost({ type: 'status', requestId, state: 'completed' });
+      safePost({ type: 'done', requestId, content: result });
+    } catch (err) {
+      updateSdkMonitorState({
+        chatState: 'failed',
+        activeRequestId: null,
+        lastError: err?.message || String(err),
+      });
+      safePost({
+        type: 'error',
+        requestId,
+        error: err?.message || String(err),
+      });
+    }
+  });
+});
+
 // ============================================
 // 訊息處理
 // ============================================
@@ -442,9 +1268,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
 
     case 'sdkSend':
+      updateSdkMonitorState({
+        chatState: 'sending',
+        lastError: '',
+      });
       SDKClient.sendMessage(message.data).then(response => {
+        updateSdkMonitorState({
+          chatState: 'completed',
+          activeRequestId: null,
+        });
         sendResponse({ success: true, data: response });
       }).catch(err => {
+        updateSdkMonitorState({
+          chatState: 'failed',
+          activeRequestId: null,
+          lastError: err.message,
+        });
         sendResponse({ success: false, error: err.message, code: err.code });
       });
       return true;
@@ -452,6 +1291,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     case 'sdkStatus':
       sendResponse({ success: true, status: SDKClient.getStatus() });
       return false;
+
+    case 'sdkMonitorStatus':
+      sendResponse({ success: true, monitor: getSdkMonitorSnapshot() });
+      return false;
+
+    case 'sdkResync':
+      runSdkResync(message).then(sendResponse);
+      return true;
+
+    case 'bridgeStatusSnapshot':
+      handleBridgeStatusSnapshot(message, sendResponse);
+      return true;
+
+    case 'bridgeStatusAction':
+      handleBridgeStatusAction(message, sendResponse);
+      return true;
 
     case 'sdkModels':
       SDKClient.listModels().then(models => {
@@ -562,6 +1417,63 @@ async function handleBridgeHealth(message, sendResponse) {
   const timeoutMs = Number(message?.timeoutMs) || 3000;
   const result = await ConnectionController.checkBridgeHealth({ port, timeoutMs });
   sendResponse(result);
+}
+
+async function handleBridgeStatusSnapshot(message, sendResponse) {
+  try {
+    const snapshot = await fetchBridgeStatusSnapshot(message);
+    sendResponse({ success: true, snapshot });
+  } catch (err) {
+    sendResponse({
+      success: false,
+      error: err?.message || String(err),
+      snapshot: bridgeOrchestratorState.lastSnapshot,
+    });
+  }
+}
+
+async function handleBridgeStatusAction(message, sendResponse) {
+  const action = String(message?.bridgeAction || '').trim();
+
+  try {
+    if (action === 'open_login') {
+      await openUrlInTab(SDK_LOGIN_URL);
+      sendResponse({ success: true });
+      return;
+    }
+
+    if (action === 'resync') {
+      const resync = await runSdkResync({
+        port: Number(message?.port) || DEFAULT_BRIDGE_PORT,
+        reconnect: message?.reconnect !== false,
+      });
+      const snapshot = await fetchBridgeStatusSnapshot({
+        port: Number(message?.port) || DEFAULT_BRIDGE_PORT,
+      });
+      sendResponse({
+        success: resync.success,
+        error: resync.error || '',
+        monitor: resync.monitor,
+        snapshot,
+      });
+      return;
+    }
+
+    const snapshot = await fetchBridgeStatusSnapshot({
+      port: Number(message?.port) || DEFAULT_BRIDGE_PORT,
+      allowAutoStart: action === 'start',
+      force: message?.force === true || action === 'start',
+      bypassCooldown: message?.bypassCooldown === true || action === 'start',
+      timeoutMs: Number(message?.timeoutMs) || 3000,
+    });
+    sendResponse({ success: true, snapshot });
+  } catch (err) {
+    sendResponse({
+      success: false,
+      error: err?.message || String(err),
+      snapshot: bridgeOrchestratorState.lastSnapshot,
+    });
+  }
 }
 
 async function handleBridgeAuthBootstrap(message, sendResponse) {
@@ -1298,18 +2210,7 @@ async function handleOpenCopilotWindow(sendResponse) {
 
 async function handleOpenExternalLink(url, sendResponse) {
   try {
-    if (!url || typeof url !== 'string') {
-      sendResponse({ success: false, error: 'Invalid URL' });
-      return;
-    }
-
-    await chrome.tabs.create({ url, active: true });
-
-    chrome.runtime.sendMessage({
-      action: 'externalLinkRedirected',
-      url
-    }).catch(() => {});
-
+    await openUrlInTab(url);
     sendResponse({ success: true });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
@@ -1409,10 +2310,13 @@ function extractPageContent() {
           content.markdown = md.substring(0, 15000);
           content.text = md.substring(0, 12000);
         } else if (defuddled.content) {
-          // Turndown unavailable — strip HTML tags for plain text
-          const div = document.createElement('div');
-          div.innerHTML = defuddled.content;
-          content.text = (div.innerText || '').replace(/[\t ]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().substring(0, 12000);
+          // Turndown unavailable — parse in an isolated document and extract plain text only
+          const parsedDoc = new DOMParser().parseFromString(String(defuddled.content), 'text/html');
+          const plainText = (parsedDoc.body?.textContent || '')
+            .replace(/[\t ]+/g, ' ')
+            .replace(/\n{3,}/g, '\n\n')
+            .trim();
+          content.text = plainText.substring(0, 12000);
         }
 
         content.charCount = content.text ? content.text.replace(/\s+/g, '').length : 0;

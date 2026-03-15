@@ -66,6 +66,7 @@ sidepanel.js → sdk-client.js ──HTTP/SSE──▶ server.ts (Express, :3103
 - Structured output: AI wraps response in `sidepilot_packet` + `assistant_response`
 - Permission UI: Bridge sends permission request via SSE → side panel shows consent modal
 - Conversation history: Bridge stores + serves history, grouped by date
+- Unified control-plane snapshot: `GET /api/status` backs both Bridge Setup and the SDK status strip
 
 **Auth flow:**
 1. Bridge started with `SIDEPILOT_EXTENSION_ID=<id>`
@@ -237,15 +238,15 @@ sidepanel.js → sdk-client.js ──HTTP/SSE──▶ server.ts (Express, :3103
 
 | File | Content |
 |------|---------|
-| `pic/01-iframe-mode.png` | iframe mode main UI |
-| `pic/02-sdk-chat.png` | SDK chat interface |
-| `pic/03-rules-tab.png` | Rules editor |
-| `pic/04-settings-panel.png` | Settings overview |
-| `pic/05-settings-sdk.png` | SDK settings + context injection |
-| `pic/06-page-capture-text.png` | Text capture panel |
-| `pic/07-page-capture-screenshot.png` | Partial screenshot capture |
-| `pic/08-sdk-context.png` | Context injection in action |
 | `pic/09-sdk-initial.png` | First-time SDK login guide |
-| `pic/10-architecture-diagram.png` | System architecture diagram |
-| `pic/11-feature-highlights.png` | Feature highlights overview |
-| `pic/12-workflow-diagram.png` | User journey flow diagram |
+| `pic/13-welcome-screen.png` | Welcome onboarding screen |
+| `pic/14-header-tabs.png` | Header with mode toggle (IFRAME / SDK) |
+| `pic/15-sdk-model-select.png` | SDK model selector dropdown |
+| `pic/16-rules-templates.png` | Rules templates picker |
+| `pic/18-settings-bridge.png` | Bridge setup panel |
+| `pic/19-page-capture.png` | Page capture panel (text) |
+| `pic/20-history-tab.png` | Conversation history tab |
+| `pic/22-browser-usage-demo.png` | Browser usage demo — AI alongside GitHub |
+| `pic/23-github-readme-context.png` | Collaborating beside any page |
+| `pic/24-page-capture-crop-detail.png` | Partial screenshot region selector |
+| `pic/25-settings-sdk-connected.png` | Settings panel — SDK bridge connected |

@@ -78,8 +78,20 @@ const harnessHtml = `<!doctype html>
                   <span class="bridge-setup-badge" id="bridgeBridgeBadge">Bridge: Offline</span>
                   <span class="bridge-setup-badge" id="bridgeRuntimeBadge">Runtime: Auto</span>
                 </div>
-                <div class="settings-item-desc" id="bridgeInstallStatus">尚未檢查</div>
-                <div class="settings-item-sub" id="bridgeInstallDetail">-</div>
+                <div class="bridge-setup-quickstart">
+                  <div class="bridge-quickstart-title" id="bridgeInstallStatus">尚未檢查</div>
+                  <div class="bridge-quickstart-detail" id="bridgeInstallDetail">-</div>
+                </div>
+                <div class="bridge-connection-details">
+                  <div class="bridge-connection-header">Connection Details</div>
+                  <div class="bridge-connection-grid">
+                    <div class="bridge-detail-row"><span class="bridge-detail-label">Repo Root</span><span class="bridge-detail-value" id="bridgeDetailRepoRoot">-</span></div>
+                    <div class="bridge-detail-row"><span class="bridge-detail-label">Runtime</span><span class="bridge-detail-value" id="bridgeDetailRuntime">-</span></div>
+                    <div class="bridge-detail-row"><span class="bridge-detail-label">Launcher</span><span class="bridge-detail-value" id="bridgeDetailLauncher">-</span></div>
+                    <div class="bridge-detail-row"><span class="bridge-detail-label">Bridge</span><span class="bridge-detail-value" id="bridgeDetailBridge">-</span></div>
+                    <div class="bridge-detail-row"><span class="bridge-detail-label">CLI</span><span class="bridge-detail-value" id="bridgeDetailCli">-</span></div>
+                  </div>
+                </div>
               </div>
               <label class="settings-item settings-toggle">
                 <div class="settings-item-text">
@@ -201,7 +213,6 @@ const harnessHtml = `<!doctype html>
             <input type="range" id="settingCaptureButtonWidth" min="2" max="100" value="42" />
             <span id="captureBtnWidthValue">42</span>
             <button id="openSdkLoginGuideBtn">open</button>
-            <button id="testSdkBridgeBtn">test</button>
             <div id="settingsStatus"></div>
             <div id="sdkEndpointInfo"></div>
             <div id="promptStrategyBtns"><button class="strategy-btn" data-strategy="normal">normal</button></div>
@@ -285,9 +296,40 @@ const harnessHtml = `<!doctype html>
             return { success: !!json.success };
           });
         }
+        if (message.action === 'sdkDisconnect') {
+          return withResult(async () => ({ success: true }));
+        }
+        if (message.action === 'sdkMonitorStatus') {
+          return withResult(async () => ({
+            success: true,
+            monitor: {
+              startupGuard: { ready: true, locked: false, enabled: true, reasons: [] },
+              chatState: 'standby',
+              lastTool: '',
+              lastError: '',
+              resyncInFlight: false
+            }
+          }));
+        }
         if (message.action === 'bridgeHealth') {
           return withResult(async () => {
             const res = await fetch('/__bridgeHealth');
+            return res.json();
+          });
+        }
+        if (message.action === 'bridgeStatusSnapshot') {
+          return withResult(async () => {
+            const res = await fetch('/__bridgeStatusSnapshot');
+            return res.json();
+          });
+        }
+        if (message.action === 'bridgeStatusAction') {
+          return withResult(async () => {
+            const res = await fetch('/__bridgeStatusAction', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(message || {})
+            });
             return res.json();
           });
         }
@@ -533,6 +575,101 @@ function checkBridgeHealth() {
   })();
 }
 
+function hasLauncherConfigured() {
+  const isWindowsPath = /^[A-Za-z]:\\/.test(launcherPs1);
+  return !!launcherPs1 && (isWindowsPath || fs.existsSync(launcherPs1));
+}
+
+function buildHarnessSnapshot(health, lastError = null, actionState = 'idle') {
+  const bridgeReady = !!health?.success && !!health?.isBridge;
+  const unsupported = !!health?.success && !health?.isBridge;
+  const availability = bridgeReady ? 'ready' : unsupported ? 'unsupported' : 'offline';
+  const launcherConfigured = hasLauncherConfigured();
+  const authConfigured = Boolean(health?.data?.auth?.extensionBindingConfigured);
+  const effectiveError =
+    lastError ||
+    (bridgeReady
+      ? null
+      : {
+          code: unsupported ? 'BRG-COMPAT-001' : 'BRG-PROBE-001',
+          message:
+            health?.error ||
+            (unsupported
+              ? 'Non-SidePilot service is responding on port 31031'
+              : 'Bridge offline'),
+          at: new Date().toISOString(),
+        });
+
+  const primaryAction = bridgeReady
+    ? authConfigured
+      ? { action: 'check', label: 'Bridge 已就緒', disabled: false }
+      : { action: 'open_login', label: '開啟 GitHub 登入頁', disabled: false }
+    : launcherConfigured
+      ? { action: 'start', label: '啟動 Bridge', disabled: false }
+      : { action: 'copy_manual_command', label: '複製 Quick Setup', disabled: false };
+
+  return {
+    bridge: {
+      service: health?.data?.service || 'sidepilot-copilot-bridge',
+      version: health?.data?.version || null,
+      port: 31031,
+      availability,
+      authConfigured,
+      launcherConfigured,
+      backend: health?.data?.backend || null,
+    },
+    cli: {
+      sdkState: bridgeReady ? (health?.data?.sdk || 'ready') : 'offline',
+      sessionCount: bridgeReady ? 1 : 0,
+      pendingPermissionCount: 0,
+      prompt: {
+        state: bridgeReady ? 'idle' : 'offline',
+        lastToolName: '',
+      },
+    },
+    compatibility: {
+      apiVersion: '2026-03-bridge-status-v1',
+      supported: !unsupported,
+      missingCapabilities: unsupported ? ['/api/status'] : [],
+    },
+    runtime: {
+      selected: 'auto',
+      resolved: 'windows',
+      repoRoot,
+      wslDistro: null,
+    },
+    auth: health?.data?.auth || {
+      required: true,
+      bootstrapPath: '/api/auth/bootstrap',
+      extensionBindingConfigured: false,
+    },
+    action: {
+      state: actionState,
+      detail: bridgeReady ? '待命' : '等待啟動',
+    },
+    lastError: effectiveError,
+    primaryAction,
+    summary: bridgeReady
+      ? {
+          headline: 'Bridge 已就緒',
+          detail: authConfigured
+            ? 'Quick Start 與 Connection Details 都已同步'
+            : 'Bridge 已啟動，下一步請完成 GitHub 登入',
+        }
+      : unsupported
+        ? {
+            headline: 'Bridge 版本不相容',
+            detail: '請啟動支援 /api/status 的新版 Bridge',
+          }
+        : {
+            headline: launcherConfigured ? 'Bridge 尚未啟動' : '尚未安裝 Launcher',
+            detail: launcherConfigured
+              ? '可直接使用 Quick Start 啟動 Bridge'
+              : '請先透過 Quick Setup 安裝 launcher',
+          },
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
 
@@ -557,6 +694,51 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/__bridgeHealth') {
     const health = await checkBridgeHealth();
     sendJson(res, 200, health);
+    return;
+  }
+
+  if (url.pathname === '/__bridgeStatusSnapshot') {
+    const health = await checkBridgeHealth();
+    sendJson(res, 200, { success: true, snapshot: buildHarnessSnapshot(health) });
+    return;
+  }
+
+  if (url.pathname === '/__bridgeStatusAction' && req.method === 'POST') {
+    let body = '';
+    req.on('data', (chunk) => { body += String(chunk); });
+    req.on('end', async () => {
+      let action = 'check';
+      try {
+        action = JSON.parse(body || '{}')?.bridgeAction || 'check';
+      } catch {
+        // ignore parse failure
+      }
+
+      let lastError = null;
+      if (action === 'start') {
+        const launchResult = await executeLauncher('sidepilot://bridge?action=start&source=e2e-harness');
+        if (!launchResult.success) {
+          lastError = {
+            code: 'BRG-LAUNCHER-001',
+            message: launchResult.error || 'launcher blocked',
+            at: new Date().toISOString(),
+          };
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+      }
+
+      const health = await checkBridgeHealth();
+      sendJson(res, 200, {
+        success: !lastError,
+        error: lastError?.message || '',
+        snapshot: buildHarnessSnapshot(
+          health,
+          lastError,
+          action === 'start' ? (lastError ? 'failed' : 'starting') : 'idle',
+        ),
+      });
+    });
     return;
   }
 

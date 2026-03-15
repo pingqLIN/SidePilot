@@ -135,29 +135,30 @@ SidePilot 是一個 **Chrome 擴充功能**（Manifest V3），把 GitHub Copilo
 
 ## 🚀 快速安裝
 
-### 我需要 Bridge 嗎？
+### 需要 Bridge 嗎？
 
-**Bridge** 是一個跑在本機的小型伺服器，就放在這個 repo 裡面。你**不需要它**就能先試用 SidePilot。
+Bridge 是一個跑在本機的小型伺服器，放在這個 repo 裡。你**不需要它**就能先試用 SidePilot。
 
 | 我想要… | 需要 Bridge 嗎？ |
 | --- | --- |
 | 先快速試用 SidePilot | **不需要** — 只裝 extension，打開就能用 |
 | 使用串流對話、記憶庫或規則 | **需要** — 先從 repo 裡啟動 Bridge |
 
-Bridge 不是獨立產品，也不需要另外下載。它就在這個 repo 的 `scripts/copilot-bridge/` 裡，clone repo 後就在那裡。
+Bridge 不是獨立產品，也不需要另外下載。它就在 `scripts/copilot-bridge/`，clone repo 後就在那裡。
 
 ---
 
 ### 路線 A — 立即開始（不需要 Bridge）
 
-最快的方式是直接到 GitHub Releases 下載 `SidePilot-extension-v*.zip`，不需要 clone repo：
+到 GitHub Releases 下載 `SidePilot-extension-v*.zip`，解壓縮後：
 
-1. 下載並解壓縮封裝包
-2. 開啟 `chrome://extensions/`
-3. 啟用 **開發人員模式**（右上角切換）
-4. 點擊 **載入未封裝項目**，選取解壓後的資料夾
+1. 開啟 `chrome://extensions/`
+2. 啟用 **開發人員模式**（右上角切換）
+3. 點擊 **載入未封裝項目**，選取解壓後的資料夾
 
-如果你想從原始碼建置，可以先 clone 並安裝，再重複步驟 2–4，選擇 repo 裡的 `extension/` 資料夾：
+> 維護者可在 repo 根目錄執行 `npm run package:extension` 產生封裝包。
+
+如需從原始碼建置，clone 後選取 repo 裡的 `extension/` 資料夾：
 
 ```bash
 git clone https://github.com/pingqLIN/SidePilot.git
@@ -166,39 +167,45 @@ npm install
 npm run build:vendor
 ```
 
-完成後點擊工具列的 SidePilot 圖示，或按 `Alt + Shift + P` 開啟側邊欄。側邊欄以 **iframe 模式** 啟動 — 不需要 Bridge、不需要終端機、不需要額外設定。
-
-> 維護者可在 repo 根目錄執行 `npm run package:extension` 產生封裝包。
+點擊工具列的 SidePilot 圖示，或按 `Alt + Shift + P` 開啟側邊欄。側邊欄以 **iframe 模式** 啟動 — 不需要 Bridge、不需要終端機、不需要額外設定。
 
 > **開發者注意：SEAL / 封印**
-> `extension/` 底下的關鍵檔案（例如 `manifest.json`、`background.js`、`sidepanel.js`、`sidepanel.html`、`styles.css`、rules templates）變更後，`manifest.version_name` 內的 SEAL digest 可能會失配。
-> 若這些修改是你預期中的開發變更，請先確認 diff，再執行 `npm run integrity:seal` 更新封印，最後用 `npm run basw:verify` 再驗一次。
-> 如果變更不是你預期的，請不要直接重跑 seal，先找出是哪個檔案或流程造成 drift。
+> `extension/` 底下的關鍵檔案（`manifest.json`、`background.js`、`sidepanel.js`、`sidepanel.html`、`styles.css`、rules templates）變更後，`manifest.version_name` 內的 SEAL digest 可能會失配。
+> 預期中的開發變更：先確認 diff，再執行 `npm run integrity:seal`，最後用 `npm run basw:verify` 驗證。
+> 非預期變更：請不要直接重跑 seal，先找出 drift 來源。
 
 ---
 
 ### 路線 B — 完整功能（需要 Bridge）
 
-完成路線 A 之後，執行以下步驟：
+完成路線 A 之後，依序執行：
 
-1. 在 repo 根目錄執行安裝指令（Windows）：
+**1. 安裝 Bridge Launcher（Windows）**
 
-   ```powershell
-   npm run bridge-launcher:install:win
-   ```
+在 repo 根目錄執行：
 
-   這會在系統層級註冊背景啟動器，讓 extension 切換模式時自動把 Bridge 拉起來。
+```powershell
+npm run bridge-launcher:install:win
+```
 
-2. 點擊側邊欄右上角的模式切換按鈕，切換到 **SDK 模式**。extension 會自動偵測並透過啟動器拉起 Bridge，並顯示一次性的登入引導對話框。
+這會在系統層級註冊背景啟動器，讓 extension 切換模式時自動把 Bridge 拉起來。
 
-3. 在引導對話框中點擊 **Open GitHub Login**，以 GitHub 帳號登入。需要 [GitHub Copilot 訂閱](https://github.com/features/copilot)。
+**2. 切換到 SDK 模式**
+
+點擊側邊欄右上角的模式切換按鈕，選擇 **SDK**。extension 會自動偵測並透過啟動器拉起 Bridge，並顯示一次性的登入引導對話框。
+
+**3. 登入 GitHub**
+
+在引導對話框中點擊 **Open GitHub Login**，以 GitHub 帳號登入。需要 [GitHub Copilot 訂閱](https://github.com/features/copilot)。
 
 初次設定完成後，每次切到 SDK 模式都會自動啟動 Bridge，不需要再開終端機。
+
+Bridge 的啟動、診斷與複製指令現在都集中在 **設定 → Bridge Setup**。先看 Quick Start；只有需要排障時再打開 Connection Details / Advanced。
 
 <p align="center">
   <img src="pic/25-settings-sdk-connected.png" width="420" alt="設定面板 — SDK Bridge 已連線">
   <br>
-  <sub>Settings → SDK 模式 — 底部顯示「SDK Bridge 已連線」即表示設定成功。上方 <b>SDK</b> 字樣呈現綠色，也可作為連線狀態的快速判斷。</sub>
+  <sub>Settings → Bridge Setup — Quick Start 顯示「Bridge 已就緒」，Connection Details 也能看到目前 Bridge / CLI 狀態，代表設定成功。</sub>
 </p>
 
 > **如果 Bridge 沒有自動啟動**，請到 **設定 → Bridge Setup → Copy Quick Setup**，把指令貼到終端機執行。完整說明：[docs/guide/getting-started/README.zh-TW.md](docs/guide/getting-started/README.zh-TW.md)

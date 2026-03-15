@@ -7,7 +7,7 @@ Thank you for considering contributing to SidePilot! 🎉
 ### Prerequisites
 
 - **Chrome 114+** with Developer mode enabled
-- **Node.js 18+** (for bridge server and build tools)
+- **Node.js 24+** (for bridge server and build tools)
 - **Git**
 
 ### Development Setup
@@ -120,6 +120,8 @@ SidePilot/
 - Use CSS Variables for theming
 - Follow the existing module pattern in `js/`
 - Test in Chrome 114+ with Developer mode
+- Any user-visible UI copy or UI display change must keep an English baseline:
+  add or update the English version in the same change, even if the discussion/request happens in Chinese first
 
 ### Bridge Server (Backend)
 

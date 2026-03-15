@@ -10,6 +10,7 @@ import * as ConnectionController from './connection-controller.js';
 
 const DEFAULT_PORT = 31031;
 const CONNECT_TIMEOUT_MS = 5000;
+const CHAT_TIMEOUT_MS = 300000;
 const BRIDGE_SERVICE_NAME = 'sidepilot-copilot-bridge';
 
 // ============================================
@@ -440,6 +441,7 @@ async function sendMessage(msg, attempt = 0) {
     sessionId: ensuredSessionId || currentSessionId,
     prompt: msg.content,
     model: msg.model,
+    timeout: msg.timeoutMs || CHAT_TIMEOUT_MS,
   };
   if (msg.images && msg.images.length > 0) {
     payload.images = msg.images;
@@ -449,22 +451,6 @@ async function sendMessage(msg, attempt = 0) {
     method: 'POST',
     body: payload,
   });
-
-  // Backward compatibility:
-  // Some older bridge builds only expose /api/chat (SSE) and return 404 on /api/chat/sync.
-  if (response.status === 404) {
-    const streamedContent = await sendMessageStreaming({
-      content: msg.content,
-      model: msg.model,
-      systemMessage: msg.systemMessage,
-    }, undefined, undefined, attempt);
-
-    return {
-      success: true,
-      content: streamedContent,
-      sessionId: currentSessionId,
-    };
-  }
 
   if (!response.ok) {
     const errorMessage = await readErrorMessage(response, '/api/chat/sync');
@@ -522,7 +508,11 @@ async function sendMessageStreaming(msg, onDelta, onTool, attempt = 0) {
       sessionId: ensuredSessionId || currentSessionId,
       prompt: msg.content,
       model: msg.model,
+      timeout: msg.timeoutMs || CHAT_TIMEOUT_MS,
     };
+    if (msg.images && msg.images.length > 0) {
+      requestBody.images = msg.images;
+    }
 
     // 使用 fetch + ReadableStream 處理 SSE
     bridgeApiFetch('/api/chat', {

@@ -30,6 +30,7 @@
 <p align="center">
   <a href="README.zh-TW.md">繁體中文</a> &bull;
   <a href="docs/guide/README.md">Guide Hub</a> &bull;
+  <a href="docs/v3/README.md">v3 Docs</a> &bull;
   <a href="docs/guide/getting-started/README.md">Getting Started</a> &bull;
   <a href="docs/guide/concepts/README.md">Concepts</a> &bull;
   <a href="docs/SCREENSHOTS.md">Screenshot Gallery</a>
@@ -218,6 +219,8 @@ Click **Open GitHub Login** in the guide dialog and sign in with your GitHub acc
 
 After initial setup, the Bridge starts automatically every time you switch to SDK mode. No terminal needed for daily use.
 
+Bridge startup, diagnostics, and copied commands now live in one place: **Settings → Bridge Setup**. Use the Quick Start card first, then open Connection Details / Advanced only if you need to troubleshoot.
+
 > **If the Bridge doesn't start automatically**, go to **Settings → Bridge Setup → Copy Quick Setup**, paste the command into a terminal, and run it. Full details: [docs/guide/getting-started/README.md](docs/guide/getting-started/README.md)
 
 ---
@@ -232,6 +235,13 @@ After initial setup, the Bridge starts automatically every time you switch to SD
 | [Feature Guide](docs/FEATURES.md) | full feature tour |
 | [API Reference](docs/guide/api/README.md) | bridge endpoints |
 | [Screenshots](docs/SCREENSHOTS.md) | UI walkthrough |
+| [v3 Docs](docs/v3/README.md) | next-generation architecture, context model, and MVP planning |
+
+## 🧪 SidePilot v3 Project Line
+
+`SidePilot v3` is being documented as a new project line inside this repo. It keeps the same product and repo name, but explores the next-generation architecture around live page context, bounded browser control, and dev-mode self-iteration.
+
+Current setup, usage, and feature docs in this README still describe the shipped `v0.5.x / v2` line. For forward-looking design work, start from [docs/v3/README.md](docs/v3/README.md).
 
 ## 🔎 Recommended reading path
 
@@ -239,6 +249,7 @@ After initial setup, the Bridge starts automatically every time you switch to SD
 2. Open [Getting Started](docs/guide/getting-started/README.md) — it answers the most common first-timer questions
 3. Open [Concepts](docs/guide/concepts/README.md) for the product mental model
 4. Open [Usage Manual](docs/USAGE.md) for settings and advanced configuration
+5. Open [v3 Docs](docs/v3/README.md) if you are working on the next project line rather than the current shipped architecture
 
 ---
 

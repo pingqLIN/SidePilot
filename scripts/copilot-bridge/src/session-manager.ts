@@ -20,7 +20,7 @@ const IS_WINDOWS = process.platform === 'win32';
 // ============================================
 const CONFIG = {
   cliPath: process.env.GITHUB_COPILOT_CLI_PATH || 'copilot',
-  timeoutMs: parseInt(process.env.GITHUB_COPILOT_TIMEOUT || '120000', 10),
+  timeoutMs: parseInt(process.env.GITHUB_COPILOT_TIMEOUT || '300000', 10),
   logLevel: (process.env.GITHUB_COPILOT_LOG_LEVEL || 'info') as 'debug' | 'info' | 'warn' | 'error',
 };
 
@@ -29,6 +29,37 @@ const DEFAULT_TIMEOUT_MS = CONFIG.timeoutMs;
 
 // WP-07: Prompt 策略類型
 export type PromptStrategy = 'normal' | 'concise' | 'one-sentence';
+
+export type RuntimePromptState =
+  | 'idle'
+  | 'starting'
+  | 'waiting'
+  | 'streaming'
+  | 'tool_running'
+  | 'permission_required'
+  | 'completed'
+  | 'timeout'
+  | 'error';
+
+export interface RuntimePromptSnapshot {
+  requestId: string | null;
+  sessionId: string | null;
+  model: string | null;
+  state: RuntimePromptState;
+  chunkCount: number;
+  startedAt: number | null;
+  lastActivityAt: number | null;
+  lastToolName: string | null;
+  lastError: string | null;
+}
+
+export interface RuntimeStatusSnapshot {
+  sdkState: 'idle' | 'ready' | 'connected';
+  sessionCount: number;
+  pendingPermissionCount: number;
+  defaultModel: string;
+  prompt: RuntimePromptSnapshot;
+}
 
 // WP-07: Prompt 策略後綴註解
 const PROMPT_STRATEGY_SUFFIXES: Record<PromptStrategy, string> = {
@@ -88,6 +119,18 @@ interface ModelCache {
 const MODEL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 let modelCache: ModelCache | null = null;
 
+const EMPTY_RUNTIME_PROMPT: RuntimePromptSnapshot = {
+  requestId: null,
+  sessionId: null,
+  model: null,
+  state: 'idle',
+  chunkCount: 0,
+  startedAt: null,
+  lastActivityAt: null,
+  lastToolName: null,
+  lastError: null,
+};
+
 // WP-01: 權限白名單 — 低風險操作可自動 approve
 const PERMISSION_WHITELIST: string[] = [
   'readTextFile',   // 讀取檔案（低風險）
@@ -133,6 +176,7 @@ export class SessionManager {
   private promptStrategy: PromptStrategy = 'normal';
   // WP-07: 上下文 token budget（最大歷史輪數）
   private maxHistoryTurns: number = 20;
+  private runtimePrompt: RuntimePromptSnapshot = { ...EMPTY_RUNTIME_PROMPT };
 
   constructor() {
     this.defaultModel = DEFAULT_MODEL;
@@ -172,6 +216,27 @@ export class SessionManager {
 
   getState(): string {
     return this.state;
+  }
+
+  private updateRuntimePrompt(patch: Partial<RuntimePromptSnapshot>): void {
+    this.runtimePrompt = {
+      ...this.runtimePrompt,
+      ...patch,
+    };
+  }
+
+  private resetRuntimePrompt(): void {
+    this.runtimePrompt = { ...EMPTY_RUNTIME_PROMPT };
+  }
+
+  getRuntimeStatus(): RuntimeStatusSnapshot {
+    return {
+      sdkState: this.state,
+      sessionCount: this.sessions.size,
+      pendingPermissionCount: this.pendingPermissions.size,
+      defaultModel: this.defaultModel,
+      prompt: { ...this.runtimePrompt },
+    };
   }
 
   getBackendInfo(): { type: string; command: string } {
@@ -314,6 +379,17 @@ export class SessionManager {
 
     this.pendingPermissions.delete(id);
 
+    if (
+      this.runtimePrompt.sessionId &&
+      this.runtimePrompt.sessionId === pending.sessionId &&
+      this.runtimePrompt.state === 'permission_required'
+    ) {
+      this.updateRuntimePrompt({
+        state: 'waiting',
+        lastActivityAt: Date.now(),
+      });
+    }
+
     if (approved) {
       // 如果前端未指定 optionId，預設選第一個 option
       const resolvedOptionId = optionId || (pending.options.length > 0 ? pending.options[0].optionId : undefined);
@@ -393,6 +469,12 @@ export class SessionManager {
       };
 
       this.pendingPermissions.set(id, pending);
+      if (this.runtimePrompt.sessionId === sessionId) {
+        this.updateRuntimePrompt({
+          state: 'permission_required',
+          lastActivityAt: pending.timestamp,
+        });
+      }
 
       // 通知前端有新的 permission 請求
       for (const listener of this.permissionListeners) {
@@ -451,7 +533,7 @@ export class SessionManager {
     const stream = acp.ndJsonStream(input, output);
 
     // WP-01: 用 sessionId 閉包綁定 requestPermissionAsync
-    const boundSessionId = `pending_${Date.now()}`;
+    let boundSessionId = `pending_${Date.now()}`;
 
     const connection = new acp.ClientSideConnection(
       () => ({
@@ -502,6 +584,7 @@ export class SessionManager {
 
     const sessionResult = await connection.newSession(newSessionParams);
     const sessionId = sessionResult.sessionId;
+    boundSessionId = sessionId;
 
     const managed: ManagedSession = {
       sessionId,
@@ -520,6 +603,16 @@ export class SessionManager {
       this.sessions.delete(sessionId);
       if (this.sessions.size === 0) {
         this.state = 'ready';
+      }
+      if (
+        this.runtimePrompt.sessionId === sessionId &&
+        !['completed', 'idle'].includes(this.runtimePrompt.state)
+      ) {
+        this.updateRuntimePrompt({
+          state: 'error',
+          lastError: 'Session process exited',
+          lastActivityAt: Date.now(),
+        });
       }
     });
 
@@ -551,12 +644,39 @@ export class SessionManager {
 
     const effectiveTimeout = timeoutMs || DEFAULT_TIMEOUT_MS;
     const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const startedAt = Date.now();
+    let chunkCount = 0;
+    let lastActivityAt = startedAt;
 
     const chunks: string[] = [];
     const listener = (update: any) => {
+      lastActivityAt = Date.now();
+      if (update?.sessionUpdate === 'tool_call' || update?.sessionUpdate === 'tool_call_update') {
+        const toolName = typeof update?.toolName === 'string'
+          ? update.toolName
+          : typeof update?.title === 'string'
+            ? update.title
+            : this.runtimePrompt.lastToolName;
+        this.updateRuntimePrompt({
+          state: 'tool_running',
+          lastActivityAt,
+          lastToolName: toolName || this.runtimePrompt.lastToolName,
+        });
+      }
       const delta = extractTextFromUpdate(update);
       if (delta) {
         chunks.push(delta);
+        chunkCount += 1;
+        this.updateRuntimePrompt({
+          state: 'streaming',
+          chunkCount,
+          lastActivityAt,
+        });
+      } else if (this.runtimePrompt.state === 'starting') {
+        this.updateRuntimePrompt({
+          state: 'waiting',
+          lastActivityAt,
+        });
       }
       if (onUpdate) {
         onUpdate(update);
@@ -577,6 +697,21 @@ export class SessionManager {
     }
 
     session.listeners.add(listener);
+    this.updateRuntimePrompt({
+      requestId,
+      sessionId,
+      model: session.model,
+      state: 'starting',
+      chunkCount: 0,
+      startedAt,
+      lastActivityAt: startedAt,
+      lastToolName: null,
+      lastError: null,
+    });
+    this.pushLog(
+      'info',
+      `[Prompt] Started request ${requestId} (session: ${sessionId}, timeout: ${effectiveTimeout}ms, images: ${images?.length || 0})`
+    );
 
     // WP-02: Timeout race — AbortController + Promise.race
     const timeoutPromise = new Promise<never>((_, reject) => {
@@ -593,10 +728,27 @@ export class SessionManager {
         }),
         timeoutPromise
       ]);
+      this.updateRuntimePrompt({
+        state: chunkCount > 0 ? 'completed' : 'waiting',
+        chunkCount,
+        lastActivityAt: Date.now(),
+      });
     } catch (err: any) {
       // WP-02: Timeout 時嘗試 kill child process 避免僵屍程序
       if (err.message?.includes('Request timeout')) {
-        this.pushLog('error', `[Timeout] ${err.message}`);
+        const elapsedMs = Date.now() - startedAt;
+        const sinceLastActivityMs = Date.now() - lastActivityAt;
+        const pendingPermissionCount = Array.from(this.pendingPermissions.values())
+          .filter((pending) => pending.sessionId === sessionId)
+          .length;
+        const timeoutContext = `chunks=${chunkCount}, lastActivity=${sinceLastActivityMs}ms ago, pendingPermissions=${pendingPermissionCount}, pid=${session.process.pid}`;
+        this.pushLog('error', `[Timeout] ${err.message} (${timeoutContext}, elapsed=${elapsedMs}ms)`);
+        this.updateRuntimePrompt({
+          state: 'timeout',
+          chunkCount,
+          lastActivityAt: Date.now(),
+          lastError: err.message,
+        });
         try {
           if (!session.process.killed) {
             // Kill 子程序樹
@@ -611,15 +763,34 @@ export class SessionManager {
         // 清除 session 讓後續請求可重建
         this.sessions.delete(sessionId);
         if (this.sessions.size === 0) this.state = 'ready';
+      } else {
+        this.updateRuntimePrompt({
+          state: 'error',
+          chunkCount,
+          lastActivityAt: Date.now(),
+          lastError: err?.message || String(err),
+        });
       }
       throw err;
     } finally {
       session.listeners.delete(listener);
     }
 
+    this.pushLog(
+      'info',
+      `[Prompt] Completed request ${requestId} in ${Date.now() - startedAt}ms (session: ${sessionId}, chunks: ${chunkCount})`
+    );
+
+    const content = chunks.join('');
+    this.updateRuntimePrompt({
+      state: 'completed',
+      chunkCount,
+      lastActivityAt: Date.now(),
+    });
+
     return {
       sessionId,
-      content: chunks.join('')
+      content
     };
   }
 
@@ -652,5 +823,6 @@ export class SessionManager {
       await this.deleteSession(id);
     }
     this.state = 'idle';
+    this.resetRuntimePrompt();
   }
 }

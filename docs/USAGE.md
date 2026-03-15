@@ -43,7 +43,7 @@
 ### Load Extension
 
 ```bash
-git clone https://github.com/user/SidePilot.git
+git clone https://github.com/pingqLIN/SidePilot.git
 ```
 
 1. `chrome://extensions/` → Developer mode ON → Load unpacked → select `extension/`
@@ -202,6 +202,9 @@ Prompt order sent to Copilot: `[Rules] + [Memory] + [User Message]`
 | Default | General: clear/concise responses, commented code |
 | TypeScript | Strict mode, interfaces, proper typing |
 | React | Functional components, hooks, state management |
+| 自我疊代 | AI proactively suggests updating memory/rules |
+| 擴充開發 | SidePilot project dev conventions |
+| 絕對安全 | Strict change control and risk classification |
 
 **Import/export:** `.md` file via Settings UI buttons.
 

@@ -12,11 +12,18 @@ const STORAGE_KEY_SDK_LOGIN_GUIDE_SHOWN = "sidepilot_sdk_login_guide_shown";
 const STORAGE_KEY_IFRAME_CHOICE = "sidepilot_iframe_choice_shown";
 const STORAGE_KEY_SDK_INPUT_CONTAINER_HEIGHT =
   "sidepilot_sdk_input_container_height";
+const STORAGE_KEY_SDK_DRAFT = "sidepilot_sdk_draft_v1";
+const STORAGE_KEY_SDK_RETRYABLE = "sidepilot_sdk_retryable_v1";
 const FRAME_LOAD_TIMEOUT = 15000;
 const MEMORY_PROMPT_MAX_ENTRIES = 5;
 const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
 const MEMORY_PROMPT_MAX_ENTRY_CONTENT = 700;
 const RULES_PROMPT_MAX_LENGTH = 2200;
+const LIVE_PAGE_CONTEXT_MAX_AGE_MS = 15000;
+const LIVE_PAGE_CONTEXT_SUMMARY_MAX_LENGTH = 280;
+const LIVE_PAGE_CONTEXT_SELECTED_TEXT_MAX_LENGTH = 800;
+const LIVE_PAGE_CONTEXT_HEADING_LIMIT = 6;
+const LIVE_PAGE_CONTEXT_CODE_BLOCK_LIMIT = 3;
 const SETTINGS_STORAGE_KEY = "sidepilot.settings.v1";
 const SDK_LOGIN_URL =
   "https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot";
@@ -52,6 +59,7 @@ const BRIDGE_AUTO_START_POLL_INTERVAL_MS = 1000;
 const BRIDGE_AUTO_START_DEFAULT_COOLDOWN_MS = 60000;
 const BRIDGE_AUTO_START_COOLDOWN_MIN_MS = 5000;
 const BRIDGE_AUTO_START_COOLDOWN_MAX_MS = 300000;
+const ANTIGRAVITY_UI_ENABLED = false;
 const IFRAME_RISK_DOC_URLS = {
   [UI_LANGUAGE_ZH_TW]:
     "https://github.com/pingqLIN/SidePilot/blob/main/docs/USAGE.zh-TW.md#-iframe-模式",
@@ -81,6 +89,7 @@ const SETTINGS_I18N = {
     "settings.bridge.primary.start": "嘗試自動啟動 Bridge",
     "settings.bridge.primary.retry": "重試自動啟動",
     "settings.bridge.primary.install": "複製 Quick Setup 指令",
+    "settings.bridge.primary.login": "開啟 GitHub 登入頁",
     "settings.bridge.primary.ready": "Bridge 已就緒",
     "settings.bridge.primary.starting": "Bridge 啟動中...",
     "settings.bridge.root.title": "SidePilot Repo Root",
@@ -138,7 +147,7 @@ const SETTINGS_I18N = {
     "settings.sdk.subsection.api": "API 端點",
     "settings.sdk.endpoint.strategy.title": "Chat Endpoint 策略",
     "settings.sdk.endpoint.strategy.desc":
-      "優先使用 <code>/api/chat/sync</code>，若回傳 404 則自動 fallback 到 <code>/api/chat</code>（SSE 串流，向後相容）",
+      "固定使用新版 Bridge API：<code>/api/chat/sync</code> 與 <code>/api/status</code>；若缺少端點，視為版本過舊，必須升級。",
     "settings.sdk.subsection.conversation": "對話格式",
     "settings.sdk.subsection.prompt": "Prompt 策略",
     "settings.sdk.prompt.concise.title": "輸出精簡模式",
@@ -162,6 +171,9 @@ const SETTINGS_I18N = {
     "settings.iframe.allowlist.placeholder":
       "https://github.com/copilot/*\nhttps://github.com/settings/copilot*",
     "settings.section.capture": "擷取按鍵",
+    "settings.capture.dogSleep.title": "狗狗乖 快睡覺",
+    "settings.capture.dogSleep.desc":
+      "關閉背景狗露出效果，並讓面板寬度跟著側欄拖曳直接變化。",
     "settings.capture.width.title": "按鍵寬度",
     "settings.capture.position.title": "上下位置",
     "settings.section.history": "對話紀錄",
@@ -212,6 +224,7 @@ const SETTINGS_I18N = {
     "settings.bridge.primary.start": "Try Auto-start Bridge",
     "settings.bridge.primary.retry": "Retry Auto-start",
     "settings.bridge.primary.install": "Copy Quick Setup Command",
+    "settings.bridge.primary.login": "Open GitHub Login",
     "settings.bridge.primary.ready": "Bridge Ready",
     "settings.bridge.primary.starting": "Bridge Starting...",
     "settings.bridge.root.title": "SidePilot Repo Root",
@@ -272,7 +285,7 @@ const SETTINGS_I18N = {
     "settings.sdk.subsection.api": "API Endpoints",
     "settings.sdk.endpoint.strategy.title": "Chat Endpoint Strategy",
     "settings.sdk.endpoint.strategy.desc":
-      "Prefer <code>/api/chat/sync</code>; if 404, fallback to <code>/api/chat</code> (SSE stream, backward compatible).",
+      "Require the new Bridge API: <code>/api/chat/sync</code> and <code>/api/status</code>. Missing endpoints mean the bridge is too old and must be upgraded.",
     "settings.sdk.subsection.conversation": "Conversation Format",
     "settings.sdk.subsection.prompt": "Prompt Strategy",
     "settings.sdk.prompt.concise.title": "Response Conciseness",
@@ -298,6 +311,9 @@ const SETTINGS_I18N = {
     "settings.iframe.allowlist.placeholder":
       "https://github.com/copilot/*\nhttps://github.com/settings/copilot*",
     "settings.section.capture": "Capture Button",
+    "settings.capture.dogSleep.title": "Let the dog sleep",
+    "settings.capture.dogSleep.desc":
+      "Disable the background dog peek effect and let the panel width follow side-panel dragging directly.",
     "settings.capture.width.title": "Button Width",
     "settings.capture.position.title": "Vertical Position",
     "settings.section.history": "Conversation History",
@@ -579,6 +595,7 @@ const DEFAULT_SETTINGS = {
   selfIterationLastSealDigest: "",
   playIntroEveryOpen: false,
   showWarningOverlay: true,
+  dogSleepingEnabled: false,
   captureButtonWidth: DEFAULT_CAPTURE_BUTTON_WIDTH,
   captureButtonTopPercent: DEFAULT_CAPTURE_BUTTON_TOP_PERCENT,
   antigravityBaseUrl: ANTIGRAVITY_DEFAULT_BASE_URL,
@@ -625,10 +642,23 @@ const state = {
   logSSE: null,
   bridgeLogSSE: null,
   permissionSSE: null,
+  permissionSSEReconnectTimer: null,
   permissionCountdownTimer: null,
   sdkHealthTimer: null,
   bridgeSectionHealthTimer: null,
   antigravitySectionHealthTimer: null,
+  sdkStreamPort: null,
+  sdkRetryableRequest: null,
+  sdkLastAutoHealAt: 0,
+  sdkAutoHealInFlight: false,
+  bridgeLogStreamState: "idle",
+  permissionStreamState: "idle",
+  sdkMonitor: {
+    extension: { status: "warning", detail: "檢查中" },
+    bridge: { status: "warning", detail: "檢查中" },
+    cli: { status: "warning", detail: "等待資料" },
+    action: { state: "standby", detail: "待命" },
+  },
   bridgeAutoStartInFlight: null,
   bridgeLastProbe: {
     connected: false,
@@ -642,6 +672,8 @@ const state = {
     backendType: "",
     checkedAt: 0,
   },
+  bridgeSnapshot: null,
+  sdkStatusChainExpanded: false,
   startupLocked: false,
   sdkInputResizeInitialized: false,
   sdkInputResizeDragging: false,
@@ -649,6 +681,10 @@ const state = {
   sdkInputResizeStartHeight: 0,
   identityTemplateLoaded: false,
   identityUiBound: false,
+  livePageContextPacket: null,
+  livePageContextError: "",
+  livePageContextUpdatedAt: 0,
+  livePageContextRefreshInFlight: null,
 };
 
 // ============================================
@@ -771,6 +807,21 @@ async function init() {
 
   // SDK Chat elements
   dom.sdkChat = document.getElementById("sdkChat");
+  dom.sdkStatusPanel = document.getElementById("sdkStatusPanel");
+  dom.sdkNodeExtensionDot = document.getElementById("sdkNodeExtensionDot");
+  dom.sdkNodeExtensionDetail = document.getElementById("sdkNodeExtensionDetail");
+  dom.sdkNodeBridgeDot = document.getElementById("sdkNodeBridgeDot");
+  dom.sdkNodeBridgeDetail = document.getElementById("sdkNodeBridgeDetail");
+  dom.sdkNodeCliDot = document.getElementById("sdkNodeCliDot");
+  dom.sdkNodeCliDetail = document.getElementById("sdkNodeCliDetail");
+  dom.sdkStatusChain = document.getElementById("sdkStatusChain");
+  dom.sdkStatusHeadline = document.getElementById("sdkStatusHeadline");
+  dom.sdkStatusSubline = document.getElementById("sdkStatusSubline");
+  dom.sdkActionDetail = document.getElementById("sdkActionDetail");
+  dom.sdkPrimaryActionBtn = document.getElementById("sdkPrimaryActionBtn");
+  dom.sdkStatusDetailsToggleBtn = document.getElementById(
+    "sdkStatusDetailsToggleBtn",
+  );
   dom.sdkMessages = document.getElementById("sdkMessages");
   dom.sdkInputContainer = document.getElementById("sdkInputContainer");
   dom.sdkInputResizer = document.getElementById("sdkInputResizer");
@@ -790,6 +841,7 @@ async function init() {
   dom.sdkStructuredOutput = document.getElementById("sdkStructuredOutput");
   dom.sdkAssistantOnly = document.getElementById("sdkAssistantOnly");
   dom.sdkMemorySummary = document.getElementById("sdkMemorySummary");
+  dom.sdkLiveContextPreview = document.getElementById("sdkLiveContextPreview");
   dom.sdkModelSelect = document.getElementById("sdkModelSelect");
   dom.contextChildToggles = document.getElementById("contextChildToggles");
   dom.settingsIdentityContent = document.getElementById(
@@ -822,6 +874,9 @@ async function init() {
     const selectedModel = localStorage.getItem(STORAGE_KEY_SDK_MODEL) || "";
     dom.sdkModelSelect.value = selectedModel;
   }
+  restoreSDKDraft();
+  restoreSDKRetryableRequest();
+  renderSdkStatusPanel();
 
   // Rules tab
   dom.rulesEditor = document.getElementById("rulesEditor");
@@ -896,6 +951,9 @@ async function init() {
   dom.settingShowWarningOverlay = document.getElementById(
     "settingShowWarningOverlay",
   );
+  dom.settingDogSleepingEnabled = document.getElementById(
+    "settingDogSleepingEnabled",
+  );
   dom.settingCaptureButtonWidth = document.getElementById(
     "settingCaptureButtonWidth",
   );
@@ -908,10 +966,14 @@ async function init() {
   dom.captureBtnWidthValue = document.getElementById("captureBtnWidthValue");
   dom.captureBtnTopValue = document.getElementById("captureBtnTopValue");
   dom.openSdkLoginGuideBtn = document.getElementById("openSdkLoginGuideBtn");
-  dom.testSdkBridgeBtn = document.getElementById("testSdkBridgeBtn");
   dom.bridgeInstallStatus = document.getElementById("bridgeInstallStatus");
   dom.bridgeInstallDetail = document.getElementById("bridgeInstallDetail");
   dom.bridgePrimaryBtn = document.getElementById("bridgePrimaryBtn");
+  dom.bridgeDetailRepoRoot = document.getElementById("bridgeDetailRepoRoot");
+  dom.bridgeDetailRuntime = document.getElementById("bridgeDetailRuntime");
+  dom.bridgeDetailLauncher = document.getElementById("bridgeDetailLauncher");
+  dom.bridgeDetailBridge = document.getElementById("bridgeDetailBridge");
+  dom.bridgeDetailCli = document.getElementById("bridgeDetailCli");
   dom.settingBridgeProjectRoot = document.getElementById(
     "settingBridgeProjectRoot",
   );
@@ -963,6 +1025,13 @@ async function init() {
   dom.antigravityHealthBtn = document.getElementById("antigravityHealthBtn");
   dom.antigravityMetaBtn = document.getElementById("antigravityMetaBtn");
   dom.antigravityDetectBtn = document.getElementById("antigravityDetectBtn");
+  dom.settingsSectionProviders = document.getElementById(
+    "settingsSectionProviders",
+  );
+
+  if (!ANTIGRAVITY_UI_ENABLED) {
+    dom.settingsSectionProviders?.classList.add("hidden");
+  }
 
   // SDK login guide modal
   dom.sdkLoginModal = document.getElementById("sdkLoginModal");
@@ -1006,6 +1075,7 @@ async function init() {
   setBridgeInstallDefaultHint();
   setupFrameLoadDetection();
   loadCurrentPageInfo();
+  refreshLivePageContextPreview({ silent: true }).catch(() => {});
 
   loadSettings()
     .catch((err) => {
@@ -1076,6 +1146,7 @@ async function detectModeOnStartup() {
         await loadSDKModelOptions();
         connectPermissionSSE();
         loadPromptStrategy();
+        await refreshSdkMonitorSnapshot();
       }
     }
   } catch (err) {
@@ -1106,6 +1177,7 @@ function updateModeBadge() {
     dom.sdkChat?.classList.remove("hidden");
     ensureSDKInputContainerReady();
     startSdkHealthPolling();
+    refreshSdkMonitorSnapshot().catch(() => {});
   } else {
     stopSDKInputResizeDrag();
     dom.copilotFrame?.classList.remove("hidden");
@@ -1184,7 +1256,9 @@ function switchTab(tabId) {
         startBridgeSectionPolling();
       }
     }
-    const providerSection = document.getElementById("settingsSectionProviders");
+    const providerSection = ANTIGRAVITY_UI_ENABLED
+      ? document.getElementById("settingsSectionProviders")
+      : null;
     if (providerSection) {
       if (providerSection.classList.contains("collapsed")) {
         runAntigravityProviderProbe("health", { showToast: false }).catch(
@@ -1193,6 +1267,8 @@ function switchTab(tabId) {
       } else {
         startAntigravitySectionPolling();
       }
+    } else {
+      stopAntigravitySectionPolling();
     }
   } else {
     // Stop bridge polling when leaving settings tab
@@ -1462,6 +1538,7 @@ function normalizeSettings(raw = {}) {
     selfIterationLastSealDigest,
     playIntroEveryOpen: source.playIntroEveryOpen === true,
     showWarningOverlay: source.showWarningOverlay !== false,
+    dogSleepingEnabled: source.dogSleepingEnabled === true,
     captureButtonWidth: captureWidth,
     captureButtonTopPercent,
     antigravityBaseUrl,
@@ -1916,6 +1993,9 @@ function applySettingsToUI() {
   if (dom.settingShowWarningOverlay) {
     dom.settingShowWarningOverlay.checked = settings.showWarningOverlay;
   }
+  if (dom.settingDogSleepingEnabled) {
+    dom.settingDogSleepingEnabled.checked = settings.dogSleepingEnabled === true;
+  }
   if (dom.settingCaptureButtonWidth) {
     dom.settingCaptureButtonWidth.value = String(settings.captureButtonWidth);
   }
@@ -1943,6 +2023,7 @@ function applySettingsToUI() {
   }
   applySettingsI18n(settings.uiLanguage);
   applyDisplayScale(settings.displayScalePercent);
+  applyDogSleepingMode(settings.dogSleepingEnabled);
   updateDisplayScaleLabel(settings.displayScalePercent);
   updateCaptureWidthLabel(settings.captureButtonWidth);
   updateCaptureTopLabel(settings.captureButtonTopPercent);
@@ -1998,6 +2079,7 @@ function collectSettingsFromUI() {
       state.settings?.selfIterationLastSealDigest || "",
     playIntroEveryOpen: !!dom.settingPlayIntroEveryOpen?.checked,
     showWarningOverlay: !!dom.settingShowWarningOverlay?.checked,
+    dogSleepingEnabled: !!dom.settingDogSleepingEnabled?.checked,
     captureButtonWidth: dom.settingCaptureButtonWidth?.value,
     captureButtonTopPercent: dom.settingCaptureButtonTop?.value,
     antigravityBaseUrl: dom.settingAntigravityBaseUrl?.value,
@@ -2154,6 +2236,10 @@ function updateCaptureTopLabel(value) {
     : `目前：${normalized}%`;
 }
 
+function applyDogSleepingMode(enabled) {
+  document.body.classList.toggle("dog-sleeping", enabled === true);
+}
+
 function applyCaptureButtonWidth(width) {
   const normalized = clampCaptureButtonWidth(width);
   document.documentElement.style.setProperty(
@@ -2260,6 +2346,32 @@ async function bridgeJsonRequest(path, options = {}) {
   }
 
   return response.data;
+}
+
+async function checkRequiredBridgeApis(options = {}) {
+  const port = Number(options.port) || SDK_BRIDGE_PORT;
+  try {
+    await bridgeJsonRequest("/api/status", {
+      port,
+      timeoutMs: options.timeoutMs || 2500,
+    });
+    return { success: true };
+  } catch (err) {
+    const errorMessage = String(err?.message || "bridge api unavailable");
+    if (errorMessage.includes("404")) {
+      return {
+        success: false,
+        code: "BRIDGE_VERSION_UNSUPPORTED",
+        error:
+          "Bridge version is too old. Upgrade to a build that provides /api/status.",
+      };
+    }
+    return {
+      success: false,
+      code: "BRIDGE_API_UNAVAILABLE",
+      error: errorMessage,
+    };
+  }
 }
 
 async function getBridgeAuthToken(options = {}) {
@@ -2695,19 +2807,27 @@ function refreshBridgeSetupUi() {
   const language = getCurrentUiLanguage();
   const isEnglish = language === UI_LANGUAGE_EN;
   const settings = normalizeSettings(state.settings);
-  const runtime = getEffectiveBridgeRuntime(settings.bridgeManualRuntime);
-  const summary = formatBridgeAutoStartSummary(language);
-  const bridgeProbe = state.bridgeLastProbe || {};
-
-  let bridgeKind = "offline";
-  if (bridgeProbe.connected) {
-    bridgeKind = "ready";
-  } else if (state.bridgeAutoStartInFlight || settings.autoStartBridgeLastResult === "launching") {
-    bridgeKind = "starting";
-  }
-
-  const launcherBadge = getBridgeBadgeModel(summary.launcherKind, language);
-  const bridgeBadge = getBridgeBadgeModel(bridgeKind, language);
+  const snapshot = state.bridgeSnapshot || {};
+  const runtime = snapshot?.runtime?.resolved || getEffectiveBridgeRuntime(settings.bridgeManualRuntime);
+  const availability = state.bridgeAutoStartInFlight
+    ? "starting"
+    : snapshot?.bridge?.availability || (state.bridgeLastProbe.connected ? "ready" : "offline");
+  const launcherKind = snapshot?.bridge?.launcherConfigured
+    ? availability === "ready"
+      ? "ready"
+      : "warning"
+    : "install";
+  const launcherBadge = getBridgeBadgeModel(launcherKind, language);
+  const bridgeBadge = getBridgeBadgeModel(
+    availability === "ready"
+      ? "ready"
+      : availability === "starting"
+        ? "starting"
+        : availability === "unsupported"
+          ? "warning"
+          : "offline",
+    language,
+  );
 
   if (dom.bridgeLauncherBadge) {
     dom.bridgeLauncherBadge.textContent = `${isEnglish ? "Launcher" : "Launcher"}: ${launcherBadge.text}`;
@@ -2750,10 +2870,40 @@ function refreshBridgeSetupUi() {
     dom.bridgeCommandPreview.value = buildBridgeStartCommands(runtime);
   }
   if (dom.bridgeLastResultDetail) {
-    dom.bridgeLastResultDetail.textContent = `${summary.label}\n${summary.detail || "-"}`;
+    dom.bridgeLastResultDetail.textContent = [
+      snapshot?.summary?.headline || state.bridgeLastProbe.text || "尚未檢查",
+      snapshot?.lastError?.code || "",
+      snapshot?.lastError?.message || state.bridgeLastProbe.detail || "-",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
   if (dom.bridgeDiagnosticPreview) {
     dom.bridgeDiagnosticPreview.value = buildBridgeDiagnostics(runtime, language);
+  }
+  if (dom.bridgeDetailRepoRoot) {
+    dom.bridgeDetailRepoRoot.textContent =
+      snapshot?.runtime?.repoRoot || getConfiguredBridgeProjectRoot(runtime) || "尚未設定";
+  }
+  if (dom.bridgeDetailRuntime) {
+    dom.bridgeDetailRuntime.textContent = snapshot?.runtime?.resolved || runtime;
+  }
+  if (dom.bridgeDetailLauncher) {
+    dom.bridgeDetailLauncher.textContent = snapshot?.bridge?.launcherConfigured
+      ? "已設定"
+      : "尚未確認";
+  }
+  if (dom.bridgeDetailBridge) {
+    dom.bridgeDetailBridge.textContent = snapshot?.bridge?.version
+      ? `v${snapshot.bridge.version} · ${translateBridgeAvailability(availability)}`
+      : translateBridgeAvailability(availability);
+  }
+  if (dom.bridgeDetailCli) {
+    dom.bridgeDetailCli.textContent =
+      snapshot?.cli?.sdkState ||
+      snapshot?.cli?.prompt?.state ||
+      state.bridgeLastProbe.sdkState ||
+      "idle";
   }
 
   const advancedOpen = dom.bridgeAdvancedPanel && !dom.bridgeAdvancedPanel.classList.contains("hidden");
@@ -2767,31 +2917,25 @@ function refreshBridgeSetupUi() {
     );
   }
 
-  let primaryKey = "settings.bridge.primary.start";
-  let primaryDisabled = false;
-  if (state.bridgeAutoStartInFlight || settings.autoStartBridgeLastResult === "launching") {
-    primaryKey = "settings.bridge.primary.starting";
-    primaryDisabled = true;
-  } else if (bridgeProbe.connected) {
-    primaryKey = "settings.bridge.primary.ready";
-  } else if (summary.launcherKind === "install") {
-    primaryKey = "settings.bridge.primary.install";
-  } else if (
-    settings.autoStartBridgeLastResult === "failed" &&
-    settings.autoStartBridgeLastError
-  ) {
-    primaryKey = "settings.bridge.primary.retry";
-  }
-
   if (dom.bridgePrimaryBtn) {
-    dom.bridgePrimaryBtn.textContent = translateSettingsKey(primaryKey, language);
-    dom.bridgePrimaryBtn.disabled = primaryDisabled;
-    dom.bridgePrimaryBtn.dataset.action =
-      primaryKey === "settings.bridge.primary.install"
-        ? "copy-install"
-        : bridgeProbe.connected
-          ? "check"
-          : "start";
+    const primaryAction = state.bridgeAutoStartInFlight
+      ? {
+          action: "start",
+          label: translateSettingsKey("settings.bridge.primary.starting", language),
+          disabled: true,
+        }
+      : snapshot?.primaryAction || {
+          action: "start",
+          label: translateSettingsKey("settings.bridge.primary.start", language),
+          disabled: false,
+        };
+    dom.bridgePrimaryBtn.textContent = getBridgePrimaryActionLabel(
+      primaryAction,
+      snapshot,
+      language,
+    );
+    dom.bridgePrimaryBtn.disabled = primaryAction.disabled === true;
+    dom.bridgePrimaryBtn.dataset.action = primaryAction.action;
   }
 
   dom.bridgeRuntimeButtons?.forEach((button) => {
@@ -2950,20 +3094,52 @@ async function runBridgeAutoStartAttempt(options = {}) {
 }
 
 async function ensureSDKBridgeReadyWithAutoStart(options = {}) {
-  const directReady = await ensureSDKBridgeConnection({
-    port: SDK_BRIDGE_PORT,
-  });
-  if (directReady) {
-    return { success: true, autoStarted: false };
+  try {
+    const snapshot = await fetchBridgeSnapshot({
+      port: SDK_BRIDGE_PORT,
+      timeoutMs: 2500,
+    });
+    if (snapshot?.bridge?.availability === "ready") {
+      return { success: true, autoStarted: false };
+    }
+  } catch (err) {
+    return {
+      success: false,
+      autoStarted: false,
+      code: "BRG-STATUS-404",
+      detail: err?.message || String(err),
+    };
   }
 
   if (state.bridgeAutoStartInFlight) {
     return state.bridgeAutoStartInFlight;
   }
 
-  const task = runBridgeAutoStartAttempt(options).finally(() => {
-    state.bridgeAutoStartInFlight = null;
-  });
+  const task = runBridgeStatusAction("start", {
+    port: SDK_BRIDGE_PORT,
+    timeoutMs: 3000,
+    force: options.force === true,
+    bypassCooldown: options.bypassCooldown === true,
+  })
+    .then((response) => {
+      const snapshot = response?.snapshot || state.bridgeSnapshot;
+      const success = snapshot?.bridge?.availability === "ready";
+      return {
+        success,
+        autoStarted: true,
+        code: success ? "" : snapshot?.lastError?.code || "BRG-OFFLINE",
+        detail: snapshot?.lastError?.message || snapshot?.summary?.detail || "",
+      };
+    })
+    .catch((err) => ({
+      success: false,
+      autoStarted: true,
+      code: "BRG-OFFLINE",
+      detail: err?.message || String(err),
+    }))
+    .finally(() => {
+      state.bridgeAutoStartInFlight = null;
+    });
   state.bridgeAutoStartInFlight = task;
   return task;
 }
@@ -3076,6 +3252,13 @@ function formatAntigravityProbeDetail(payload, fallbackBaseUrl) {
 }
 
 async function runAntigravityProviderProbe(probe = "health", options = {}) {
+  if (!ANTIGRAVITY_UI_ENABLED) {
+    return {
+      success: false,
+      hidden: true,
+      error: "antigravity disabled",
+    };
+  }
   const { baseUrl, token } = getAntigravityProbeConfig();
   const toastEnabled = options.showToast === true;
   const normalizedProbe = String(probe || "health").toLowerCase();
@@ -3165,152 +3348,69 @@ async function runAntigravityProviderProbe(probe = "health", options = {}) {
 }
 
 async function checkBridgeHealth(options = {}) {
-  const port = SDK_BRIDGE_PORT;
-  const url = getBridgeHealthUrl(port);
   const toastEnabled = options.showToast !== false;
-  const isQuietPoll = !toastEnabled;
-
-  // Only show "檢查中..." on manual/first check, not on silent 1-sec polling
-  if (!isQuietPoll) {
-    setBridgeInstallStatus("檢查中...", url, "warning");
+  if (toastEnabled) {
+    setBridgeInstallStatus("正在檢查 Bridge…", "整理目前連線、CLI 與版本資訊", "warning");
   }
 
   try {
-    const response = await chrome.runtime.sendMessage({
-      action: "bridgeHealth",
-      port,
+    const snapshot = await fetchBridgeSnapshot({
+      port: SDK_BRIDGE_PORT,
       timeoutMs: 3000,
     });
-
-    if (response?.success) {
-      if (response?.isBridge) {
-        const sdkStateValue = response?.data?.sdk || "";
-        const sdkState = sdkStateValue ? `sdk: ${sdkStateValue}` : "";
-        const backendType = response?.data?.backend?.type
-          ? `backend: ${response.data.backend.type}`
-          : "";
-        const detail = [url, sdkState, backendType].filter(Boolean).join(" | ");
-        const okStates = ["ready", "idle", "connected", ""];
-        const statusType = okStates.includes(sdkStateValue)
-          ? "success"
-          : "warning";
-        state.bridgeLastProbe = {
-          connected: statusType === "success",
-          isBridge: true,
-          text: "Bridge 已連線",
-          detail,
-          type: statusType,
-          url,
-          sdkState: sdkStateValue,
-          service: response?.data?.service || "",
-          backendType: response?.data?.backend?.type || "",
-          checkedAt: Date.now(),
-        };
-        setBridgeInstallStatus("Bridge 已連線", detail, statusType);
-        if (toastEnabled) {
-          showToast(
-            statusType === "success"
-              ? "Bridge 已連線"
-              : "Bridge 已連線但狀態異常",
-            statusType === "success" ? "success" : "warning",
-          );
-        }
-
-        // Only load models on first connection or manual check, not every 1-sec tick
-        if (!isQuietPoll || !state.bridgeModelsLoaded) {
-          const connected = await ensureSDKBridgeConnection({ port });
-          if (connected) {
-            await loadSDKModelOptions();
-            state.bridgeModelsLoaded = true;
-          }
-        }
-        return;
-      }
-
-      const serviceName = response?.data?.service || "unknown";
-      state.bridgeLastProbe = {
-        connected: false,
-        isBridge: false,
-        text: "不是 SidePilot Bridge",
-        detail: `service: ${serviceName}`,
-        type: "warning",
-        url,
-        sdkState: "",
-        service: serviceName,
-        backendType: "",
-        checkedAt: Date.now(),
-      };
-      setBridgeInstallStatus(
-        "不是 SidePilot Bridge",
-        `service: ${serviceName}`,
-        "warning",
-      );
-      if (toastEnabled) showToast("埠口不是 SidePilot Bridge", "warning");
-      state.bridgeModelsLoaded = false;
-      return;
+    const availability = snapshot?.bridge?.availability || "offline";
+    const summary = snapshot?.summary || {};
+    const detailBits = [];
+    if (snapshot?.lastError?.code) detailBits.push(snapshot.lastError.code);
+    if (snapshot?.lastError?.message) detailBits.push(snapshot.lastError.message);
+    if (snapshot?.runtime?.resolved) {
+      detailBits.push(`runtime: ${snapshot.runtime.resolved}`);
     }
 
-    const statusCode = response?.status;
-    if (statusCode === 404) {
-      const runtime = getEffectiveBridgeRuntime();
-      const detail =
-        `HTTP 404 | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
-      state.bridgeLastProbe = {
-        connected: false,
-        isBridge: false,
-        text: "Bridge 未啟動或版本不符",
-        detail,
-        type: "warning",
-        url,
-        sdkState: "",
-        service: "",
-        backendType: "",
-        checkedAt: Date.now(),
-      };
-      setBridgeInstallStatus(
-        "Bridge 未啟動或版本不符",
-        detail,
-        "warning",
-      );
-      if (toastEnabled) showToast("Bridge 回應 404，請確認安裝或啟動流程", "warning");
-      state.bridgeModelsLoaded = false;
-      return;
-    }
-
-    const errMessage = response?.error || "連線失敗";
-    const runtime = getEffectiveBridgeRuntime();
-    const failureDetail =
-      `${errMessage} | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
     state.bridgeLastProbe = {
-      connected: false,
-      isBridge: false,
-      text: "無法連線",
-      detail: failureDetail,
-      type: "error",
-      url,
-      sdkState: "",
-      service: "",
-      backendType: "",
+      connected: availability === "ready",
+      isBridge: availability !== "unsupported",
+      text: summary.headline || "Bridge 狀態已更新",
+      detail: summary.detail || detailBits.join(" | "),
+      type:
+        availability === "ready"
+          ? "success"
+          : availability === "starting" || availability === "degraded"
+            ? "warning"
+            : "error",
+      url: getBridgeHealthUrl(SDK_BRIDGE_PORT),
+      sdkState: snapshot?.cli?.sdkState || "",
+      service: snapshot?.bridge?.service || "",
+      backendType: snapshot?.bridge?.backend?.type || "",
       checkedAt: Date.now(),
     };
+
     setBridgeInstallStatus(
-      "無法連線",
-      failureDetail,
-      "error",
+      summary.headline || "Bridge 狀態已更新",
+      summary.detail || detailBits.join(" | ") || "-",
+      state.bridgeLastProbe.type,
     );
-    if (toastEnabled) showToast("Bridge 無法連線", "error");
-    state.bridgeModelsLoaded = false;
+    refreshBridgeSetupUi();
+
+    if (toastEnabled) {
+      showToast(
+        availability === "ready"
+          ? "Bridge 已就緒"
+          : availability === "unsupported"
+            ? "Bridge 版本過舊"
+            : "Bridge 狀態已更新",
+        state.bridgeLastProbe.type,
+      );
+    }
   } catch (err) {
-    const runtime = getEffectiveBridgeRuntime();
-    const failureDetail =
-      `${err?.message || "unknown error"} | runtime: ${getBridgeRuntimeLabel(runtime)} | localhost:${SDK_BRIDGE_PORT}`;
+    const failureDetail = err?.message || "unknown error";
     state.bridgeLastProbe = {
       connected: false,
       isBridge: false,
       text: "檢查失敗",
       detail: failureDetail,
       type: "error",
-      url,
+      url: getBridgeHealthUrl(SDK_BRIDGE_PORT),
       sdkState: "",
       service: "",
       backendType: "",
@@ -3328,21 +3428,17 @@ async function checkBridgeHealth(options = {}) {
 
 // Lightweight bridge health check for SDK status dot (no toast, no side-effects)
 async function pollBridgeHealthQuiet() {
-  const port = SDK_BRIDGE_PORT;
-  const url = getBridgeHealthUrl(port);
   try {
-    const response = await chrome.runtime.sendMessage({
-      action: "bridgeHealth",
-      port,
-      timeoutMs: 3000,
+    const snapshot = await fetchBridgeSnapshot({
+      port: SDK_BRIDGE_PORT,
+      timeoutMs: 2000,
     });
-    if (response?.success && response?.isBridge) {
-      const sdkState = response?.data?.sdk || "";
-      // idle = service running, ready = session ready, connected = actively chatting
-      const okStates = ["ready", "idle", "connected", ""];
-      return okStates.includes(sdkState) ? "success" : "warning";
-    }
-    return "error";
+    const availability = snapshot?.bridge?.availability || "offline";
+    return availability === "ready"
+      ? "success"
+      : availability === "starting" || availability === "degraded"
+        ? "warning"
+        : "error";
   } catch {
     return "error";
   }
@@ -3361,8 +3457,10 @@ function updateSdkStatusDot(status) {
 function startSdkHealthPolling() {
   stopSdkHealthPolling();
   // Immediate check then every 3s
+  refreshSdkMonitorSnapshot({ autoHeal: true }).catch(() => {});
   pollBridgeHealthQuiet().then(updateSdkStatusDot);
   state.sdkHealthTimer = setInterval(() => {
+    refreshSdkMonitorSnapshot({ autoHeal: true }).catch(() => {});
     pollBridgeHealthQuiet().then(updateSdkStatusDot);
   }, 3000);
 }
@@ -3372,6 +3470,7 @@ function stopSdkHealthPolling() {
     clearInterval(state.sdkHealthTimer);
     state.sdkHealthTimer = null;
   }
+  closeSDKStreamPort();
 }
 
 function startBridgeSectionPolling() {
@@ -3379,7 +3478,7 @@ function startBridgeSectionPolling() {
   checkBridgeHealth({ showToast: false });
   state.bridgeSectionHealthTimer = setInterval(() => {
     checkBridgeHealth({ showToast: false });
-  }, 1000);
+  }, 5000);
 }
 
 function stopBridgeSectionPolling() {
@@ -3390,6 +3489,7 @@ function stopBridgeSectionPolling() {
 }
 
 function startAntigravitySectionPolling() {
+  if (!ANTIGRAVITY_UI_ENABLED) return;
   stopAntigravitySectionPolling();
   runAntigravityProviderProbe("health", { showToast: false });
   state.antigravitySectionHealthTimer = setInterval(() => {
@@ -3527,6 +3627,535 @@ function sendSDKMessageViaBackground(data) {
   });
 }
 
+async function fetchBridgeSnapshot(options = {}) {
+  const response = await sendBridgeRuntimeMessage({
+    action: "bridgeStatusSnapshot",
+    port: Number(options.port) || SDK_BRIDGE_PORT,
+    timeoutMs: options.timeoutMs || 3000,
+    allowAutoStart: options.allowAutoStart === true,
+    force: options.force === true,
+    bypassCooldown: options.bypassCooldown === true,
+  });
+
+  if (!response?.success || !response?.snapshot) {
+    throw new Error(response?.error || "Bridge snapshot unavailable");
+  }
+
+  state.bridgeSnapshot = response.snapshot;
+  return response.snapshot;
+}
+
+async function runBridgeStatusAction(action, options = {}) {
+  const response = await sendBridgeRuntimeMessage({
+    action: "bridgeStatusAction",
+    bridgeAction: action,
+    port: Number(options.port) || SDK_BRIDGE_PORT,
+    timeoutMs: options.timeoutMs || 3000,
+    force: options.force === true,
+    bypassCooldown: options.bypassCooldown === true,
+    reconnect: options.reconnect !== false,
+  });
+
+  if (!response?.success) {
+    throw new Error(response?.error || `Bridge action failed: ${action}`);
+  }
+
+  if (response.snapshot) {
+    state.bridgeSnapshot = response.snapshot;
+  }
+  return response;
+}
+
+function translateSdkActionState(stateName) {
+  const labels = {
+    standby: "待命",
+    starting: "啟動中",
+    preparing: "準備中",
+    sending: "送出中",
+    waiting_cli: "等待 CLI",
+    streaming: "串流回覆中",
+    tool_running: "工具執行中",
+    permission_required: "等待權限確認",
+    auto_reconnecting: "自動修復中",
+    reconnecting: "重新連線中",
+    resyncing: "重新同步中",
+    failed: "失敗",
+    completed: "已完成",
+    idle: "待命",
+    connecting: "連線中",
+    launching: "啟動 Bridge 中",
+    waiting_permission: "等待權限確認",
+    recovering: "修復中",
+  };
+  return labels[stateName] || String(stateName || "standby");
+}
+
+function translateBridgeAvailability(value) {
+  const labels = {
+    offline: "離線",
+    starting: "啟動中",
+    ready: "就緒",
+    degraded: "異常但可連線",
+    unsupported: "版本不相容",
+  };
+  return labels[value] || String(value || "offline");
+}
+
+function getBridgePrimaryActionLabel(primaryAction, snapshot, language) {
+  const action = String(primaryAction?.action || "start");
+  const availability = String(snapshot?.bridge?.availability || "offline");
+
+  if (action === "open_login") {
+    return translateSettingsKey("settings.bridge.primary.login", language);
+  }
+  if (action === "copy_manual_command") {
+    return translateSettingsKey("settings.bridge.primary.install", language);
+  }
+  if (action === "check") {
+    return translateSettingsKey("settings.bridge.primary.ready", language);
+  }
+  if (availability === "starting" || primaryAction?.disabled === true) {
+    return translateSettingsKey("settings.bridge.primary.starting", language);
+  }
+  if (snapshot?.lastError?.code) {
+    return translateSettingsKey("settings.bridge.primary.retry", language);
+  }
+  return (
+    primaryAction?.label ||
+    translateSettingsKey("settings.bridge.primary.start", language)
+  );
+}
+
+function applySdkNodeStatus(dotEl, detailEl, status, detail) {
+  if (dotEl) {
+    dotEl.dataset.status = status || "warning";
+  }
+  if (detailEl) {
+    detailEl.textContent = detail || "unknown";
+  }
+}
+
+function getSdkPrimaryActionModel() {
+  const bridgeSnapshot = state.bridgeSnapshot || {};
+  const language = normalizeUiLanguage(state.settings.uiLanguage);
+  if (state.sdkRetryableRequest) {
+    return {
+      action: "retry-send",
+      label: "重新送出上一則訊息",
+      disabled: false,
+    };
+  }
+
+  const snapshotAction = bridgeSnapshot?.primaryAction;
+  if (snapshotAction?.action === "open_login") {
+    return {
+      action: "open-login",
+      label: getBridgePrimaryActionLabel(
+        snapshotAction,
+        bridgeSnapshot,
+        language,
+      ),
+      disabled: false,
+    };
+  }
+
+  if (
+    bridgeSnapshot?.bridge?.availability &&
+    bridgeSnapshot.bridge.availability !== "ready"
+  ) {
+    return {
+      action: "bridge-start",
+      label: getBridgePrimaryActionLabel(
+        snapshotAction,
+        bridgeSnapshot,
+        language,
+      ),
+      disabled: snapshotAction?.disabled === true,
+    };
+  }
+
+  return {
+    action: "bridge-resync",
+    label: "重新同步 Bridge",
+    disabled: false,
+  };
+}
+
+function renderSdkStatusPanel() {
+  applySdkNodeStatus(
+    dom.sdkNodeExtensionDot,
+    dom.sdkNodeExtensionDetail,
+    state.sdkMonitor.extension.status,
+    state.sdkMonitor.extension.detail,
+  );
+  applySdkNodeStatus(
+    dom.sdkNodeBridgeDot,
+    dom.sdkNodeBridgeDetail,
+    state.sdkMonitor.bridge.status,
+    state.sdkMonitor.bridge.detail,
+  );
+  applySdkNodeStatus(
+    dom.sdkNodeCliDot,
+    dom.sdkNodeCliDetail,
+    state.sdkMonitor.cli.status,
+    state.sdkMonitor.cli.detail,
+  );
+  if (dom.sdkActionDetail) {
+    dom.sdkActionDetail.textContent =
+      state.sdkMonitor.action.detail ||
+      translateSdkActionState(state.sdkMonitor.action.state);
+  }
+  const primaryAction = getSdkPrimaryActionModel();
+  if (dom.sdkPrimaryActionBtn) {
+    dom.sdkPrimaryActionBtn.textContent = primaryAction.label;
+    dom.sdkPrimaryActionBtn.dataset.action = primaryAction.action;
+    dom.sdkPrimaryActionBtn.disabled = primaryAction.disabled === true;
+  }
+  dom.sdkStatusChain?.classList.remove("hidden");
+}
+
+function setSdkActionState(stateName, detail = "") {
+  state.sdkMonitor.action = {
+    state: stateName,
+    detail: detail || translateSdkActionState(stateName),
+  };
+  renderSdkStatusPanel();
+}
+
+function persistSDKDraft() {
+  const payload = {
+    content: String(dom.sdkInput?.value || ""),
+    savedAt: Date.now(),
+  };
+  localStorage.setItem(STORAGE_KEY_SDK_DRAFT, JSON.stringify(payload));
+}
+
+function restoreSDKDraft() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SDK_DRAFT);
+    if (!raw) return;
+    const payload = JSON.parse(raw);
+    if (typeof payload?.content === "string" && dom.sdkInput) {
+      dom.sdkInput.value = payload.content;
+      dom.sdkInput.style.height = "auto";
+      dom.sdkInput.style.height = `${dom.sdkInput.scrollHeight}px`;
+    }
+  } catch (err) {
+    console.warn("[SidePilot] Failed to restore SDK draft:", err);
+  }
+}
+
+function clearSDKDraft() {
+  localStorage.removeItem(STORAGE_KEY_SDK_DRAFT);
+}
+
+function persistSDKRetryableRequest(payload) {
+  state.sdkRetryableRequest = payload || null;
+  if (payload) {
+    localStorage.setItem(STORAGE_KEY_SDK_RETRYABLE, JSON.stringify(payload));
+  } else {
+    localStorage.removeItem(STORAGE_KEY_SDK_RETRYABLE);
+  }
+  renderSdkStatusPanel();
+}
+
+function restoreSDKRetryableRequest() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_SDK_RETRYABLE);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") {
+      state.sdkRetryableRequest = parsed;
+    }
+  } catch (err) {
+    console.warn("[SidePilot] Failed to restore retryable SDK request:", err);
+    state.sdkRetryableRequest = null;
+  }
+  renderSdkStatusPanel();
+}
+
+function closeSDKStreamPort() {
+  if (state.sdkStreamPort) {
+    try {
+      state.sdkStreamPort.disconnect();
+    } catch {
+      // ignore
+    }
+    state.sdkStreamPort = null;
+  }
+}
+
+function sendSDKMessageStreamViaBackground(payload, handlers = {}) {
+  return new Promise((resolve, reject) => {
+    closeSDKStreamPort();
+    const port = chrome.runtime.connect({ name: "sdk-chat-stream" });
+    state.sdkStreamPort = port;
+    const requestId = `sdk_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    const cleanup = () => {
+      if (state.sdkStreamPort === port) {
+        state.sdkStreamPort = null;
+      }
+      try {
+        port.disconnect();
+      } catch {
+        // ignore
+      }
+    };
+
+    port.onDisconnect.addListener(() => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      }
+    });
+
+    port.onMessage.addListener((message) => {
+      if (message?.requestId && message.requestId !== requestId) return;
+      if (message?.type === "status" && handlers.onStatus) {
+        handlers.onStatus(message.state, message.detail || "");
+        return;
+      }
+      if (message?.type === "delta" && handlers.onDelta) {
+        handlers.onDelta(message.delta || "");
+        return;
+      }
+      if (message?.type === "tool" && handlers.onTool) {
+        handlers.onTool(message.tool || "", message.detail || null);
+        return;
+      }
+      if (message?.type === "done") {
+        cleanup();
+        resolve(message.content || "");
+        return;
+      }
+      if (message?.type === "error") {
+        cleanup();
+        reject(new Error(message.error || "SDK send failed"));
+      }
+    });
+
+    port.postMessage({
+      type: "send",
+      requestId,
+      payload,
+    });
+  });
+}
+
+async function getSdkMonitorStatus() {
+  const response = await chrome.runtime.sendMessage({
+    action: "sdkMonitorStatus",
+  });
+  if (!response?.success) {
+    throw new Error(response?.error || "failed to load sdk monitor");
+  }
+  return response.monitor || {};
+}
+
+async function maybeRunSdkAutoHeal(reason = "health-check") {
+  if (state.sdkAutoHealInFlight) return false;
+  if (Date.now() - state.sdkLastAutoHealAt < 20000) return false;
+
+  state.sdkAutoHealInFlight = true;
+  state.sdkLastAutoHealAt = Date.now();
+  setSdkActionState("auto_reconnecting", `自動修復中 · ${reason}`);
+
+  try {
+    const snapshot = await fetchBridgeSnapshot({
+      allowAutoStart: true,
+      force: false,
+      timeoutMs: 3000,
+    });
+    if (snapshot?.bridge?.availability !== "ready") return false;
+
+    await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+    connectPermissionSSE();
+    if (state.currentTab === "logs") {
+      connectBridgeLogSSE();
+    }
+    return true;
+  } catch (err) {
+    console.warn("[SidePilot] SDK auto-heal failed:", err?.message || err);
+    return false;
+  } finally {
+    state.sdkAutoHealInFlight = false;
+  }
+}
+
+async function refreshSdkMonitorSnapshot(options = {}) {
+  const autoHeal = options?.autoHeal === true;
+  const nextMonitor = {
+    extension: { status: "warning", detail: "檢查中" },
+    bridge: { status: "warning", detail: "檢查中" },
+    cli: { status: "warning", detail: "等待資料" },
+    action: state.sdkMonitor.action,
+  };
+
+  try {
+    const backgroundMonitor = await getSdkMonitorStatus();
+    const guard = backgroundMonitor?.startupGuard || {};
+    let bridgeSnapshot = null;
+
+    if (!guard.ready) {
+      nextMonitor.extension = { status: "warning", detail: "啟動檢查中" };
+    } else if (guard.locked) {
+      nextMonitor.extension = { status: "error", detail: "啟動保護已鎖定" };
+    } else if (state.sdkAutoHealInFlight || backgroundMonitor?.resyncInFlight) {
+      nextMonitor.extension = { status: "warning", detail: "修復中" };
+    } else if (
+      state.permissionStreamState === "error" ||
+      state.bridgeLogStreamState === "error"
+    ) {
+      nextMonitor.extension = { status: "warning", detail: "監控狀態不完整" };
+    } else {
+      nextMonitor.extension = { status: "success", detail: "正常" };
+    }
+
+    if (backgroundMonitor?.chatState) {
+      const extraDetail = backgroundMonitor?.lastTool
+        ? `${translateSdkActionState(backgroundMonitor.chatState)} · ${backgroundMonitor.lastTool}`
+        : backgroundMonitor?.lastError
+          ? `${translateSdkActionState(backgroundMonitor.chatState)} · ${backgroundMonitor.lastError}`
+          : translateSdkActionState(backgroundMonitor.chatState);
+      nextMonitor.action = {
+        state: backgroundMonitor.chatState,
+        detail: extraDetail,
+      };
+    }
+    bridgeSnapshot = await fetchBridgeSnapshot({
+      allowAutoStart: autoHeal,
+      timeoutMs: 2500,
+    });
+
+    const availability = bridgeSnapshot?.bridge?.availability || "offline";
+    const bridgeDetailBits = [];
+    if (bridgeSnapshot?.bridge?.version) {
+      bridgeDetailBits.push(`v${bridgeSnapshot.bridge.version}`);
+    }
+    if (bridgeSnapshot?.lastError?.code) {
+      bridgeDetailBits.push(bridgeSnapshot.lastError.code);
+    }
+    nextMonitor.bridge = {
+      status:
+        availability === "ready"
+          ? "success"
+          : availability === "degraded" || availability === "starting"
+            ? "warning"
+            : "error",
+      detail:
+        bridgeDetailBits.length > 0
+          ? `${translateBridgeAvailability(availability)} · ${bridgeDetailBits.join(" · ")}`
+          : translateBridgeAvailability(availability),
+    };
+
+    const cliState = String(bridgeSnapshot?.cli?.prompt?.state || bridgeSnapshot?.cli?.sdkState || "idle");
+    const sessionCount = Number(bridgeSnapshot?.cli?.sessionCount || 0);
+    const pendingPermissionCount = Number(
+      bridgeSnapshot?.cli?.pendingPermissionCount || 0,
+    );
+    const cliDetails = [cliState];
+    if (sessionCount > 0) cliDetails.push(`sessions ${sessionCount}`);
+    if (pendingPermissionCount > 0) cliDetails.push(`perm ${pendingPermissionCount}`);
+    if (bridgeSnapshot?.cli?.prompt?.lastToolName) {
+      cliDetails.push(String(bridgeSnapshot.cli.prompt.lastToolName));
+    }
+    nextMonitor.cli = {
+      status:
+        availability === "ready" && pendingPermissionCount === 0 && !bridgeSnapshot?.lastError?.code
+          ? "success"
+          : availability === "offline" || availability === "unsupported"
+            ? "error"
+            : "warning",
+      detail: cliDetails.join(" · "),
+    };
+
+    if (
+      bridgeSnapshot?.action?.state &&
+      (nextMonitor.action.state === "standby" ||
+        nextMonitor.action.state === "completed")
+    ) {
+      nextMonitor.action = {
+        state: bridgeSnapshot.action.state,
+        detail:
+          bridgeSnapshot?.lastError?.message ||
+          translateSdkActionState(bridgeSnapshot.action.state),
+      };
+    }
+
+    if (availability === "ready" && !state.bridgeModelsLoaded) {
+      const connected = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+      if (connected) {
+        await loadSDKModelOptions();
+        state.bridgeModelsLoaded = true;
+      }
+    } else if (availability !== "ready") {
+      state.bridgeModelsLoaded = false;
+    }
+
+    if (autoHeal && availability !== "ready") {
+      const healed = await maybeRunSdkAutoHeal("bridge-offline");
+      if (healed) {
+        return refreshSdkMonitorSnapshot({ autoHeal: false });
+      }
+    }
+  } catch (err) {
+    nextMonitor.extension = {
+      status: "error",
+      detail: err?.message || "監控資訊無法取得",
+    };
+  }
+
+  state.sdkMonitor = nextMonitor;
+  renderSdkStatusPanel();
+  return nextMonitor;
+}
+
+async function runSdkFullResync(options = {}) {
+  const reason = options?.reason || "manual";
+  const forceAutoStart = options?.forceAutoStart === true;
+
+  setSdkActionState("resyncing", `重新同步中 · ${reason}`);
+  closeSDKStreamPort();
+  disconnectPermissionSSE();
+  disconnectBridgeLogSSE();
+
+  const response = await runBridgeStatusAction("resync", {
+    reconnect: false,
+    force: forceAutoStart,
+  });
+  if (!response?.success) {
+    setSdkActionState("failed", response?.error || "重新同步失敗");
+    await refreshSdkMonitorSnapshot();
+    return false;
+  }
+
+  const bridgeReady = await ensureSDKBridgeReadyWithAutoStart({
+    source: `sdk-resync-${reason}`,
+    bypassCooldown: forceAutoStart,
+    force: forceAutoStart,
+    showToast: false,
+  });
+  if (!bridgeReady?.success) {
+    setSdkActionState(
+      "failed",
+      bridgeReady?.detail || bridgeReady?.code || "Bridge 尚未就緒",
+    );
+    await refreshSdkMonitorSnapshot();
+    return false;
+  }
+
+  await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
+  await loadSDKModelOptions();
+  connectPermissionSSE();
+  if (state.currentTab === "logs") {
+    connectBridgeLogSSE();
+  }
+
+  setSdkActionState("standby", "待命");
+  await refreshSdkMonitorSnapshot();
+  return true;
+}
+
 async function loadSDKModelOptions() {
   if (!dom.sdkModelSelect) return;
 
@@ -3573,14 +4202,27 @@ async function ensureSDKBridgeConnection(options = {}) {
     action: "sdkConnect",
     port,
   });
-  return !!response?.success;
+  if (!response?.success) {
+    refreshSdkMonitorSnapshot().catch(() => {});
+    return false;
+  }
+
+  const apiSupport = await checkRequiredBridgeApis({ port });
+  if (!apiSupport.success) {
+    await chrome.runtime.sendMessage({ action: "sdkDisconnect" });
+    refreshSdkMonitorSnapshot().catch(() => {});
+    throw new Error(apiSupport.error || "Bridge version unsupported");
+  }
+
+  refreshSdkMonitorSnapshot().catch(() => {});
+  return true;
 }
 
 function buildSDKUnavailableHelpMessage(errorMessage = "") {
   const lines = [
     "❌ SDK 連線失敗：Bridge server not available",
     "",
-    "可先到「設定 > 安裝助手」點擊「0. 啟動 Bridge」。",
+    "可先到「設定 > Bridge Setup」查看 Quick Start，然後點「啟動 Bridge」。",
     "",
     "請先在本機啟動 Bridge：",
     "1. cd scripts/copilot-bridge",
@@ -3597,13 +4239,13 @@ function buildSDKUnavailableHelpMessage(errorMessage = "") {
 
 function buildSDK404HelpMessage(errorMessage = "") {
   const lines = [
-    "❌ SDK API 找不到 (HTTP 404)",
+    "❌ SDK API 找不到 (HTTP 404 / bridge version too old)",
     "",
     "常見原因：",
     `1. ${SDK_BRIDGE_PORT} 埠口不是 SidePilot Bridge`,
-    "2. Bridge 版本不完整或未啟動正確專案",
+    "2. 你啟動的是舊版 Bridge，缺少新版 API（例如 /api/status）",
     "",
-    "請確認你是在此目錄啟動：",
+    "請升級並在此目錄重新啟動新版 Bridge：",
     "1. cd scripts/copilot-bridge",
     "2. npm install",
     "3. npm run start",
@@ -3611,6 +4253,180 @@ function buildSDK404HelpMessage(errorMessage = "") {
     `原始錯誤：${errorMessage || "HTTP 404"}`,
   ];
   return lines.join("\n");
+}
+
+async function buildSDKSendRequest(rawInput, options = {}) {
+  const inputText = String(rawInput || "").trim();
+  const images = Array.isArray(options.images)
+    ? [...options.images]
+    : [...state.pendingChatImages];
+  const imgCount = images.length;
+  const displayContent =
+    imgCount > 0 ? `${inputText}\n📎 ${imgCount} 張圖片附加` : inputText;
+  const expectedStructuredResponse =
+    !!dom.sdkIncludeMemory?.checked && !!dom.sdkStructuredOutput?.checked;
+
+  let promptToSend = inputText;
+  let sandboxSystemMessage;
+
+  if (dom.sdkIncludeMemory?.checked) {
+    try {
+      const includeIdentity = !!dom.sdkIncludeIdentity?.checked;
+      const includeMemEntries = !!dom.sdkIncludeMemoryEntries?.checked;
+      const includeRules = !!dom.sdkIncludeRules?.checked;
+      const includeSystemMsg = !!dom.sdkIncludeSystemMsg?.checked;
+      const useStructuredOutput = !!dom.sdkStructuredOutput?.checked;
+
+      const [allMemoryEntries, rulesContent] = await Promise.all([
+        includeMemEntries ? listAllMemoryEntries() : Promise.resolve([]),
+        includeRules ? loadRulesContent().catch(() => "") : Promise.resolve(""),
+      ]);
+      const livePageContext = await ensureLivePageContext({
+        forceRefresh: true,
+        silent: true,
+      });
+      const identityText = includeIdentity
+        ? SIDEPILOT_SYSTEM_IDENTITY.content
+        : "";
+      const composed = buildMemoryInjectedPrompt(
+        inputText,
+        allMemoryEntries,
+        rulesContent,
+        { useStructuredOutput, identityText, livePageContext },
+      );
+      promptToSend = composed.prompt;
+      if (includeSystemMsg && useStructuredOutput) {
+        sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
+      }
+      const parts = [];
+      if (includeIdentity) parts.push("id");
+      if (includeMemEntries) parts.push(`${composed.injectedCount} mem`);
+      if (includeRules) parts.push(`rules ${composed.rulesInjected ? "on" : "off"}`);
+      if (composed.livePageInjected) parts.push("page");
+      if (includeSystemMsg && useStructuredOutput) parts.push("sys");
+      if (useStructuredOutput) parts.push("struct");
+      updateSDKMemorySummary(`Packet: ${parts.join(", ")}`);
+    } catch (memoryErr) {
+      console.warn("[SidePilot] Context injection failed:", memoryErr);
+      updateSDKMemorySummary("Context injection unavailable");
+      showToast("Context 載入失敗，本次僅送出原始訊息", "warning");
+    }
+  }
+
+  const sendPayload = {
+    type: "chat",
+    content: promptToSend,
+    systemMessage: sandboxSystemMessage,
+    model: getSelectedSDKModel(),
+  };
+  if (images.length > 0) {
+    sendPayload.images = images;
+  }
+
+  return {
+    rawInput: inputText,
+    displayContent,
+    expectedStructuredResponse,
+    images,
+    sendPayload,
+  };
+}
+
+async function executeSDKSend(requestContext, options = {}) {
+  const addUserMessage = options?.addUserMessage !== false;
+  const rawInput = String(requestContext?.rawInput || "").trim();
+  if (!rawInput) return false;
+
+  dom.sdkSendBtn.disabled = true;
+  if (dom.sdkPrimaryActionBtn) dom.sdkPrimaryActionBtn.disabled = true;
+
+  if (addUserMessage) {
+    addSDKMessage("user", requestContext.displayContent || rawInput);
+  }
+
+  state.pendingChatImages = [];
+  updatePendingImagesBadge();
+  clearSDKDraft();
+  const typingId = addSDKTypingIndicator();
+  setSdkActionState("preparing");
+
+  try {
+    const content = await sendSDKMessageStreamViaBackground(
+      requestContext.sendPayload,
+      {
+        onStatus: (statusName, detail) => {
+          const statusDetail = detail
+            ? `${translateSdkActionState(statusName)} · ${detail}`
+            : translateSdkActionState(statusName);
+          setSdkActionState(statusName, statusDetail);
+        },
+        onTool: (toolName) => {
+          setSdkActionState("tool_running", `工具執行中 · ${toolName}`);
+        },
+      },
+    );
+
+    removeSDKTypingIndicator(typingId);
+
+    const parsed = parseSDKSandboxResponse(content);
+    const hasStructuredBlocks =
+      parsed.hasAssistantBlock || parsed.hasPacketBlock;
+    if (hasStructuredBlocks) {
+      addSDKStructuredAssistantMessage(parsed);
+    } else {
+      addSDKMessage("assistant", parsed.rawContent || content);
+    }
+
+    if (requestContext.expectedStructuredResponse && !parsed.hasAssistantBlock) {
+      showToast("未偵測到 assistant_response 區塊，已顯示原始輸出", "warning");
+    }
+
+    if (parsed.packetObjects.length > 0) {
+      console.debug("[SidePilot] sidepilot_packet:", parsed.packetObjects);
+    }
+
+    persistSDKRetryableRequest(null);
+    setSdkActionState("completed");
+    await refreshSdkMonitorSnapshot();
+    return true;
+  } catch (err) {
+    removeSDKTypingIndicator(typingId);
+    console.error("[SDK Chat]", err);
+
+    if (dom.sdkInput) {
+      dom.sdkInput.value = rawInput;
+      dom.sdkInput.style.height = "auto";
+      dom.sdkInput.style.height = `${dom.sdkInput.scrollHeight}px`;
+    }
+    persistSDKDraft();
+
+    state.pendingChatImages = [...(requestContext.images || [])];
+    updatePendingImagesBadge();
+    persistSDKRetryableRequest({
+      ...requestContext,
+      failedAt: Date.now(),
+      error: err.message,
+    });
+
+    const lowerError = String(err?.message || "").toLowerCase();
+    if (lowerError.includes("bridge server not available")) {
+      addSDKMessage("assistant", buildSDKUnavailableHelpMessage(err.message));
+      showToast("SDK Bridge 尚未啟動，已提供啟動指引", "warning");
+    } else if (lowerError.includes("http 404")) {
+      addSDKMessage("assistant", buildSDK404HelpMessage(err.message));
+      showToast("SDK API 回傳 404，請確認 Bridge 啟動來源", "warning");
+    } else {
+      addSDKMessage("assistant", `❌ Error: ${err.message}`);
+    }
+
+    setSdkActionState("failed", `failed · ${err.message}`);
+    await refreshSdkMonitorSnapshot();
+    return false;
+  } finally {
+    dom.sdkSendBtn.disabled = false;
+    if (dom.sdkPrimaryActionBtn) dom.sdkPrimaryActionBtn.disabled = false;
+    dom.sdkInput?.focus();
+  }
 }
 
 // ============================================
@@ -4124,6 +4940,9 @@ function setupEventListeners() {
   dom.sdkIncludeMemory?.addEventListener("change", () => {
     syncContextChildToggles();
     refreshSDKMemorySummary();
+    if (dom.sdkIncludeMemory.checked) {
+      refreshLivePageContextPreview({ silent: true }).catch(() => {});
+    }
   });
   // Granular context toggles — save state
   [
@@ -4245,6 +5064,10 @@ function setupEventListeners() {
   );
   dom.settingPlayIntroEveryOpen?.addEventListener("change", markSettingsDirty);
   dom.settingShowWarningOverlay?.addEventListener("change", markSettingsDirty);
+  dom.settingDogSleepingEnabled?.addEventListener("change", () => {
+    applyDogSleepingMode(!!dom.settingDogSleepingEnabled?.checked);
+    markSettingsDirty();
+  });
   dom.settingAntigravityBaseUrl?.addEventListener("input", markSettingsDirty);
   dom.settingAntigravityToken?.addEventListener("input", markSettingsDirty);
   dom.settingIframeEnabled?.addEventListener("change", () => {
@@ -4257,34 +5080,21 @@ function setupEventListeners() {
     .getElementById("settingIframeHistoryUrl")
     ?.addEventListener("input", markSettingsDirty);
   dom.openSdkLoginGuideBtn?.addEventListener("click", openSDKLoginPage);
-  dom.testSdkBridgeBtn?.addEventListener("click", async () => {
-    updateSettingsStatus("測試 Bridge 連線中...", "warning");
-    try {
-      const ok = await ensureSDKBridgeConnection({ port: SDK_BRIDGE_PORT });
-      if (ok) {
-        updateSettingsStatus("Bridge 連線成功", "success");
-        showToast("SDK Bridge 已連線");
-        loadSDKModelOptions();
-      } else {
-        updateSettingsStatus("Bridge 未啟動或無法連線", "error");
-        showToast("Bridge 連線失敗，請先啟動本機服務", "error");
-      }
-    } catch (err) {
-      updateSettingsStatus("Bridge 連線失敗", "error");
-      showToast(`Bridge 測試失敗：${err.message}`, "error");
-    }
-  });
   dom.bridgePrimaryBtn?.addEventListener("click", async () => {
     const action = dom.bridgePrimaryBtn?.dataset.action || "start";
-    if (action === "copy-install") {
+    if (action === "copy_manual_command") {
       await copyToClipboard(
         buildBridgeInstallCommand(getEffectiveBridgeRuntime()),
         "Quick Setup 指令已複製",
       );
       return;
     }
+    if (action === "open_login") {
+      openSDKLoginPage();
+      return;
+    }
     if (action === "check") {
-      checkBridgeHealth({ showToast: true });
+      await checkBridgeHealth({ showToast: true });
       return;
     }
 
@@ -4337,15 +5147,17 @@ function setupEventListeners() {
       refreshBridgeSetupUi();
     });
   });
-  dom.antigravityHealthBtn?.addEventListener("click", async () => {
-    await runAntigravityProviderProbe("health", { showToast: true });
-  });
-  dom.antigravityMetaBtn?.addEventListener("click", async () => {
-    await runAntigravityProviderProbe("meta", { showToast: true });
-  });
-  dom.antigravityDetectBtn?.addEventListener("click", async () => {
-    await runAntigravityProviderProbe("detect", { showToast: true });
-  });
+  if (ANTIGRAVITY_UI_ENABLED) {
+    dom.antigravityHealthBtn?.addEventListener("click", async () => {
+      await runAntigravityProviderProbe("health", { showToast: true });
+    });
+    dom.antigravityMetaBtn?.addEventListener("click", async () => {
+      await runAntigravityProviderProbe("meta", { showToast: true });
+    });
+    dom.antigravityDetectBtn?.addEventListener("click", async () => {
+      await runAntigravityProviderProbe("detect", { showToast: true });
+    });
+  }
 
   // SDK Login Guide Modal
   dom.closeSdkLoginModal?.addEventListener("click", () => {
@@ -4391,15 +5203,13 @@ function setupEventListeners() {
     const content = dom.sdkInput?.value?.trim();
     if (!content) return;
 
-    dom.sdkSendBtn.disabled = true;
-
     const bridgeReady = await ensureSDKBridgeReadyWithAutoStart({
       source: "sdk-send",
       showToast: true,
     });
     if (!bridgeReady?.success) {
       const detail =
-        bridgeReady?.detail || bridgeReady?.code || "bridge unavailable";
+        bridgeReady?.detail || bridgeReady?.code || "Bridge 尚未就緒";
       addSDKMessage("assistant", buildSDKUnavailableHelpMessage(detail));
       dom.sdkSendBtn.disabled = false;
       dom.sdkInput?.focus();
@@ -4408,121 +5218,8 @@ function setupEventListeners() {
 
     dom.sdkInput.value = "";
     dom.sdkInput.style.height = "auto"; // Reset height after send
-
-    // Add user message with image indicator
-    const imgCount = state.pendingChatImages.length;
-    const displayContent =
-      imgCount > 0 ? `${content}\n📎 ${imgCount} 張圖片附加` : content;
-    addSDKMessage("user", displayContent);
-
-    // Add typing indicator
-    const typingId = addSDKTypingIndicator();
-    const expectedStructuredResponse =
-      !!dom.sdkIncludeMemory?.checked && !!dom.sdkStructuredOutput?.checked;
-
-    try {
-      let promptToSend = content;
-      let sandboxSystemMessage;
-
-      if (dom.sdkIncludeMemory?.checked) {
-        try {
-          const includeIdentity = !!dom.sdkIncludeIdentity?.checked;
-          const includeMemEntries = !!dom.sdkIncludeMemoryEntries?.checked;
-          const includeRules = !!dom.sdkIncludeRules?.checked;
-          const includeSystemMsg = !!dom.sdkIncludeSystemMsg?.checked;
-          const useStructuredOutput = !!dom.sdkStructuredOutput?.checked;
-
-          const [allMemoryEntries, rulesContent] = await Promise.all([
-            includeMemEntries ? listAllMemoryEntries() : Promise.resolve([]),
-            includeRules
-              ? loadRulesContent().catch(() => "")
-              : Promise.resolve(""),
-          ]);
-          const identityText = includeIdentity
-            ? SIDEPILOT_SYSTEM_IDENTITY.content
-            : "";
-          const composed = buildMemoryInjectedPrompt(
-            content,
-            allMemoryEntries,
-            rulesContent,
-            { useStructuredOutput, identityText },
-          );
-          promptToSend = composed.prompt;
-          if (includeSystemMsg && useStructuredOutput) {
-            sandboxSystemMessage = SIDEPILOT_SANDBOX_SYSTEM_MESSAGE;
-          }
-          const parts = [];
-          if (includeIdentity) parts.push("id");
-          if (includeMemEntries) parts.push(`${composed.injectedCount} mem`);
-          if (includeRules)
-            parts.push(`rules ${composed.rulesInjected ? "on" : "off"}`);
-          if (includeSystemMsg && useStructuredOutput) parts.push("sys");
-          if (useStructuredOutput) parts.push("struct");
-          updateSDKMemorySummary(`Packet: ${parts.join(", ")}`);
-        } catch (memoryErr) {
-          console.warn("[SidePilot] Context injection failed:", memoryErr);
-          updateSDKMemorySummary("Context injection unavailable");
-          showToast("Context 載入失敗，本次僅送出原始訊息", "warning");
-        }
-      }
-
-      const sendPayload = {
-        type: "chat",
-        content: promptToSend,
-        systemMessage: sandboxSystemMessage,
-        model: getSelectedSDKModel(),
-      };
-      // Attach pending screenshots
-      if (state.pendingChatImages.length > 0) {
-        sendPayload.images = [...state.pendingChatImages];
-        state.pendingChatImages = [];
-        updatePendingImagesBadge();
-      }
-
-      const response = await sendSDKMessageViaBackground(sendPayload);
-
-      removeSDKTypingIndicator(typingId);
-
-      if (response.success && response.content) {
-        const parsed = parseSDKSandboxResponse(response.content);
-        const hasStructuredBlocks =
-          parsed.hasAssistantBlock || parsed.hasPacketBlock;
-        if (hasStructuredBlocks) {
-          addSDKStructuredAssistantMessage(parsed);
-        } else {
-          addSDKMessage("assistant", parsed.rawContent || response.content);
-        }
-
-        if (expectedStructuredResponse && !parsed.hasAssistantBlock) {
-          showToast(
-            "未偵測到 assistant_response 區塊，已顯示原始輸出",
-            "warning",
-          );
-        }
-
-        if (parsed.packetObjects.length > 0) {
-          console.debug("[SidePilot] sidepilot_packet:", parsed.packetObjects);
-        }
-      } else {
-        addSDKMessage("assistant", "❌ Failed to get response");
-      }
-    } catch (err) {
-      removeSDKTypingIndicator(typingId);
-      console.error("[SDK Chat]", err);
-      const lowerError = String(err?.message || "").toLowerCase();
-      if (lowerError.includes("bridge server not available")) {
-        addSDKMessage("assistant", buildSDKUnavailableHelpMessage(err.message));
-        showToast("SDK Bridge 尚未啟動，已提供啟動指引", "warning");
-      } else if (lowerError.includes("http 404")) {
-        addSDKMessage("assistant", buildSDK404HelpMessage(err.message));
-        showToast("SDK API 回傳 404，請確認 Bridge 啟動來源", "warning");
-      } else {
-        addSDKMessage("assistant", `❌ Error: ${err.message}`);
-      }
-    } finally {
-      dom.sdkSendBtn.disabled = false;
-      dom.sdkInput?.focus();
-    }
+    const requestContext = await buildSDKSendRequest(content);
+    await executeSDKSend(requestContext);
   });
 
   dom.sdkInput?.addEventListener("keydown", (e) => {
@@ -4533,12 +5230,14 @@ function setupEventListeners() {
       if (rawInput === "/clear") {
         dom.sdkInput.value = "";
         dom.sdkInput.style.height = "auto";
+        clearSDKDraft();
         clearSDKChatMessages();
         return;
       }
       if (rawInput === "/help") {
         dom.sdkInput.value = "";
         dom.sdkInput.style.height = "auto";
+        clearSDKDraft();
         showSDKHelpMessage();
         return;
       }
@@ -4554,10 +5253,48 @@ function setupEventListeners() {
     clearSDKChatMessages();
   });
 
+  dom.sdkPrimaryActionBtn?.addEventListener("click", async () => {
+    const action = dom.sdkPrimaryActionBtn?.dataset.action || "bridge-resync";
+    if (action === "retry-send") {
+      if (!state.sdkRetryableRequest) return;
+      await executeSDKSend(state.sdkRetryableRequest);
+      return;
+    }
+    if (action === "open-login") {
+      openSDKLoginPage();
+      return;
+    }
+    if (action === "bridge-start") {
+      const result = await ensureSDKBridgeReadyWithAutoStart({
+        source: "sdk-primary-action",
+        force: true,
+        bypassCooldown: true,
+        showToast: true,
+      });
+      if (!result?.success) {
+        showToast(result?.detail || result?.code || "Bridge 尚未就緒", "warning");
+      }
+      await refreshSdkMonitorSnapshot();
+      return;
+    }
+
+    const success = await runSdkFullResync({
+      reason: "manual",
+      forceAutoStart: true,
+    });
+    showToast(success ? "SDK 已重新同步" : "SDK 重新同步失敗", success ? "success" : "error");
+  });
+
+  dom.sdkStatusDetailsToggleBtn?.addEventListener("click", () => {
+    state.sdkStatusChainExpanded = !state.sdkStatusChainExpanded;
+    renderSdkStatusPanel();
+  });
+
   // Auto-resize for SDK Input
   dom.sdkInput?.addEventListener("input", function () {
     this.style.height = "auto";
     this.style.height = this.scrollHeight + "px";
+    persistSDKDraft();
   });
 
   // Code block copy buttons — event delegation on message list
@@ -5199,6 +5936,10 @@ function applySettingsSectionSideEffects(section, expanded) {
   }
 
   if (section.id === "settingsSectionProviders") {
+    if (!ANTIGRAVITY_UI_ENABLED) {
+      stopAntigravitySectionPolling();
+      return;
+    }
     if (expanded && state.currentTab === "settings") {
       startAntigravitySectionPolling();
     } else {
@@ -5293,7 +6034,7 @@ async function setModeFromUI(mode) {
       });
       if (!bridgeResult?.success) {
         const detail =
-          bridgeResult?.detail || bridgeResult?.code || "bridge unavailable";
+          bridgeResult?.detail || bridgeResult?.code || "Bridge 尚未就緒";
         showToast("SDK Bridge 未連線，請先啟動本機 bridge server", "warning");
         addSDKMessage("assistant", buildSDKUnavailableHelpMessage(detail));
       } else {
@@ -5321,6 +6062,245 @@ function requestPageContent() {
       resolve(response || { success: false, error: "無法取得頁面內容" });
     });
   });
+}
+
+function truncateInlineText(text, maxLength) {
+  if (typeof text !== "string") return "";
+  const normalized = text.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function derivePageIntentGuess(content = {}) {
+  const url = String(content.url || "");
+  const title = String(content.title || "").toLowerCase();
+  if (/github\.com\/.+\/pull\//i.test(url)) return "review_code_changes";
+  if (/github\.com\/.+\/issues\//i.test(url)) return "triage_issue";
+  if (/github\.com\/.+\/blob\//i.test(url)) return "read_source_file";
+  if (/docs|guide|readme|documentation/i.test(`${url} ${title}`)) {
+    return "read_documentation";
+  }
+  if (/settings|preferences|configuration/i.test(`${url} ${title}`)) {
+    return "change_settings";
+  }
+  return "general_page_review";
+}
+
+function buildLivePageContextPacket(content = {}) {
+  if (!content || typeof content !== "object") return null;
+
+  const title = truncateInlineText(content.title || "", 160);
+  const url = String(content.url || "").trim();
+  if (!title && !url) return null;
+
+  let origin = "";
+  try {
+    origin = url ? new URL(url).origin : "";
+  } catch {
+    origin = "";
+  }
+
+  const description =
+    content.meta?.description || content.meta?.["og:description"] || "";
+  const firstParagraph = Array.isArray(content.paragraphs)
+    ? content.paragraphs.find((item) => typeof item === "string" && item.trim())
+    : "";
+  const semanticSummary = truncateInlineText(
+    description || firstParagraph || content.text || "",
+    LIVE_PAGE_CONTEXT_SUMMARY_MAX_LENGTH,
+  );
+  const sectionLabels = Array.isArray(content.headings)
+    ? content.headings
+        .map((heading) => truncateInlineText(heading?.text || "", 80))
+        .filter(Boolean)
+        .slice(0, LIVE_PAGE_CONTEXT_HEADING_LIMIT)
+    : [];
+  const notableBlocks = Array.isArray(content.codeBlocks)
+    ? content.codeBlocks
+        .slice(0, LIVE_PAGE_CONTEXT_CODE_BLOCK_LIMIT)
+        .map((block, index) => ({
+          kind: "code",
+          label: truncateInlineText(
+            `Code ${index + 1}: ${block?.language || "plaintext"}`,
+            80,
+          ),
+          language: truncateInlineText(block?.language || "plaintext", 32),
+          preview: truncateInlineText(block?.code || "", 180),
+        }))
+    : [];
+  const selectedText = truncateInlineText(
+    content.selectedText || "",
+    LIVE_PAGE_CONTEXT_SELECTED_TEXT_MAX_LENGTH,
+  );
+
+  return {
+    pageIdentity: {
+      title: title || "(untitled)",
+      url,
+      origin,
+      extractor: content.extractor || "basic",
+    },
+    semanticSummary: {
+      summary: semanticSummary || null,
+      sections: sectionLabels,
+      wordCount: Number(content.wordCount) || 0,
+      charCount: Number(content.charCount) || 0,
+    },
+    selectedRegion: selectedText
+      ? {
+          kind: "selection",
+          text: selectedText,
+        }
+      : null,
+    notableBlocks,
+    pageIntentGuess: derivePageIntentGuess(content),
+    freshness: {
+      capturedAt: new Date().toISOString(),
+      stale: false,
+    },
+  };
+}
+
+function formatLivePageContextForPrompt(packet) {
+  if (!packet || typeof packet !== "object") return "";
+
+  const lines = [];
+  const title = packet.pageIdentity?.title || "(untitled)";
+  const url = packet.pageIdentity?.url || "";
+  const summary = packet.semanticSummary?.summary || "";
+  const sections = Array.isArray(packet.semanticSummary?.sections)
+    ? packet.semanticSummary.sections
+    : [];
+  const selected = packet.selectedRegion?.text || "";
+  const blocks = Array.isArray(packet.notableBlocks)
+    ? packet.notableBlocks
+    : [];
+
+  lines.push(`Title: ${title}`);
+  if (url) lines.push(`URL: ${url}`);
+  if (packet.pageIntentGuess) lines.push(`Intent Guess: ${packet.pageIntentGuess}`);
+  if (summary) lines.push(`Summary: ${summary}`);
+  if (sections.length > 0) lines.push(`Sections: ${sections.join(" | ")}`);
+  if (selected) lines.push(`Selected Text: ${selected}`);
+  if (blocks.length > 0) {
+    lines.push(
+      `Notable Blocks: ${blocks
+        .map((block) => `${block.label}${block.preview ? ` -> ${block.preview}` : ""}`)
+        .join(" | ")}`,
+    );
+  }
+
+  return lines.join("\n");
+}
+
+function formatLivePageContextPreview(packet) {
+  if (!packet) return "Live Page: waiting for page context...";
+
+  const title = packet.pageIdentity?.title || "(untitled)";
+  const summary = packet.semanticSummary?.summary || "No summary available yet.";
+  const sectionCount = Array.isArray(packet.semanticSummary?.sections)
+    ? packet.semanticSummary.sections.length
+    : 0;
+  const blockCount = Array.isArray(packet.notableBlocks)
+    ? packet.notableBlocks.length
+    : 0;
+  const selected = packet.selectedRegion?.text
+    ? `Selection active (${truncateInlineText(packet.selectedRegion.text, 72)})`
+    : "No selection";
+
+  return [
+    `Live Page: ${truncateInlineText(title, 96)}`,
+    `${truncateInlineText(summary, 140)}`,
+    `Sections ${sectionCount} · Code Blocks ${blockCount} · ${selected}`,
+  ].join("\n");
+}
+
+function renderLivePageContextPreview() {
+  if (!dom.sdkLiveContextPreview) return;
+
+  if (!dom.sdkIncludeMemory?.checked) {
+    dom.sdkLiveContextPreview.dataset.state = "disabled";
+    dom.sdkLiveContextPreview.textContent =
+      "Live Page: context injection is off.";
+    dom.sdkLiveContextPreview.title = "";
+    return;
+  }
+
+  if (state.livePageContextError) {
+    dom.sdkLiveContextPreview.dataset.state = "error";
+    dom.sdkLiveContextPreview.textContent = `Live Page: ${state.livePageContextError}`;
+    dom.sdkLiveContextPreview.title = state.livePageContextError;
+    return;
+  }
+
+  if (!state.livePageContextPacket) {
+    dom.sdkLiveContextPreview.dataset.state = "disabled";
+    dom.sdkLiveContextPreview.textContent =
+      "Live Page: waiting for page context...";
+    dom.sdkLiveContextPreview.title = "";
+    return;
+  }
+
+  dom.sdkLiveContextPreview.dataset.state = "ready";
+  dom.sdkLiveContextPreview.textContent = formatLivePageContextPreview(
+    state.livePageContextPacket,
+  );
+  dom.sdkLiveContextPreview.title =
+    state.livePageContextPacket.pageIdentity?.url || "";
+}
+
+function isLivePageContextFresh(packet) {
+  if (!packet || !state.livePageContextUpdatedAt) return false;
+  return (
+    Date.now() - state.livePageContextUpdatedAt <= LIVE_PAGE_CONTEXT_MAX_AGE_MS
+  );
+}
+
+async function refreshLivePageContextPreview(options = {}) {
+  if (state.livePageContextRefreshInFlight) {
+    return state.livePageContextRefreshInFlight;
+  }
+
+  state.livePageContextRefreshInFlight = (async () => {
+    const result = await requestPageContent();
+    if (result?.success && result.content) {
+      state.currentPageContent = result.content;
+      state.livePageContextPacket = buildLivePageContextPacket(result.content);
+      state.livePageContextError = state.livePageContextPacket
+        ? ""
+        : "page context unavailable";
+      state.livePageContextUpdatedAt = Date.now();
+      updatePageInfo(result.title, result.url);
+    } else {
+      state.livePageContextPacket = null;
+      state.livePageContextError =
+        result?.error || "unable to read page context";
+      state.livePageContextUpdatedAt = 0;
+      if (!options.silent) {
+        console.warn(
+          "[SidePilot] Live page context refresh failed:",
+          state.livePageContextError,
+        );
+      }
+    }
+
+    renderLivePageContextPreview();
+    refreshSDKMemorySummary();
+    return state.livePageContextPacket;
+  })();
+
+  try {
+    return await state.livePageContextRefreshInFlight;
+  } finally {
+    state.livePageContextRefreshInFlight = null;
+  }
+}
+
+async function ensureLivePageContext(options = {}) {
+  if (isLivePageContextFresh(state.livePageContextPacket) && !options.forceRefresh) {
+    return state.livePageContextPacket;
+  }
+  return refreshLivePageContextPreview(options);
 }
 
 function requestVisibleScreenshot() {
@@ -5638,7 +6618,11 @@ function buildMemoryInjectedPrompt(
   rulesContent = "",
   options = {},
 ) {
-  const { useStructuredOutput = true, identityText = "" } = options;
+  const {
+    useStructuredOutput = true,
+    identityText = "",
+    livePageContext = null,
+  } = options;
   const selectedEntries = pickMemoryEntriesForPrompt(memoryEntries, userInput);
 
   let usedMemoryLength = 0;
@@ -5667,10 +6651,12 @@ function buildMemoryInjectedPrompt(
       identity: identityText || null,
       rules: rulesInjected ? normalizedRules : null,
       memory: memoryPacket.length > 0 ? memoryPacket : null,
+      live_page: livePageContext || null,
     },
     user_message: userInput,
     instructions: [
       "Use memory and rules only when relevant.",
+      "Treat live page context as the freshest browser-side context when present.",
       "If context conflicts with the latest user message, prioritize the latest user message.",
       "In sidepilot_packet.used_memory_ids, include only ids you actually used.",
       "Do not reveal chain-of-thought.",
@@ -5694,6 +6680,7 @@ function buildMemoryInjectedPrompt(
       prompt: lines.join("\n"),
       injectedCount: memoryPacket.length,
       rulesInjected,
+      livePageInjected: !!livePageContext,
     };
   }
 
@@ -5721,12 +6708,21 @@ function buildMemoryInjectedPrompt(
     });
   }
 
+  if (livePageContext) {
+    plainSections.push(
+      "",
+      "[Live Page Context]",
+      formatLivePageContextForPrompt(livePageContext),
+    );
+  }
+
   plainSections.push("", "[User Message]", userInput);
 
   return {
     prompt: plainSections.join("\n"),
     injectedCount: memoryPacket.length,
     rulesInjected,
+    livePageInjected: !!livePageContext,
   };
 }
 
@@ -5760,12 +6756,14 @@ function refreshSDKMemorySummary() {
   const masterOn = !!dom.sdkIncludeMemory?.checked;
   if (!masterOn) {
     updateSDKMemorySummary("Context: off");
+    renderLivePageContextPreview();
     return;
   }
   const parts = [];
   if (dom.sdkIncludeIdentity?.checked) parts.push("id");
   if (dom.sdkIncludeMemoryEntries?.checked) parts.push("mem");
   if (dom.sdkIncludeRules?.checked) parts.push("rules");
+  if (state.livePageContextPacket) parts.push("page");
   if (dom.sdkStructuredOutput?.checked) {
     if (dom.sdkIncludeSystemMsg?.checked) parts.push("sys");
     parts.push("struct");
@@ -5775,6 +6773,7 @@ function refreshSDKMemorySummary() {
       ? `Context: ${parts.join(", ")}`
       : "Context: on (none selected)",
   );
+  renderLivePageContextPreview();
 }
 
 function applySDKAssistantOnlyMode() {
@@ -5933,6 +6932,7 @@ async function copyToClipboard(text, successMessage) {
 function handleBackgroundMessage(message, sender, sendResponse) {
   if (message.action === "tabUpdated" || message.action === "tabActivated") {
     updatePageInfo(message.title, message.url);
+    refreshLivePageContextPreview({ silent: true }).catch(() => {});
 
     // 如果擷取面板開啟中，重新載入內容
     if (state.isCapturePanelOpen) {
@@ -6071,9 +7071,13 @@ async function copyLogsToClipboard() {
 // Bridge real-time log SSE
 function connectBridgeLogSSE() {
   disconnectBridgeLogSSE();
+  state.bridgeLogStreamState = "connecting";
+  refreshSdkMonitorSnapshot().catch(() => {});
   createAuthorizedBridgeEventSource("/api/logs/stream")
     .then((eventSource) => {
       state.bridgeLogSSE = eventSource;
+      state.bridgeLogStreamState = "connected";
+      refreshSdkMonitorSnapshot().catch(() => {});
     state.bridgeLogSSE.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -6084,11 +7088,13 @@ function connectBridgeLogSSE() {
       }
     };
     state.bridgeLogSSE.onerror = () => {
-      // Will auto-reconnect; don't flood logs
+      state.bridgeLogStreamState = "error";
+      refreshSdkMonitorSnapshot().catch(() => {});
     };
     })
     .catch(() => {
-    // Bridge not available
+    state.bridgeLogStreamState = "error";
+    refreshSdkMonitorSnapshot().catch(() => {});
     });
 }
 
@@ -6097,6 +7103,7 @@ function disconnectBridgeLogSSE() {
     state.bridgeLogSSE.close();
     state.bridgeLogSSE = null;
   }
+  state.bridgeLogStreamState = "idle";
 }
 
 // ============================================
@@ -6585,7 +7592,7 @@ function detectContentFormat(rawContent) {
     return {
       type: "markdown",
       label: "markdown",
-      html: renderMarkdownToHtml(raw),
+      text: raw,
     };
   }
 
@@ -6624,56 +7631,75 @@ function looksLikeMarkdown(text) {
   return false;
 }
 
-function renderMarkdownToHtml(input) {
-  const source = String(input || "").replace(/\r\n/g, "\n");
-  const segments = [];
+function sanitizeUrl(rawUrl) {
+  const value = String(rawUrl || "").trim();
+  if (!value) return null;
+
+  try {
+    const parsed = new URL(value, window.location.href);
+    if (!["http:", "https:", "mailto:"].includes(parsed.protocol)) {
+      return null;
+    }
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function appendMarkdownInlineNodes(container, text) {
+  const source = String(text || "");
+  const inlinePattern = /`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*|\[([^\]]+)\]\(([^)]+)\)/g;
   let lastIndex = 0;
-  const fencePattern = /```([^\n]*)\n([\s\S]*?)```/g;
   let match;
 
-  while ((match = fencePattern.exec(source)) !== null) {
+  while ((match = inlinePattern.exec(source)) !== null) {
     if (match.index > lastIndex) {
-      segments.push({
-        type: "text",
-        content: source.slice(lastIndex, match.index),
-      });
+      container.appendChild(
+        document.createTextNode(source.slice(lastIndex, match.index)),
+      );
     }
-    segments.push({
-      type: "code",
-      lang: (match[1] || "").trim(),
-      content: match[2] || "",
-    });
-    lastIndex = fencePattern.lastIndex;
+
+    if (match[1] !== undefined) {
+      const codeEl = document.createElement("code");
+      codeEl.textContent = match[1];
+      container.appendChild(codeEl);
+    } else if (match[2] !== undefined) {
+      const strongEl = document.createElement("strong");
+      strongEl.textContent = match[2];
+      container.appendChild(strongEl);
+    } else if (match[3] !== undefined) {
+      const emEl = document.createElement("em");
+      emEl.textContent = match[3];
+      container.appendChild(emEl);
+    } else {
+      const href = sanitizeUrl(match[5]);
+      if (href) {
+        const linkEl = document.createElement("a");
+        linkEl.href = href;
+        linkEl.target = "_blank";
+        linkEl.rel = "noopener noreferrer";
+        linkEl.textContent = match[4] || href;
+        container.appendChild(linkEl);
+      } else {
+        container.appendChild(document.createTextNode(match[4] || ""));
+      }
+    }
+
+    lastIndex = inlinePattern.lastIndex;
   }
 
   if (lastIndex < source.length) {
-    segments.push({ type: "text", content: source.slice(lastIndex) });
+    container.appendChild(document.createTextNode(source.slice(lastIndex)));
   }
-
-  const htmlParts = segments.map((segment) => {
-    if (segment.type === "code") {
-      const code = escapeHtml(segment.content);
-      const langClass = segment.lang
-        ? ` class="language-${escapeAttr(segment.lang)}"`
-        : "";
-      return `<pre><code${langClass}>${code}</code></pre>`;
-    }
-    return renderMarkdownText(segment.content || "");
-  });
-
-  return htmlParts.join("");
 }
 
-function renderMarkdownText(text) {
+function renderMarkdownTextFragment(text) {
+  const fragment = document.createDocumentFragment();
   const lines = String(text || "").split("\n");
-  const html = [];
-  let inList = false;
+  let currentList = null;
 
   const closeList = () => {
-    if (inList) {
-      html.push("</ul>");
-      inList = false;
-    }
+    currentList = null;
   };
 
   lines.forEach((line) => {
@@ -6681,19 +7707,21 @@ function renderMarkdownText(text) {
     const headingMatch = /^(#{1,3})\s+(.+)$/.exec(trimmed);
     if (headingMatch) {
       closeList();
-      const level = headingMatch[1].length;
-      const content = renderMarkdownInline(headingMatch[2]);
-      html.push(`<h${level}>${content}</h${level}>`);
+      const headingEl = document.createElement(`h${headingMatch[1].length}`);
+      appendMarkdownInlineNodes(headingEl, headingMatch[2]);
+      fragment.appendChild(headingEl);
       return;
     }
 
     if (/^[-*+]\s+/.test(trimmed)) {
       const itemText = trimmed.replace(/^[-*+]\s+/, "");
-      if (!inList) {
-        html.push("<ul>");
-        inList = true;
+      if (!currentList) {
+        currentList = document.createElement("ul");
+        fragment.appendChild(currentList);
       }
-      html.push(`<li>${renderMarkdownInline(itemText)}</li>`);
+      const itemEl = document.createElement("li");
+      appendMarkdownInlineNodes(itemEl, itemText);
+      currentList.appendChild(itemEl);
       return;
     }
 
@@ -6703,31 +7731,45 @@ function renderMarkdownText(text) {
     }
 
     closeList();
-    html.push(`<p>${renderMarkdownInline(trimmed)}</p>`);
+    const paragraphEl = document.createElement("p");
+    appendMarkdownInlineNodes(paragraphEl, trimmed);
+    fragment.appendChild(paragraphEl);
   });
 
-  closeList();
-  return html.join("");
+  return fragment;
 }
 
-function renderMarkdownInline(text) {
-  let output = escapeHtml(text);
-  output = output.replace(
-    /`([^`]+)`/g,
-    (_match, code) => `<code>${code}</code>`,
-  );
-  output = output.replace(
-    /\*\*([^*]+)\*\*/g,
-    (_match, bold) => `<strong>${bold}</strong>`,
-  );
-  output = output.replace(
-    /\*([^*]+)\*/g,
-    (_match, italic) => `<em>${italic}</em>`,
-  );
-  output = output.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label, url) => {
-    return `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
-  });
-  return output;
+function renderMarkdownToFragment(input) {
+  const source = String(input || "").replace(/\r\n/g, "\n");
+  const fragment = document.createDocumentFragment();
+  let lastIndex = 0;
+  const fencePattern = /```([^\n]*)\n([\s\S]*?)```/g;
+  let match;
+
+  while ((match = fencePattern.exec(source)) !== null) {
+    if (match.index > lastIndex) {
+      fragment.appendChild(
+        renderMarkdownTextFragment(source.slice(lastIndex, match.index)),
+      );
+    }
+
+    const preEl = document.createElement("pre");
+    const codeEl = document.createElement("code");
+    const language = (match[1] || "").trim();
+    if (language) {
+      codeEl.className = `language-${language.replace(/[^a-z0-9_-]/gi, "")}`;
+    }
+    codeEl.textContent = match[2] || "";
+    preEl.appendChild(codeEl);
+    fragment.appendChild(preEl);
+    lastIndex = fencePattern.lastIndex;
+  }
+
+  if (lastIndex < source.length) {
+    fragment.appendChild(renderMarkdownTextFragment(source.slice(lastIndex)));
+  }
+
+  return fragment;
 }
 
 function parseSDKSandboxResponse(rawContent) {
@@ -6860,7 +7902,7 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
 
     if (isMarkdown) {
       bodyEl.classList.add("markdown");
-      bodyEl.innerHTML = format.html || "";
+      bodyEl.appendChild(renderMarkdownToFragment(format.text || ""));
     } else {
       bodyEl.textContent = (format.text || "").trim() || "(empty)";
     }
@@ -6895,6 +7937,7 @@ function addSDKStructuredAssistantMessage(parsedResponse) {
 function clearSDKChatMessages() {
   if (!dom.sdkMessages) return;
   dom.sdkMessages.innerHTML = "";
+  setSdkActionState("standby");
   addSDKMessage("assistant", "🧹 對話已清空，可以開始新的問題了！");
 }
 
@@ -7024,11 +8067,15 @@ function schedulePermissionSSEReconnect() {
 
 function connectPermissionSSE() {
   disconnectPermissionSSE();
+  state.permissionStreamState = "connecting";
+  refreshSdkMonitorSnapshot().catch(() => {});
   createAuthorizedBridgeEventSource("/api/permissions/stream", {
     forceRefresh: true,
   })
     .then((eventSource) => {
       state.permissionSSE = eventSource;
+      state.permissionStreamState = "connected";
+      refreshSdkMonitorSnapshot().catch(() => {});
     state.permissionSSE.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
@@ -7051,11 +8098,15 @@ function connectPermissionSSE() {
       }
     });
     state.permissionSSE.onerror = () => {
+      state.permissionStreamState = "error";
+      refreshSdkMonitorSnapshot().catch(() => {});
       disconnectPermissionSSE();
       schedulePermissionSSEReconnect();
     };
     })
     .catch(() => {
+    state.permissionStreamState = "error";
+    refreshSdkMonitorSnapshot().catch(() => {});
     schedulePermissionSSEReconnect();
     });
 }
@@ -7069,6 +8120,7 @@ function disconnectPermissionSSE() {
     clearTimeout(state.permissionSSEReconnectTimer);
     state.permissionSSEReconnectTimer = null;
   }
+  state.permissionStreamState = "idle";
 }
 
 let _currentPermissionId = null;
@@ -7114,6 +8166,7 @@ function showPermissionModal(permission) {
 
   dom.permissionModal.classList.remove("hidden");
   startPermissionCountdown(60);
+  setSdkActionState("permission_required", `permission_required · ${permission.scope || "unknown"}`);
   addLog(
     "info",
     `[Permission] 收到權限請求: ${permission.scope} (options: ${_currentPermissionOptions.length})`,
@@ -7170,6 +8223,8 @@ async function resolvePermission(decision) {
       "info",
       `[Permission] ${approved ? "已允許" : "已拒絕"}: ${permId}${approved && optionId ? ` (option: ${optionId})` : ""}`,
     );
+    setSdkActionState("waiting_cli", "waiting_cli");
+    refreshSdkMonitorSnapshot().catch(() => {});
   } catch (err) {
     addLog("error", `[Permission] 解析失敗: ${err.message}`);
   }

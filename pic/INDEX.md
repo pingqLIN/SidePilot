@@ -40,7 +40,7 @@
 | 15  | `15-sdk-model-select.png`       | SDK 模式 — 模型選擇  | 模型下拉選單（gpt-4.1、gpt-5、claude 等）    |
 | 16  | `16-rules-templates.png`        | Rules 分頁           | 樣板選擇下拉（TypeScript、自我疊代、絕對安全等）|
 | 17  | `17-settings-language.png`      | Settings — Language  | UI 語言選擇 + Display Scale 滑桿 + Startup 開關 |
-| 18  | `18-settings-bridge.png`        | Settings — Bridge    | Bridge Setup 狀態列 + Auto-start + Provider Probe |
+| 18  | `18-settings-bridge.png`        | Settings — Bridge    | Bridge Setup 的 Quick Start、Connection Details 與 Advanced |
 | 19  | `19-page-capture.png`           | Page Capture 面板    | A 文字擷取 + B 頁面截圖 雙欄面板              |
 | 20  | `20-history-tab.png`            | History 分頁         | 對話歷史瀏覽（含 memory/context 標籤）        |
 | 21  | `21-logs-tab.png`               | Logs 分頁            | 即時 INFO 日誌串流                            |

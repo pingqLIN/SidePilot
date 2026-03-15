@@ -10,10 +10,6 @@ const STORAGE_KEYS = {
   LAST_CHECK: 'sidepilot.mode.lastCheck'
 };
 
-// Copilot Bridge server health endpoint (scripts/copilot-bridge)
-const SDK_HEALTH_URL = 'http://localhost:31031/health';
-const DETECTION_TIMEOUT_MS = 5000;
-
 // ============================================
 // Module State
 // ============================================
@@ -83,7 +79,7 @@ function notifyListeners(newMode) {
 
 /**
  * Initialize the mode manager module.
- * Loads persisted mode from storage and runs detection.
+ * Loads the persisted mode only; bridge availability is handled elsewhere.
  * @returns {Promise<void>}
  */
 async function init() {
@@ -92,25 +88,8 @@ async function init() {
   }
 
   try {
-    // Load persisted mode first
     const stored = await loadFromStorage();
-    if (stored.mode) {
-      currentMode = stored.mode;
-    }
-
-    // Run fresh detection
-    const detectedMode = await detectMode();
-    
-    // Update if different from stored
-    if (detectedMode !== currentMode) {
-      const oldMode = currentMode;
-      currentMode = detectedMode;
-      await saveToStorage(currentMode);
-      if (oldMode !== null) {
-        notifyListeners(currentMode);
-      }
-    }
-
+    currentMode = stored.mode || 'iframe';
     initialized = true;
   } catch (err) {
     console.error('[ModeManager] Init failed:', err);
@@ -144,34 +123,15 @@ function getStatus() {
 }
 
 /**
- * Detect whether SDK mode is available.
- * Checks localhost:3000/health endpoint with 5s timeout.
+ * Return the preferred UI mode.
+ * This module no longer probes localhost directly.
  * @returns {Promise<'sdk'|'iframe'>}
  */
 async function detectMode() {
   if (typeof customDetector === 'function') {
     return customDetector();
   }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), DETECTION_TIMEOUT_MS);
-
-    const response = await fetch(SDK_HEALTH_URL, {
-      method: 'GET',
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      return 'sdk';
-    }
-    return 'iframe';
-  } catch (err) {
-    // Network error, timeout, or abort - fall back to iframe
-    return 'iframe';
-  }
+  return currentMode || 'iframe';
 }
 
 function setModeDetector(detector) {

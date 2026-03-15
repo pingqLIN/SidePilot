@@ -134,7 +134,7 @@ copilot auth login
 
 ### Step B5: Verify Connection
 
-**From extension:** Settings → Bridge Setup → Click **Health Check** → indicator must be green.
+**From extension:** Settings → Bridge Setup → the Quick Start card should say **Bridge Ready**, and Connection Details should show a live Bridge / CLI state.
 
 **From terminal:**
 

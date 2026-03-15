@@ -10,7 +10,7 @@ import type { Request, Response } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SessionManager } from './session-manager.js';
@@ -19,6 +19,8 @@ import type { SupervisorMessage, WorkerReadyMessage, WorkerHeartbeatMessage } fr
 
 const PORT = parseInt(process.env.PORT || '31031', 10);
 const HEARTBEAT_INTERVAL_MS = 10_000;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const MAX_REQUEST_TIMEOUT_MS = 120_000;
 const isForked = !!process.send;
 const EXTENSION_ID = String(process.env.SIDEPILOT_EXTENSION_ID || '').trim().toLowerCase();
 const BRIDGE_AUTH_TOKEN = randomUUID().replace(/-/g, '');
@@ -31,7 +33,7 @@ app.use(cors({
     // Allow requests from Chrome extension pages.
     // Requests with no Origin header come from direct local tool calls (e.g. curl)
     // which are already constrained to localhost by the 127.0.0.1 binding below.
-    if (!origin || origin.startsWith('chrome-extension://')) {
+    if (!origin || isAllowedCorsOrigin(origin)) {
       callback(null, true);
     } else {
       callback(new Error('CORS policy: Origin not allowed'));
@@ -50,9 +52,44 @@ const BRIDGE_ROOT = resolve(__dirname, '..');
 const PROJECT_ROOT = resolve(BRIDGE_ROOT, '..', '..');
 const SEAL_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'seal-integrity.mjs');
 const VERIFY_SCRIPT_PATH = join(PROJECT_ROOT, 'scripts', 'verify-integrity.mjs');
+const BRIDGE_PACKAGE_JSON_PATH = join(BRIDGE_ROOT, 'package.json');
+const BRIDGE_STATUS_API_VERSION = '2026-03-bridge-status-v1';
+
+function readBridgeVersion(): string {
+  try {
+    const parsed = JSON.parse(readFileSync(BRIDGE_PACKAGE_JSON_PATH, 'utf-8'));
+    return typeof parsed?.version === 'string' ? parsed.version : '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
+
+const BRIDGE_VERSION = readBridgeVersion();
 
 function isLikelyExtensionId(value: string): boolean {
   return /^[a-p]{32}$/i.test(String(value || '').trim());
+}
+
+function isValidChromeExtensionOrigin(origin: string): boolean {
+  return /^chrome-extension:\/\/[a-p]{32}$/i.test(String(origin || '').trim());
+}
+
+function isAllowedCorsOrigin(origin: string): boolean {
+  const trimmedOrigin = String(origin || '').trim();
+  if (!trimmedOrigin) return true;
+  if (isExtensionBindingConfigured()) {
+    return trimmedOrigin === getExpectedExtensionOrigin();
+  }
+  return isValidChromeExtensionOrigin(trimmedOrigin);
+}
+
+function parseBoundedTimeout(value: unknown, defaultMs = DEFAULT_REQUEST_TIMEOUT_MS): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return defaultMs;
+  }
+  const rounded = Math.trunc(parsed);
+  return Math.min(MAX_REQUEST_TIMEOUT_MS, Math.max(1_000, rounded));
 }
 
 function getExpectedExtensionOrigin(): string {
@@ -242,6 +279,55 @@ app.get('/health', (_req, res) => {
       extensionBindingConfigured: isExtensionBindingConfigured(),
       extensionOrigin: getExpectedExtensionOrigin() || null,
     }
+  });
+});
+
+app.get('/api/status', (_req, res) => {
+  const backend = sessionManager.getBackendInfo();
+  const runtime = sessionManager.getRuntimeStatus();
+  const availability =
+    runtime.sdkState === 'idle' ||
+    runtime.sdkState === 'ready' ||
+    runtime.sdkState === 'connected'
+      ? 'ready'
+      : 'degraded';
+  const lastErrorMessage = runtime.prompt?.lastError || null;
+  const lastErrorAt =
+    runtime.prompt?.lastActivityAt || runtime.prompt?.startedAt || null;
+  res.json({
+    success: true,
+    bridge: {
+      service: 'sidepilot-copilot-bridge',
+      version: BRIDGE_VERSION,
+      port: PORT,
+      availability,
+      authConfigured: isExtensionBindingConfigured(),
+      launcherConfigured: null,
+      backend,
+    },
+    cli: runtime,
+    compatibility: {
+      apiVersion: BRIDGE_STATUS_API_VERSION,
+      supported: true,
+      missingCapabilities: [],
+    },
+    runtime: {
+      selected: null,
+      resolved: null,
+      repoRoot: null,
+      wslDistro: null,
+    },
+    auth: {
+      required: true,
+      bootstrapPath: '/api/auth/bootstrap',
+      extensionBindingConfigured: isExtensionBindingConfigured(),
+      extensionOrigin: getExpectedExtensionOrigin() || null,
+    },
+    lastError: {
+      code: lastErrorMessage ? 'BRG-CLI-DEGRADED' : null,
+      message: lastErrorMessage,
+      at: lastErrorAt,
+    },
   });
 });
 
@@ -479,7 +565,7 @@ app.post('/api/prompt/strategy', (req, res) => {
 app.post('/api/integrity/auto-seal', async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
   const dryRun = !!req.body?.dryRun;
-  const timeoutMs = Number(req.body?.timeoutMs) || 30_000;
+  const timeoutMs = parseBoundedTimeout(req.body?.timeoutMs);
 
   try {
     const result = await runSealIntegrityScript({ dryRun, timeoutMs });
@@ -512,7 +598,7 @@ app.post('/api/integrity/auto-seal', async (req, res) => {
  */
 app.post('/api/integrity/verify', async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
-  const timeoutMs = Number(req.body?.timeoutMs) || 30_000;
+  const timeoutMs = parseBoundedTimeout(req.body?.timeoutMs);
 
   try {
     const result = await runVerifyIntegrityScript({ timeoutMs });
@@ -567,7 +653,9 @@ app.post('/api/chat', async (req, res) => {
     // 取得或建立 session
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
     // WP-02: 傳遞 timeout 到 sendPrompt
-    const timeout = req.body.timeout ? parseInt(req.body.timeout, 10) : undefined;
+    const timeout = req.body.timeout !== undefined
+      ? parseBoundedTimeout(req.body.timeout, DEFAULT_REQUEST_TIMEOUT_MS)
+      : undefined;
     const result = await sessionManager.sendPrompt(session.sessionId, prompt, (update) => {
       if (update?.sessionUpdate === 'agent_message_chunk') {
         const content = update?.content;
@@ -624,7 +712,9 @@ app.post('/api/chat/sync', async (req, res) => {
   try {
     const session = await sessionManager.getOrCreateSession(sessionId, { model });
     // WP-02: 傳遞 timeout
-    const timeout = req.body.timeout ? parseInt(req.body.timeout, 10) : undefined;
+    const timeout = req.body.timeout !== undefined
+      ? parseBoundedTimeout(req.body.timeout, DEFAULT_REQUEST_TIMEOUT_MS)
+      : undefined;
     const response = await sessionManager.sendPrompt(session.sessionId, prompt, undefined, images, timeout);
 
     // Auto-record to history

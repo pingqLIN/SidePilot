@@ -43,6 +43,7 @@ http://localhost:31031
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/health` | None | Bridge status check |
+| GET | `/api/status` | Required | Full control-plane snapshot for Bridge Setup / SDK status UI |
 | POST | `/api/auth/bootstrap` | None (first call) | Issue loopback token |
 | GET | `/api/models` | Required | List available AI models |
 | POST | `/api/sessions` | Required | Create new chat session |
@@ -120,6 +121,50 @@ curl -X POST http://localhost:31031/api/chat/sync \
     "bootstrapPath": "/api/auth/bootstrap",
     "extensionBindingConfigured": true,
     "extensionOrigin": "chrome-extension://<extension-id>"
+  }
+}
+```
+
+---
+
+## Status Snapshot Schema (`GET /api/status`)
+
+```json
+{
+  "success": true,
+  "bridge": {
+    "service": "sidepilot-copilot-bridge",
+    "version": "0.5.0",
+    "port": 31031,
+    "availability": "ready",
+    "authConfigured": true,
+    "launcherConfigured": null,
+    "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" }
+  },
+  "cli": {
+    "sdkState": "ready",
+    "sessionCount": 1,
+    "pendingPermissionCount": 0,
+    "prompt": {
+      "state": "idle",
+      "lastError": null
+    }
+  },
+  "compatibility": {
+    "apiVersion": "2026-03-bridge-status-v1",
+    "supported": true,
+    "missingCapabilities": []
+  },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<extension-id>"
+  },
+  "lastError": {
+    "code": null,
+    "message": null,
+    "at": null
   }
 }
 ```

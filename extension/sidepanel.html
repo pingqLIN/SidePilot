@@ -130,6 +130,50 @@
 
           <!-- SDK Chat UI -->
           <div class="sdk-chat mode-sdk hidden" id="sdkChat">
+            <div class="sdk-status-panel" id="sdkStatusPanel">
+              <div class="sdk-status-chain" id="sdkStatusChain">
+                <div class="sdk-status-node" id="sdkNodeExtension">
+                  <span class="sdk-status-dot" id="sdkNodeExtensionDot" data-status="warning"></span>
+                  <div class="sdk-status-copy">
+                    <span class="sdk-status-title" title="SidePilot 擴充">擴充</span>
+                    <span class="sdk-status-detail" id="sdkNodeExtensionDetail">檢查中</span>
+                  </div>
+                </div>
+                <span class="sdk-status-separator">→</span>
+                <div class="sdk-status-node" id="sdkNodeBridge">
+                  <span class="sdk-status-dot" id="sdkNodeBridgeDot" data-status="warning"></span>
+                  <div class="sdk-status-copy">
+                    <span class="sdk-status-title" title="Bridge 服務">Bridge</span>
+                    <span class="sdk-status-detail" id="sdkNodeBridgeDetail">檢查中</span>
+                  </div>
+                </div>
+                <span class="sdk-status-separator">→</span>
+                <div class="sdk-status-node" id="sdkNodeCli">
+                  <span class="sdk-status-dot" id="sdkNodeCliDot" data-status="warning"></span>
+                  <div class="sdk-status-copy">
+                    <span class="sdk-status-title" title="Copilot CLI">CLI</span>
+                    <span class="sdk-status-detail" id="sdkNodeCliDetail">等待資料</span>
+                  </div>
+                </div>
+              </div>
+              <div class="sdk-status-footer">
+                <div class="sdk-action-row">
+                  <div class="sdk-action-copy">
+                    <span class="sdk-action-label">目前動作</span>
+                    <span class="sdk-action-detail" id="sdkActionDetail">待命</span>
+                  </div>
+                </div>
+                <div class="sdk-status-actions">
+                  <button
+                    id="sdkPrimaryActionBtn"
+                    class="btn btn-secondary btn-sm sdk-status-btn"
+                    type="button"
+                  >
+                    重新檢查
+                  </button>
+                </div>
+              </div>
+            </div>
             <div class="sdk-chat-messages" id="sdkMessages">
               <!-- Messages will be appended here -->
             </div>
@@ -150,6 +194,9 @@
                 <span id="sdkMemorySummary" class="sdk-memory-summary"
                   >Memory injection: on</span
                 >
+              </div>
+              <div id="sdkLiveContextPreview" class="sdk-live-context-preview">
+                Live Page: waiting for page context...
               </div>
               <div class="sdk-chat-input-row">
                 <textarea
@@ -522,40 +569,41 @@
             </div>
             <div class="settings-section-body">
               <div class="settings-item settings-install-card bridge-setup-card">
-                <div class="settings-item-text">
-                  <div class="settings-item-title bridge-setup-heading">
-                    <span data-i18n="settings.bridge.card.title">SDK Bridge Setup</span>
-                    <span
-                      class="status-dot"
-                      id="bridgeStatusDot"
-                      aria-hidden="true"
-                    ></span>
+                <div class="bridge-setup-quickstart">
+                  <div class="settings-item-text">
+                    <div class="settings-item-title bridge-setup-heading">
+                      <span data-i18n="settings.bridge.card.title">SDK Bridge Setup</span>
+                      <span
+                        class="status-dot"
+                        id="bridgeStatusDot"
+                        aria-hidden="true"
+                      ></span>
+                    </div>
+                    <div class="settings-item-desc" data-i18n="settings.bridge.card.desc">
+                      SDK 模式需要本機 Bridge 服務與 sidepilot:// 啟動器
+                    </div>
+                    <div class="bridge-setup-badges" id="bridgeSetupBadges">
+                      <span class="bridge-setup-badge" id="bridgeLauncherBadge">Launcher: Unknown</span>
+                      <span class="bridge-setup-badge" id="bridgeBridgeBadge">Bridge: Offline</span>
+                      <span class="bridge-setup-badge" id="bridgeRuntimeBadge">Runtime: Auto</span>
+                    </div>
+                    <div class="bridge-quickstart-title" id="bridgeInstallStatus">
+                      尚未檢查
+                    </div>
+                    <div class="settings-item-sub bridge-quickstart-detail" id="bridgeInstallDetail">
+                      -
+                    </div>
                   </div>
-                  <div class="settings-item-desc" data-i18n="settings.bridge.card.desc">
-                    SDK 模式需要本機 Bridge 服務與 sidepilot:// 啟動器
-                  </div>
-                  <div class="bridge-setup-badges" id="bridgeSetupBadges">
-                    <span class="bridge-setup-badge" id="bridgeLauncherBadge">Launcher: Unknown</span>
-                    <span class="bridge-setup-badge" id="bridgeBridgeBadge">Bridge: Offline</span>
-                    <span class="bridge-setup-badge" id="bridgeRuntimeBadge">Runtime: Auto</span>
-                  </div>
-                  <div class="settings-item-desc" id="bridgeInstallStatus">
-                    尚未檢查
-                  </div>
-                  <div class="settings-item-sub" id="bridgeInstallDetail">
-                    -
-                  </div>
-                </div>
-                <div class="bridge-setup-actions bridge-setup-actions-primary">
-                  <button class="btn btn-primary btn-sm" id="bridgePrimaryBtn">
-                    嘗試自動啟動 Bridge
-                  </button>
+                  <div class="bridge-setup-actions bridge-setup-actions-primary">
                   <button
                     class="btn btn-secondary btn-sm"
                     id="bridgeCheckBtn"
                     data-i18n="settings.bridge.actions.check"
                   >
                     重新檢查
+                  </button>
+                  <button class="btn btn-primary btn-sm" id="bridgePrimaryBtn">
+                    嘗試自動啟動 Bridge
                   </button>
                   <button
                     class="btn btn-secondary btn-sm"
@@ -564,6 +612,32 @@
                   >
                     顯示進階選項
                   </button>
+                </div>
+                </div>
+                <div class="bridge-connection-details">
+                  <div class="bridge-connection-header">連線摘要</div>
+                  <div class="bridge-connection-grid">
+                    <div class="bridge-detail-row">
+                      <span class="bridge-detail-label">Repo Root</span>
+                      <span class="bridge-detail-value" id="bridgeDetailRepoRoot">尚未設定</span>
+                    </div>
+                    <div class="bridge-detail-row">
+                      <span class="bridge-detail-label">Runtime</span>
+                      <span class="bridge-detail-value" id="bridgeDetailRuntime">windows</span>
+                    </div>
+                    <div class="bridge-detail-row">
+                      <span class="bridge-detail-label">Launcher</span>
+                      <span class="bridge-detail-value" id="bridgeDetailLauncher">尚未確認</span>
+                    </div>
+                    <div class="bridge-detail-row">
+                      <span class="bridge-detail-label">Bridge</span>
+                      <span class="bridge-detail-value" id="bridgeDetailBridge">offline</span>
+                    </div>
+                    <div class="bridge-detail-row">
+                      <span class="bridge-detail-label">CLI</span>
+                      <span class="bridge-detail-value" id="bridgeDetailCli">idle</span>
+                    </div>
+                  </div>
                 </div>
                 <label class="settings-item settings-toggle">
                   <div class="settings-item-text">
@@ -877,13 +951,6 @@
                 >
                   立即開啟 GitHub 登入頁
                 </button>
-                <button
-                  class="btn btn-secondary settings-inline-btn"
-                  id="testSdkBridgeBtn"
-                  data-i18n="settings.sdk.actions.testBridge"
-                >
-                  測試 Bridge 連線
-                </button>
               </div>
               <div class="settings-subsection">
                 <div class="settings-subsection-title" data-i18n="settings.sdk.subsection.api">API 端點</div>
@@ -891,17 +958,16 @@
                   <div class="settings-item-text">
                     <div class="settings-item-title" data-i18n="settings.sdk.endpoint.strategy.title">Chat Endpoint 策略</div>
                     <div class="settings-item-desc" data-i18n-html="settings.sdk.endpoint.strategy.desc">
-                      優先使用 <code>/api/chat/sync</code>，若回傳 404 則自動
-                      fallback 到 <code>/api/chat</code>（SSE 串流，向後相容）
+                      固定使用新版 Bridge API：<code>/api/chat/sync</code> 與
+                      <code>/api/status</code>；若缺少端點，視為版本過舊，必須升級。
                     </div>
                   </div>
                   <div class="settings-endpoint-info" id="sdkEndpointInfo">
                     <span class="endpoint-badge endpoint-primary"
                       >/api/chat/sync</span
                     >
-                    <span class="endpoint-arrow">→ 404 →</span>
                     <span class="endpoint-badge endpoint-fallback"
-                      >/api/chat</span
+                      >/api/status</span
                     >
                   </div>
                 </div>
@@ -1128,6 +1194,17 @@
               擷取按鍵
             </div>
             <div class="settings-section-body">
+              <label class="settings-item settings-toggle">
+                <div class="settings-item-text">
+                  <div class="settings-item-title" data-i18n="settings.capture.dogSleep.title">
+                    狗狗乖 快睡覺
+                  </div>
+                  <div class="settings-item-desc" data-i18n="settings.capture.dogSleep.desc">
+                    關閉背景狗露出效果，並讓面板寬度跟著側欄拖曳直接變化。
+                  </div>
+                </div>
+                <input type="checkbox" id="settingDogSleepingEnabled" />
+              </label>
               <label class="settings-item settings-range">
                 <div class="settings-item-text">
                   <div class="settings-item-title" data-i18n="settings.capture.width.title">按鍵寬度</div>

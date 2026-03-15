@@ -68,7 +68,7 @@ npm run dev
 
 ### `GET /health`
 
-健康檢查，Extension 的 mode-manager 用此端點偵測 SDK 模式是否可用。
+輕量健康檢查。Extension 會用這個端點確認 bridge 是否活著；更完整的狀態請看 `GET /api/status`。
 
 **回應範例：**
 ```json
@@ -82,6 +82,51 @@ npm run dev
     "bootstrapPath": "/api/auth/bootstrap",
     "extensionBindingConfigured": true,
     "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  }
+}
+```
+
+### `GET /api/status`
+
+正式控制平面狀態快照。UI 會用這個端點整理 Bridge、CLI、相容性與最近錯誤資訊。
+
+**回應範例：**
+```json
+{
+  "success": true,
+  "bridge": {
+    "service": "sidepilot-copilot-bridge",
+    "version": "0.5.0",
+    "port": 31031,
+    "availability": "ready",
+    "authConfigured": true,
+    "launcherConfigured": null,
+    "backend": { "type": "acp-cli", "command": "copilot --acp --stdio" }
+  },
+  "cli": {
+    "sdkState": "ready",
+    "sessionCount": 1,
+    "pendingPermissionCount": 0,
+    "prompt": {
+      "state": "idle",
+      "lastError": null
+    }
+  },
+  "compatibility": {
+    "apiVersion": "2026-03-bridge-status-v1",
+    "supported": true,
+    "missingCapabilities": []
+  },
+  "auth": {
+    "required": true,
+    "bootstrapPath": "/api/auth/bootstrap",
+    "extensionBindingConfigured": true,
+    "extensionOrigin": "chrome-extension://<your-chrome-extension-id>"
+  },
+  "lastError": {
+    "code": null,
+    "message": null,
+    "at": null
   }
 }
 ```
@@ -209,5 +254,5 @@ src/
 
 - **ACP (Agent Client Protocol)：** 透過 `@agentclientprotocol/sdk` 與 Copilot CLI 的 stdio 通道建立 JSON-RPC 連線
 - **權限處理：** 自動選取第一個可用的權限選項（`selectPermissionOutcome`）
-- **CORS：** 允許所有來源（`origin: '*'`），適用於 Chrome Extension 內容
+- **CORS：** 僅接受 loopback 直接請求，或符合 `SIDEPILOT_EXTENSION_ID` 的 `chrome-extension://<id>` origin
 - **優雅關閉：** 監聽 SIGINT/SIGTERM 信號，清理所有 Session 後退出
