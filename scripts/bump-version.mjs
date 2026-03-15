@@ -12,7 +12,8 @@
  *   1. 更新 package.json 版本
  *   2. 同步至 extension/manifest.json
  *   3. 追加 CHANGELOG.md 條目（從最近 git log 摘取）
- *   4. git commit + tag
+ *   4. 重新計算並驗證 integrity seal
+ *   5. git commit + tag
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -26,6 +27,17 @@ const ROOT = join(__dirname, '..');
 const PKG_PATH = join(ROOT, 'package.json');
 const MANIFEST_PATH = join(ROOT, 'extension', 'manifest.json');
 const CHANGELOG_PATH = join(ROOT, 'CHANGELOG.md');
+const SEAL_SCRIPT_PATH = join(ROOT, 'scripts', 'seal-integrity.mjs');
+const VERIFY_SCRIPT_PATH = join(ROOT, 'scripts', 'verify-integrity.mjs');
+
+function run(command, options = {}) {
+  return execSync(command, {
+    cwd: ROOT,
+    encoding: 'utf-8',
+    stdio: options.stdio || 'pipe',
+    shell: options.shell || false,
+  });
+}
 
 // ── Parse args ──
 const arg = process.argv[2] || 'patch';
@@ -65,14 +77,13 @@ const date = new Date().toISOString().slice(0, 10);
 let recentCommits = '';
 try {
   // Get commits since last tag, or last 10 if no tags
-  const lastTag = execSync('git describe --tags --abbrev=0 2>nul || echo ""', {
-    cwd: ROOT, encoding: 'utf-8', shell: true
+  const lastTag = run('git describe --tags --abbrev=0 2>nul || echo ""', {
+    shell: true,
   }).trim();
 
   const range = lastTag ? `${lastTag}..HEAD` : '-10';
-  recentCommits = execSync(
+  recentCommits = run(
     `git --no-pager log ${range} --oneline --no-decorate`,
-    { cwd: ROOT, encoding: 'utf-8' }
   ).trim();
 } catch {
   recentCommits = '(no git history available)';
@@ -92,14 +103,30 @@ const changelogEntry = [
 
 if (existsSync(CHANGELOG_PATH)) {
   const existing = readFileSync(CHANGELOG_PATH, 'utf-8');
-  const insertPos = existing.indexOf('\n## ');
-  if (insertPos > -1) {
-    // Insert before the first ## section
-    const before = existing.slice(0, insertPos + 1);
-    const after = existing.slice(insertPos + 1);
-    writeFileSync(CHANGELOG_PATH, before + changelogEntry + after, 'utf-8');
+  const unreleasedHeading = '## [Unreleased]';
+  const unreleasedIndex = existing.indexOf(unreleasedHeading);
+
+  if (unreleasedIndex > -1) {
+    const afterUnreleased = existing.indexOf('\n---', unreleasedIndex);
+    if (afterUnreleased > -1) {
+      const insertPos = afterUnreleased + '\n---\n'.length;
+      const before = existing.slice(0, insertPos);
+      const after = existing.slice(insertPos);
+      writeFileSync(CHANGELOG_PATH, before + '\n' + changelogEntry + after, 'utf-8');
+    } else {
+      const before = existing.slice(0, unreleasedIndex);
+      const after = existing.slice(unreleasedIndex);
+      writeFileSync(CHANGELOG_PATH, before + changelogEntry + after, 'utf-8');
+    }
   } else {
-    writeFileSync(CHANGELOG_PATH, existing + '\n' + changelogEntry, 'utf-8');
+    const insertPos = existing.indexOf('\n## ');
+    if (insertPos > -1) {
+      const before = existing.slice(0, insertPos + 1);
+      const after = existing.slice(insertPos + 1);
+      writeFileSync(CHANGELOG_PATH, before + changelogEntry + after, 'utf-8');
+    } else {
+      writeFileSync(CHANGELOG_PATH, existing + '\n' + changelogEntry, 'utf-8');
+    }
   }
 } else {
   const header = `# Changelog\n\n> 自動產生，每次 \`npm run version:bump\` 時追加。\n\n`;
@@ -107,11 +134,21 @@ if (existsSync(CHANGELOG_PATH)) {
 }
 console.log('  ✅ CHANGELOG.md');
 
-// ── 4. Git commit + tag ──
+// ── 4. Re-seal + verify integrity ──
 try {
-  execSync(`git add package.json extension/manifest.json CHANGELOG.md`, { cwd: ROOT });
-  execSync(`git commit -m "chore: bump version to v${next}"`, { cwd: ROOT });
-  execSync(`git tag -a v${next} -m "Release v${next}"`, { cwd: ROOT });
+  run(`node "${SEAL_SCRIPT_PATH}"`, { stdio: 'inherit' });
+  run(`node "${VERIFY_SCRIPT_PATH}"`, { stdio: 'inherit' });
+  console.log('  ✅ integrity seal + verify');
+} catch (err) {
+  console.error('  ⚠️ Integrity seal/verify failed:', err.message);
+  process.exit(1);
+}
+
+// ── 5. Git commit + tag ──
+try {
+  run(`git add package.json extension/manifest.json CHANGELOG.md`);
+  run(`git commit -m "chore: bump version to v${next}"`, { stdio: 'inherit' });
+  run(`git tag -a v${next} -m "Release v${next}"`);
   console.log(`  ✅ git commit + tag v${next}`);
 } catch (err) {
   console.error('  ⚠️ Git commit/tag failed:', err.message);

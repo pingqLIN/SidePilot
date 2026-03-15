@@ -60,6 +60,25 @@ Fixed by PR #39: `max-parallel: 1` added, Python language removed.
 
 ---
 
+## [0.5.2] — 2026-03-15
+
+### Added
+
+- **Authenticated bridge event stream helper** — 以 `fetch()` + 自訂 header 取代帶 token 的 SSE URL，避免 bridge auth token 出現在串流網址、瀏覽器歷史或外部記錄中
+
+### Changed
+
+- **Dependencies** — 更新核心開發與 bridge 相依：`defuddle`、`esbuild`、`jest`、`@types/jest`、`jest-environment-jsdom`、`@types/chrome`、`@types/node`、`@agentclientprotocol/sdk`
+- **Release tooling** — `scripts/bump-version.mjs` 現在會在版本升級後自動重新計算並驗證 integrity seal，並保留 `Unreleased` 區段在 changelog 頂部
+
+### Fixed
+
+- **Bridge streaming auth** — bridge stream 改用 `X-SidePilot-Token` / `X-SidePilot-Extension-Id` headers 驗證，不再回退到 query token
+- **Regression coverage** — 新增 `tests/extension/bridge-event-stream.test.js`，覆蓋 authenticated SSE 與 reconnect/fresh-token 行為
+- **CI / PR hygiene** — 清理 stale PR、重疊衝突分支並讓 `main` 回到全綠 workflow 狀態
+
+---
+
 ## [0.5.1] — 2026-03-13
 
 ### Added

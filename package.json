@@ -1,6 +1,6 @@
 {
   "name": "sidepilot",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "type": "module",
   "description": "SidePilot - Chrome extension with GitHub Copilot integration",
   "scripts": {
