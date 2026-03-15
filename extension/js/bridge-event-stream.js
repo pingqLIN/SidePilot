@@ -258,9 +258,7 @@ function createAuthenticatedEventSource(options = {}) {
       });
 
       if (!response.ok || !response.body) {
-        const error = new Error(`Stream request failed (${response.status})`);
-        error.status = response.status;
-        throw error;
+        throw new Error(`Stream request failed (${response.status})`);
       }
 
       connectAttempt = 0;

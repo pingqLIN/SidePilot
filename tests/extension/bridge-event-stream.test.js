@@ -131,6 +131,7 @@ describe('Bridge Event Stream Helper', () => {
       { attempt: 1, previousError: 'Stream request failed (401)' },
     ]);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+    expect(global.fetch.mock.calls[0][1].headers['X-SidePilot-Token']).toBe('stale-token');
     expect(global.fetch.mock.calls[1][1].headers['X-SidePilot-Token']).toBe('fresh-token');
   });
 });
