@@ -55,6 +55,11 @@ const CRITICAL_FILES = [
 
 const DIGEST_LENGTH = 16;
 
+function toSealPath(filepath) {
+  const relative = filepath.slice(EXT.length).replace(/\\/g, '/');
+  return relative.startsWith('/') ? relative : `/${relative}`;
+}
+
 // ── 計算封印（與 seal 腳本邏輯完全一致）──
 
 function computeSeal() {
@@ -77,11 +82,11 @@ function computeSeal() {
       }
 
       const normalized = content.replace(/\r\n/g, '\n');
-      hash.update(`\x00${filepath.split('extension')[1]}\x00`);
+      hash.update(`\x00${toSealPath(filepath)}\x00`);
       hash.update(normalized);
       fileCount++;
     } catch {
-      hash.update(`\x00${filepath}\x00MISSING\x00`);
+      hash.update(`\x00${toSealPath(filepath)}\x00MISSING\x00`);
     }
   }
 

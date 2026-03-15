@@ -59,6 +59,11 @@ const CRITICAL_FILES = [
 // 16 hex chars = 64 bits，提供足夠的碰撞抵抗力
 const DIGEST_LENGTH = 16;
 
+function toSealPath(filepath) {
+  const relative = filepath.slice(EXT.length).replace(/\\/g, '/');
+  return relative.startsWith('/') ? relative : `/${relative}`;
+}
+
 // ── 計算封印 ──
 
 function computeSeal() {
@@ -76,12 +81,12 @@ function computeSeal() {
       }
       // 正規化換行，避免 CRLF/LF 差異影響雜湊
       const normalized = content.replace(/\r\n/g, '\n');
-      hash.update(`\x00${filepath.split('extension')[1]}\x00`);
+      hash.update(`\x00${toSealPath(filepath)}\x00`);
       hash.update(normalized);
       fileCount++;
     } catch {
       // 檔案不存在時以佔位符代替，確保結構一致
-      hash.update(`\x00${filepath}\x00MISSING\x00`);
+      hash.update(`\x00${toSealPath(filepath)}\x00MISSING\x00`);
     }
   }
 
