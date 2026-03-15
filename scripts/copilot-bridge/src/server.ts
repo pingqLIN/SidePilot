@@ -153,9 +153,7 @@ function ensureExtensionOrigin(req: Request, res: Response): boolean {
 
 function extractBridgeToken(req: Request): string {
   const headerToken = String(req.headers['x-sidepilot-token'] || '').trim();
-  if (headerToken) return headerToken;
-  const queryToken = String(req.query.token || '').trim();
-  return queryToken;
+  return headerToken;
 }
 
 function ensureBridgeAuth(req: Request, res: Response): boolean {
