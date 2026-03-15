@@ -134,7 +134,7 @@ curl -X POST http://localhost:31031/api/chat/sync \
   "success": true,
   "bridge": {
     "service": "sidepilot-copilot-bridge",
-    "version": "0.5.0",
+    "version": "0.5.2",
     "port": 31031,
     "availability": "ready",
     "authConfigured": true,
