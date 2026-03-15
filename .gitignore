@@ -46,9 +46,8 @@ __pycache__/
 *.bak.*
 *.orig
 
-# Archive directory (keep the folder trackable)
-!.bak/
-!.bak/**
+# Local archive directory
+.bak/
 
 # Local screenshots (raw exports)
 docs/screenshots/螢幕擷取畫面*.png

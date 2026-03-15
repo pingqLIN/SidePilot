@@ -520,7 +520,7 @@ function applySettingsI18n(languageOverride) {
   settingsRoot.querySelectorAll("[data-i18n-html]").forEach((node) => {
     const key = node.dataset.i18nHtml;
     if (!key) return;
-    node.innerHTML = translateSettingsKey(key, language);
+    node.textContent = translateSettingsKey(key, language);
   });
   settingsRoot.querySelectorAll("[data-i18n-aria-label]").forEach((node) => {
     const key = node.dataset.i18nAriaLabel;
@@ -2101,26 +2101,11 @@ async function loadIdentityTemplate() {
 
   // Render module chips
   if (dom.identityModuleChips) {
-    dom.identityModuleChips.innerHTML = IDENTITY_MODULES.map(
-      (m) =>
-        `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + " → " + m.resolve())}">${m.label}</button>`,
-    ).join("");
-    dom.identityModuleChips
-      .querySelectorAll(".identity-chip")
-      .forEach((chip) => {
-        chip.addEventListener("click", () => {
-          if (!dom.identityEditor) return;
-          const token = chip.dataset.token;
-          const ta = dom.identityEditor;
-          const start = ta.selectionStart;
-          const end = ta.selectionEnd;
-          ta.value =
-            ta.value.substring(0, start) + token + ta.value.substring(end);
-          ta.selectionStart = ta.selectionEnd = start + token.length;
-          ta.focus();
-          updateIdentityPreview();
-        });
-      });
+    populateIdentityModuleChips(
+      dom.identityModuleChips,
+      dom.identityEditor,
+      updateIdentityPreview,
+    );
   }
 
   // Load saved template or use default
@@ -2147,6 +2132,41 @@ function updateIdentityPreview() {
   if (!dom.settingsIdentityContent || !dom.identityEditor) return;
   const resolved = resolveIdentityTokens(dom.identityEditor.value);
   dom.settingsIdentityContent.textContent = resolved;
+}
+
+function createIdentityChipElement(module, textarea, onAfterInsert) {
+  const chip = document.createElement("button");
+  chip.className = "identity-chip";
+  chip.type = "button";
+  chip.dataset.token = module.token;
+  chip.title = `${module.token} → ${module.resolve()}`;
+  chip.textContent = module.label;
+  chip.addEventListener("click", () => {
+    if (!textarea) return;
+    const token = module.token;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    textarea.value =
+      textarea.value.substring(0, start) +
+      token +
+      textarea.value.substring(end);
+    textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    textarea.focus();
+    onAfterInsert?.();
+  });
+  return chip;
+}
+
+function populateIdentityModuleChips(container, textarea, onAfterInsert) {
+  if (!container) return;
+  container.replaceChildren();
+  const fragment = document.createDocumentFragment();
+  IDENTITY_MODULES.forEach((module) => {
+    fragment.appendChild(
+      createIdentityChipElement(module, textarea, onAfterInsert),
+    );
+  });
+  container.appendChild(fragment);
 }
 
 async function saveIdentityTemplate() {
@@ -2178,23 +2198,7 @@ async function resetIdentityTemplate() {
 // Populate identity module chips for a given container + textarea pair
 function setupModuleChips(container, textarea) {
   if (!container || !textarea) return;
-  container.innerHTML = IDENTITY_MODULES.map(
-    (m) =>
-      `<button class="identity-chip" data-token="${escapeAttr(m.token)}" title="${escapeAttr(m.token + " → " + m.resolve())}">${m.label}</button>`,
-  ).join("");
-  container.querySelectorAll(".identity-chip").forEach((chip) => {
-    chip.addEventListener("click", () => {
-      const token = chip.dataset.token;
-      const start = textarea.selectionStart;
-      const end = textarea.selectionEnd;
-      textarea.value =
-        textarea.value.substring(0, start) +
-        token +
-        textarea.value.substring(end);
-      textarea.selectionStart = textarea.selectionEnd = start + token.length;
-      textarea.focus();
-    });
-  });
+  populateIdentityModuleChips(container, textarea);
 }
 
 function updateCaptureWidthLabel(width) {
@@ -4640,60 +4644,136 @@ function getMemoryOriginClass(entry) {
     : "user";
 }
 
+function createMemoryActionButton(title, svgMarkup, className) {
+  const button = document.createElement("button");
+  button.className = className;
+  button.type = "button";
+  button.title = title;
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("viewBox", "0 0 16 16");
+  icon.setAttribute("fill", "currentColor");
+
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", svgMarkup);
+  icon.appendChild(path);
+  button.appendChild(icon);
+  return button;
+}
+
+function createPinnedIdentityEntryElement() {
+  const entry = document.createElement("div");
+  entry.className = "memory-entry memory-entry-pinned";
+  entry.dataset.id = SIDEPILOT_SYSTEM_IDENTITY.id;
+
+  const header = document.createElement("div");
+  header.className = "memory-entry-header";
+
+  const title = document.createElement("span");
+  title.className = "memory-entry-title";
+  title.textContent = `📌 ${SIDEPILOT_SYSTEM_IDENTITY.title}`;
+
+  const type = document.createElement("span");
+  type.className = "memory-entry-type";
+  type.textContent = "system";
+
+  header.append(title, type);
+
+  const content = document.createElement("div");
+  content.className = "memory-entry-content";
+  content.textContent = SIDEPILOT_SYSTEM_IDENTITY.content;
+
+  const footer = document.createElement("div");
+  footer.className = "memory-entry-footer";
+
+  const editLink = document.createElement("a");
+  editLink.href = "#";
+  editLink.className = "memory-edit-link";
+  editLink.dataset.action = "edit-identity";
+  editLink.textContent = "⚙️ 前往設定修改";
+  footer.appendChild(editLink);
+
+  entry.append(header, content, footer);
+  return entry;
+}
+
+function createMemoryEntryElement(entry) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "memory-entry";
+  wrapper.dataset.id = entry.id;
+
+  const header = document.createElement("div");
+  header.className = "memory-entry-header";
+
+  const title = document.createElement("span");
+  title.className = "memory-entry-title";
+  title.textContent = entry.title;
+
+  const meta = document.createElement("div");
+  meta.className = "memory-entry-meta";
+
+  const type = document.createElement("span");
+  type.className = "memory-entry-type";
+  type.textContent = entry.type;
+
+  const origin = document.createElement("span");
+  origin.className = `memory-entry-origin memory-entry-origin-${getMemoryOriginClass(entry)}`;
+  origin.textContent = getMemoryOriginLabel(entry);
+
+  meta.append(type, origin);
+  header.append(title, meta);
+
+  const content = document.createElement("div");
+  content.className = "memory-entry-content";
+  content.textContent = entry.content;
+
+  const footer = document.createElement("div");
+  footer.className = "memory-entry-footer";
+
+  const date = document.createElement("span");
+  date.textContent = new Date(entry.updatedAt).toLocaleDateString();
+  footer.appendChild(date);
+
+  if (entry.type === "task") {
+    const status = document.createElement("span");
+    status.className = `memory-entry-status ${entry.status}`;
+    status.textContent = entry.status.replace("_", " ");
+    footer.appendChild(status);
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "memory-entry-actions";
+  const sendButton = createMemoryActionButton(
+    "Send to VS Code",
+    "M2.5 1.5A1.5 1.5 0 0 0 1 3v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V3a1.5 1.5 0 0 0-1.5-1.5h-11ZM2 3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V3Z M7 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM4.5 8.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Zm7 0a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Z",
+    "btn-entry-action btn-send-vscode",
+  );
+  sendButton.dataset.id = entry.id;
+  actions.appendChild(sendButton);
+
+  wrapper.append(header, content, footer, actions);
+  return wrapper;
+}
+
 // Render memory entries list with proper event delegation
 function renderMemoryList(entries) {
   if (!dom.memoryList) return;
 
-  // Build pinned system identity card
-  const identityCard = `
-    <div class="memory-entry memory-entry-pinned" data-id="${SIDEPILOT_SYSTEM_IDENTITY.id}">
-      <div class="memory-entry-header">
-        <span class="memory-entry-title">📌 ${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.title)}</span>
-        <span class="memory-entry-type">system</span>
-      </div>
-      <div class="memory-entry-content">${escapeHtml(SIDEPILOT_SYSTEM_IDENTITY.content)}</div>
-      <div class="memory-entry-footer">
-        <a href="#" class="memory-edit-link" data-action="edit-identity">⚙️ 前往設定修改</a>
-      </div>
-    </div>
-  `;
+  dom.memoryList.replaceChildren();
+  dom.memoryList.appendChild(createPinnedIdentityEntryElement());
 
   if (!entries || entries.length === 0) {
-    dom.memoryList.innerHTML =
-      identityCard + '<div class="memory-empty">No entries found.</div>';
+    const empty = document.createElement("div");
+    empty.className = "memory-empty";
+    empty.textContent = "No entries found.";
+    dom.memoryList.appendChild(empty);
     return;
   }
 
-  dom.memoryList.innerHTML =
-    identityCard +
-    entries
-      .map(
-        (entry) => `
-    <div class="memory-entry" data-id="${entry.id}">
-      <div class="memory-entry-header">
-        <span class="memory-entry-title">${escapeHtml(entry.title)}</span>
-        <div class="memory-entry-meta">
-          <span class="memory-entry-type">${entry.type}</span>
-          <span class="memory-entry-origin memory-entry-origin-${getMemoryOriginClass(entry)}">${getMemoryOriginLabel(entry)}</span>
-        </div>
-      </div>
-      <div class="memory-entry-content">${escapeHtml(entry.content)}</div>
-      <div class="memory-entry-footer">
-        <span>${new Date(entry.updatedAt).toLocaleDateString()}</span>
-        ${entry.type === "task" ? `<span class="memory-entry-status ${entry.status}">${entry.status.replace("_", " ")}</span>` : ""}
-      </div>
-      <div class="memory-entry-actions">
-        <button class="btn-entry-action btn-send-vscode" data-id="${entry.id}" title="Send to VS Code">
-          <svg viewBox="0 0 16 16" fill="currentColor">
-            <path d="M2.5 1.5A1.5 1.5 0 0 0 1 3v10a1.5 1.5 0 0 0 1.5 1.5h11a1.5 1.5 0 0 0 1.5-1.5V3a1.5 1.5 0 0 0-1.5-1.5h-11ZM2 3a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 .5.5v10a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5V3Z"/>
-            <path d="M7 6a1 1 0 1 0 0 2 1 1 0 0 0 0-2ZM4.5 8.5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Zm7 0a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1Z"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-  `,
-      )
-      .join("");
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry) => {
+    fragment.appendChild(createMemoryEntryElement(entry));
+  });
+  dom.memoryList.appendChild(fragment);
 
   dom.memoryList.querySelectorAll(".btn-send-vscode").forEach((btn) => {
     btn.addEventListener("click", (e) => {
@@ -5558,8 +5638,23 @@ function showDeclinedState() {
   if (dom.errorOverlay) {
     dom.errorOverlay.classList.remove("hidden");
     if (dom.errorMessage) {
-      dom.errorMessage.innerHTML =
-        '您已拒絕使用條款。<br><br>如需使用 SidePilot，請重新開啟擴充功能並接受相關風險聲明。<br><br><button id="resetDeclineBtn" class="btn btn-secondary" style="margin-top: 12px;">重新選擇</button>';
+      dom.errorMessage.replaceChildren();
+      dom.errorMessage.append(
+        document.createTextNode("您已拒絕使用條款。"),
+        document.createElement("br"),
+        document.createElement("br"),
+        document.createTextNode(
+          "如需使用 SidePilot，請重新開啟擴充功能並接受相關風險聲明。",
+        ),
+        document.createElement("br"),
+        document.createElement("br"),
+      );
+      const resetButton = document.createElement("button");
+      resetButton.id = "resetDeclineBtn";
+      resetButton.className = "btn btn-secondary";
+      resetButton.style.marginTop = "12px";
+      resetButton.textContent = "重新選擇";
+      dom.errorMessage.appendChild(resetButton);
     }
 
     // 綁定重置按鈕
@@ -5680,25 +5775,120 @@ async function loadPageContent() {
 
 function renderCaptureLoading() {
   if (!dom.captureContent) return;
-  dom.captureContent.innerHTML = `
-    <div class="capture-grid">
-      ${["A", "B", "C"]
-        .map(
-          () => `
-        <div class="capture-card loading">
-          <div class="capture-card-header">
-            <div class="capture-card-title">載入中</div>
-            <div class="capture-card-subtitle">請稍候</div>
-          </div>
-          <div class="capture-card-body">
-            <div class="capture-loading">載入中...</div>
-          </div>
-        </div>
-      `,
-        )
-        .join("")}
-    </div>
-  `;
+  const grid = document.createElement("div");
+  grid.className = "capture-grid";
+
+  for (let index = 0; index < 3; index += 1) {
+    const card = document.createElement("div");
+    card.className = "capture-card loading";
+
+    const header = document.createElement("div");
+    header.className = "capture-card-header";
+
+    const title = document.createElement("div");
+    title.className = "capture-card-title";
+    title.textContent = "載入中";
+
+    const subtitle = document.createElement("div");
+    subtitle.className = "capture-card-subtitle";
+    subtitle.textContent = "請稍候";
+
+    const body = document.createElement("div");
+    body.className = "capture-card-body";
+
+    const loading = document.createElement("div");
+    loading.className = "capture-loading";
+    loading.textContent = "載入中...";
+
+    header.append(title, subtitle);
+    body.appendChild(loading);
+    card.append(header, body);
+    grid.appendChild(card);
+  }
+
+  dom.captureContent.replaceChildren(grid);
+}
+
+function createCaptureMetaRow(label, value) {
+  const row = document.createElement("div");
+  row.className = "capture-meta-row";
+
+  const labelEl = document.createElement("span");
+  labelEl.className = "capture-meta-label";
+  labelEl.textContent = label;
+
+  const valueEl = document.createElement("span");
+  valueEl.className = "capture-meta-value";
+  valueEl.textContent = value;
+
+  row.append(labelEl, valueEl);
+  return row;
+}
+
+function createCaptureActionButton(action, text) {
+  const button = document.createElement("button");
+  button.className = "btn-soft";
+  button.type = "button";
+  button.dataset.action = action;
+  button.textContent = text;
+  return button;
+}
+
+function createCaptureThumb(action, imageUrl, alt, label, actionConfig, fallbackText) {
+  const thumb = document.createElement("div");
+  thumb.className = "capture-thumb";
+  thumb.dataset.action = action;
+
+  if (imageUrl) {
+    const image = document.createElement("img");
+    image.src = imageUrl;
+    image.alt = alt;
+
+    const labelEl = document.createElement("div");
+    labelEl.className = "capture-thumb-label";
+    labelEl.textContent = label;
+
+    const actionEl = document.createElement("div");
+    actionEl.className = "capture-thumb-action";
+    actionEl.dataset.action = actionConfig.action;
+    actionEl.textContent = actionConfig.text;
+
+    thumb.append(image, labelEl, actionEl);
+    return thumb;
+  }
+
+  thumb.textContent = fallbackText;
+  return thumb;
+}
+
+function createCaptureCard({ title, subtitle, bodyChildren = [], actions = [] }) {
+  const card = document.createElement("div");
+  card.className = "capture-card";
+
+  const header = document.createElement("div");
+  header.className = "capture-card-header";
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "capture-card-title";
+  titleEl.textContent = title;
+
+  const subtitleEl = document.createElement("div");
+  subtitleEl.className = "capture-card-subtitle";
+  subtitleEl.textContent = subtitle;
+
+  const body = document.createElement("div");
+  body.className = "capture-card-body";
+  bodyChildren.forEach((child) => {
+    if (child) body.appendChild(child);
+  });
+
+  const actionsEl = document.createElement("div");
+  actionsEl.className = "capture-card-actions";
+  actions.forEach((actionButton) => actionsEl.appendChild(actionButton));
+
+  header.append(titleEl, subtitleEl);
+  card.append(header, body, actionsEl);
+  return card;
 }
 
 function renderCaptureContent() {
@@ -5707,46 +5897,9 @@ function renderCaptureContent() {
   const content = state.currentPageContent;
   const previewText = buildTextPreview(content);
   const statsText = buildTextStats(content);
-  const title = content?.title ? escapeHtml(content.title) : "無標題";
-  const url = content?.url ? escapeHtml(content.url) : "";
   const descriptionRaw =
     content?.meta?.description || content?.meta?.["og:description"] || "";
-  const description = descriptionRaw ? escapeHtml(descriptionRaw) : "";
   const captureScope = content?.selectedText ? "已選取文字" : "整頁內容";
-
-  const textBodyHtml = content
-    ? `
-        <div class="capture-text-meta">
-          <div class="capture-meta-row">
-            <span class="capture-meta-label">範圍</span>
-            <span class="capture-meta-value">${captureScope}</span>
-          </div>
-          <div class="capture-meta-row">
-            <span class="capture-meta-label">標題</span>
-            <span class="capture-meta-value">${title}</span>
-          </div>
-          ${
-            url
-              ? `
-          <div class="capture-meta-row">
-            <span class="capture-meta-label">網址</span>
-            <span class="capture-meta-value">${url}</span>
-          </div>`
-              : ""
-          }
-          ${
-            description
-              ? `
-          <div class="capture-meta-row">
-            <span class="capture-meta-label">描述</span>
-            <span class="capture-meta-value">${description}</span>
-          </div>`
-              : ""
-          }
-        </div>
-        <div class="capture-text-preview">${escapeHtml(previewText)}</div>
-      `
-    : `<div class="capture-error">${escapeHtml(state.currentPageError || "沒有可用的內容")}</div>`;
 
   const fullShot = state.currentPageScreenshot;
   const partialShot = state.currentPartialScreenshot;
@@ -5758,66 +5911,93 @@ function renderCaptureContent() {
   const partialThumbAction = partialShot ? "open-partial" : "capture-partial";
   const fullThumbLabel = isFullPage ? "整頁截圖" : "可見範圍";
 
-  const fullThumbHtml = fullShot
-    ? `<img src="${escapeAttr(fullShot)}" alt="頁面截圖">
-       <div class="capture-thumb-label">${fullThumbLabel}</div>
-       <div class="capture-thumb-action" data-action="refresh-full">重新擷取</div>`
-    : `<div>點擊擷取頁面縮圖</div>`;
+  const grid = document.createElement("div");
+  grid.className = "capture-grid";
 
-  const partialThumbHtml = partialShot
-    ? `<img src="${escapeAttr(partialShot)}" alt="部分截圖">
-       <div class="capture-thumb-label">選取範圍</div>
-       <div class="capture-thumb-action" data-action="capture-partial">重新選取</div>`
-    : `<div>點擊選取範圍</div>`;
+  const textChildren = [];
+  if (content) {
+    const meta = document.createElement("div");
+    meta.className = "capture-text-meta";
+    meta.append(
+      createCaptureMetaRow("範圍", captureScope),
+      createCaptureMetaRow("標題", content.title || "無標題"),
+    );
+    if (content.url) {
+      meta.appendChild(createCaptureMetaRow("網址", content.url));
+    }
+    if (descriptionRaw) {
+      meta.appendChild(createCaptureMetaRow("描述", descriptionRaw));
+    }
 
-  dom.captureContent.innerHTML = `
-    <div class="capture-grid">
-      <div class="capture-card">
-        <div class="capture-card-header">
-          <div class="capture-card-title">A 文字擷取</div>
-          <div class="capture-card-subtitle">${statsText}</div>
-        </div>
-        <div class="capture-card-body">
-          ${textBodyHtml}
-        </div>
-        <div class="capture-card-actions">
-          <button class="btn-soft" data-action="copy-text">📋 複製到對話視窗</button>
-          <button class="btn-soft" data-action="copy-structured">複製結構化</button>
-        </div>
-      </div>
+    const preview = document.createElement("div");
+    preview.className = "capture-text-preview";
+    preview.textContent = previewText;
+    textChildren.push(meta, preview);
+  } else {
+    const errorEl = document.createElement("div");
+    errorEl.className = "capture-error";
+    errorEl.textContent = state.currentPageError || "沒有可用的內容";
+    textChildren.push(errorEl);
+  }
 
-      <div class="capture-card">
-        <div class="capture-card-header">
-          <div class="capture-card-title">B 頁面截圖</div>
-          <div class="capture-card-subtitle">${isFullPage ? "已擷取整頁" : "自動擷取可見範圍"}</div>
-        </div>
-        <div class="capture-card-body">
-          <div class="capture-thumb" data-action="${fullThumbAction}">${fullThumbHtml}</div>
-        </div>
-        <div class="capture-card-actions">
-          <button class="btn-soft" data-action="fullpage-screenshot">📜 整頁截圖</button>
-          <button class="btn-soft" data-action="refresh-full">重新擷取</button>
-          <button class="btn-soft" data-action="download-full">下載截圖</button>
-          <button class="btn-soft" data-action="send-full-to-chat">💬 傳送到對話</button>
-        </div>
-      </div>
+  grid.appendChild(
+    createCaptureCard({
+      title: "A 文字擷取",
+      subtitle: statsText,
+      bodyChildren: textChildren,
+      actions: [
+        createCaptureActionButton("copy-text", "📋 複製到對話視窗"),
+        createCaptureActionButton("copy-structured", "複製結構化"),
+      ],
+    }),
+  );
 
-      <div class="capture-card">
-        <div class="capture-card-header">
-          <div class="capture-card-title">C 部分截圖</div>
-          <div class="capture-card-subtitle">拖曳選取區域</div>
-        </div>
-        <div class="capture-card-body">
-          <div class="capture-thumb" data-action="${partialThumbAction}">${partialThumbHtml}</div>
-        </div>
-        <div class="capture-card-actions">
-          <button class="btn-soft" data-action="capture-partial">選取範圍</button>
-          <button class="btn-soft" data-action="download-partial">下載截圖</button>
-          <button class="btn-soft" data-action="send-partial-to-chat">💬 傳送到對話</button>
-        </div>
-      </div>
-    </div>
-  `;
+  grid.appendChild(
+    createCaptureCard({
+      title: "B 頁面截圖",
+      subtitle: isFullPage ? "已擷取整頁" : "自動擷取可見範圍",
+      bodyChildren: [
+        createCaptureThumb(
+          fullThumbAction,
+          fullShot,
+          "頁面截圖",
+          fullThumbLabel,
+          { action: "refresh-full", text: "重新擷取" },
+          "點擊擷取頁面縮圖",
+        ),
+      ],
+      actions: [
+        createCaptureActionButton("fullpage-screenshot", "📜 整頁截圖"),
+        createCaptureActionButton("refresh-full", "重新擷取"),
+        createCaptureActionButton("download-full", "下載截圖"),
+        createCaptureActionButton("send-full-to-chat", "💬 傳送到對話"),
+      ],
+    }),
+  );
+
+  grid.appendChild(
+    createCaptureCard({
+      title: "C 部分截圖",
+      subtitle: "拖曳選取區域",
+      bodyChildren: [
+        createCaptureThumb(
+          partialThumbAction,
+          partialShot,
+          "部分截圖",
+          "選取範圍",
+          { action: "capture-partial", text: "重新選取" },
+          "點擊選取範圍",
+        ),
+      ],
+      actions: [
+        createCaptureActionButton("capture-partial", "選取範圍"),
+        createCaptureActionButton("download-partial", "下載截圖"),
+        createCaptureActionButton("send-partial-to-chat", "💬 傳送到對話"),
+      ],
+    }),
+  );
+
+  dom.captureContent.replaceChildren(grid);
 }
 
 function buildTextPreview(content) {
@@ -6943,20 +7123,40 @@ function renderLogs() {
 
   const entries = getFilteredLogs().slice().reverse();
   if (entries.length === 0) {
-    dom.logList.innerHTML =
-      '<div class="log-empty">目前沒有符合條件的 log</div>';
+    const empty = document.createElement("div");
+    empty.className = "log-empty";
+    empty.textContent = "目前沒有符合條件的 log";
+    dom.logList.replaceChildren(empty);
     return;
   }
 
-  dom.logList.innerHTML = entries
-    .map((entry) => {
-      const t = new Date(entry.ts);
-      const ts = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`;
-      const lvl = entry.level.toUpperCase().padEnd(5);
-      const detail = entry.detail ? `\n  ${escapeHtml(entry.detail)}` : "";
-      return `<div class="log-raw-line"><span class="log-raw-ts">${ts}</span> <span class="log-raw-lvl">${lvl}</span> ${escapeHtml(entry.message)}${detail}</div>`;
-    })
-    .join("");
+  const fragment = document.createDocumentFragment();
+  entries.forEach((entry) => {
+    const t = new Date(entry.ts);
+    const ts = `${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}:${String(t.getSeconds()).padStart(2, "0")}`;
+    const lvl = entry.level.toUpperCase().padEnd(5);
+
+    const line = document.createElement("div");
+    line.className = "log-raw-line";
+
+    const tsEl = document.createElement("span");
+    tsEl.className = "log-raw-ts";
+    tsEl.textContent = ts;
+
+    const lvlEl = document.createElement("span");
+    lvlEl.className = "log-raw-lvl";
+    lvlEl.textContent = lvl;
+
+    line.append(tsEl, document.createTextNode(" "), lvlEl, document.createTextNode(` ${entry.message}`));
+
+    if (entry.detail) {
+      line.appendChild(document.createTextNode(`\n  ${entry.detail}`));
+    }
+
+    fragment.appendChild(line);
+  });
+
+  dom.logList.replaceChildren(fragment);
 }
 
 function clearLogs() {
@@ -7196,6 +7396,20 @@ function renderTagBadges(tags) {
     .join("");
 }
 
+function buildTagBadgeElements(tags) {
+  if (!Array.isArray(tags) || tags.length === 0) return [];
+  return tags.map((tag) => {
+    const badge = document.createElement("span");
+    badge.className = `hist-tag hist-tag-${tagClass(tag)}`;
+    badge.textContent = tag;
+    return badge;
+  });
+}
+
+function appendTagBadges(container, tags) {
+  buildTagBadgeElements(tags).forEach((badge) => container.appendChild(badge));
+}
+
 function tagClass(tag) {
   if (["gpt-4o", "gpt-4.1", "gpt-4o-mini", "gpt-5-mini"].includes(tag))
     return "model-gpt";
@@ -7209,26 +7423,35 @@ function tagClass(tag) {
   return "default";
 }
 
+function createLogEmptyState(message) {
+  const empty = document.createElement("div");
+  empty.className = "log-empty";
+  empty.textContent = message;
+  return empty;
+}
+
 // ── History: file list & rendering ──
 
 async function loadLogFiles() {
   logFileListEl = logFileListEl || document.getElementById("logFileList");
   if (!logFileListEl) return;
 
-  logFileListEl.innerHTML = '<div class="log-empty">載入中...</div>';
+  logFileListEl.replaceChildren(createLogEmptyState("載入中..."));
 
   try {
     const data = await bridgeJsonRequest("/api/history");
 
     if (!data.success || !data.files || data.files.length === 0) {
-      logFileListEl.innerHTML = '<div class="log-empty">尚無對話歷史紀錄</div>';
+      logFileListEl.replaceChildren(createLogEmptyState("尚無對話歷史紀錄"));
       return;
     }
 
     renderLogFiles(data.files);
     connectLogSSE();
   } catch (err) {
-    logFileListEl.innerHTML = `<div class="log-empty">無法連線 Bridge：${escapeHtml(err.message)}</div>`;
+    logFileListEl.replaceChildren(
+      createLogEmptyState(`無法連線 Bridge：${err.message}`),
+    );
   }
 }
 
@@ -7242,15 +7465,23 @@ function renderLogFiles(files) {
 
     const header = document.createElement("div");
     header.className = "log-file-header";
-    const filePath = file.path || "";
-    const pathHtml = filePath
-      ? `<span class="log-file-path" title="${escapeHtml(filePath)}">${escapeHtml(filePath)}</span>`
-      : "";
-    header.innerHTML = `
-      <span class="log-file-date">📅 ${escapeHtml(file.date)}</span>
-      ${pathHtml}
-      <span class="log-file-badge">▸</span>
-    `;
+    const dateEl = document.createElement("span");
+    dateEl.className = "log-file-date";
+    dateEl.textContent = `📅 ${file.date || ""}`;
+    header.appendChild(dateEl);
+
+    if (file.path) {
+      const pathEl = document.createElement("span");
+      pathEl.className = "log-file-path";
+      pathEl.title = file.path;
+      pathEl.textContent = file.path;
+      header.appendChild(pathEl);
+    }
+
+    const badgeEl = document.createElement("span");
+    badgeEl.className = "log-file-badge";
+    badgeEl.textContent = "▸";
+    header.appendChild(badgeEl);
 
     const body = document.createElement("div");
     body.className = "log-file-body";
@@ -7274,18 +7505,18 @@ function renderLogFiles(files) {
 }
 
 async function loadLogFileContent(filename, container) {
-  container.innerHTML = '<div class="log-empty">載入中...</div>';
+  container.replaceChildren(createLogEmptyState("載入中..."));
   try {
     const data = await bridgeJsonRequest(
       `/api/history/${encodeURIComponent(filename)}`,
     );
 
     if (!data.success || !data.messages || data.messages.length === 0) {
-      container.innerHTML = '<div class="log-empty">此日誌沒有訊息</div>';
+      container.replaceChildren(createLogEmptyState("此日誌沒有訊息"));
       return;
     }
 
-    container.innerHTML = "";
+    container.replaceChildren();
     const groups = groupMessagesBySession(data.messages);
 
     if (groups.length <= 1 && groups[0]?.sessionId === null) {
@@ -7304,13 +7535,27 @@ async function loadLogFileContent(filename, container) {
       sHeader.className = "hist-session-header";
       const timeRange = formatTimeRange(group.startTime, group.endTime);
       const stats = `${group.userCount + group.assistantCount} msgs`;
-      sHeader.innerHTML = `
-        <span class="hist-session-toggle">▸</span>
-        <span class="hist-session-time">${timeRange}</span>
-        <span class="hist-session-stats">${stats}</span>
-        ${renderTagBadges(group.tags)}
-        ${group.preview ? `<span class="hist-session-preview">${escapeHtml(group.preview)}</span>` : ""}
-      `;
+      const toggleEl = document.createElement("span");
+      toggleEl.className = "hist-session-toggle";
+      toggleEl.textContent = "▸";
+
+      const timeEl = document.createElement("span");
+      timeEl.className = "hist-session-time";
+      timeEl.textContent = timeRange;
+
+      const statsEl = document.createElement("span");
+      statsEl.className = "hist-session-stats";
+      statsEl.textContent = stats;
+
+      sHeader.append(toggleEl, timeEl, statsEl);
+      appendTagBadges(sHeader, group.tags);
+
+      if (group.preview) {
+        const previewEl = document.createElement("span");
+        previewEl.className = "hist-session-preview";
+        previewEl.textContent = group.preview;
+        sHeader.appendChild(previewEl);
+      }
 
       const sBody = document.createElement("div");
       sBody.className = "hist-session-body";
@@ -7334,7 +7579,7 @@ async function loadLogFileContent(filename, container) {
       container.appendChild(section);
     });
   } catch (err) {
-    container.innerHTML = `<div class="log-empty">讀取失敗：${escapeHtml(err.message)}</div>`;
+    container.replaceChildren(createLogEmptyState(`讀取失敗：${err.message}`));
   }
 }
 
@@ -7381,18 +7626,26 @@ function createLogMessageEl(msg) {
   const allTags = [...extracted.tags];
   if (msg.model) allTags.unshift(msg.model);
 
-  el.innerHTML = `
-    <div class="log-message-header">
-      <span class="log-role-badge">${roleBadge} ${escapeHtml(role)}</span>
-      ${renderTagBadges(allTags)}
-      <span class="log-timestamp">${timeStr}</span>
-    </div>
-    <div class="log-message-content collapsed" title="點擊展開">
-      ${escapeHtml(extracted.text)}
-    </div>
-  `;
+  const header = document.createElement("div");
+  header.className = "log-message-header";
 
-  const contentDiv = el.querySelector(".log-message-content");
+  const roleEl = document.createElement("span");
+  roleEl.className = "log-role-badge";
+  roleEl.textContent = `${roleBadge} ${role}`;
+  header.appendChild(roleEl);
+  appendTagBadges(header, allTags);
+
+  const timestampEl = document.createElement("span");
+  timestampEl.className = "log-timestamp";
+  timestampEl.textContent = timeStr;
+  header.appendChild(timestampEl);
+
+  const contentDiv = document.createElement("div");
+  contentDiv.className = "log-message-content collapsed";
+  contentDiv.title = "點擊展開";
+  contentDiv.textContent = extracted.text;
+
+  el.append(header, contentDiv);
   contentDiv.addEventListener("click", () => {
     contentDiv.classList.toggle("collapsed");
   });
@@ -7892,7 +8145,7 @@ function addSDKMessage(role, content) {
   if (tags.length > 0) {
     const tagBar = document.createElement("div");
     tagBar.className = "sdk-message-tags";
-    tagBar.innerHTML = renderTagBadges(tags);
+    appendTagBadges(tagBar, tags);
     msgEl.appendChild(tagBar);
   }
 
