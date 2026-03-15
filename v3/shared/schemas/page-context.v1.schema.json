@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sidepilot.dev/schemas/page-context.v1.schema.json",
+  "title": "SidePilot Live Page Context Packet v1",
+  "description": "Implementation-ready schema for the SidePilot v3 live page-context packet.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "packetId",
+    "source",
+    "pageIdentity",
+    "semanticSummary",
+    "selectedRegion",
+    "notableBlocks",
+    "pageIntentGuess",
+    "freshness",
+    "privacy"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "sidepilot.page-context/v1"
+    },
+    "packetId": {
+      "type": "string",
+      "minLength": 8,
+      "maxLength": 160
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "pageIdentity": {
+      "$ref": "#/$defs/pageIdentity"
+    },
+    "semanticSummary": {
+      "$ref": "#/$defs/semanticSummary"
+    },
+    "selectedRegion": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/selectedRegion"
+        }
+      ]
+    },
+    "notableBlocks": {
+      "type": "array",
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/$defs/notableBlock"
+      }
+    },
+    "pageIntentGuess": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "general_page_review",
+        "read_documentation",
+        "read_source_file",
+        "review_code_changes",
+        "triage_issue",
+        "change_settings",
+        null
+      ]
+    },
+    "freshness": {
+      "$ref": "#/$defs/freshness"
+    },
+    "privacy": {
+      "$ref": "#/$defs/privacy"
+    }
+  },
+  "$defs": {
+    "trimmedString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nullableTrimmedString": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "channel",
+        "captureMode"
+      ],
+      "properties": {
+        "channel": {
+          "type": "string",
+          "enum": [
+            "extension",
+            "bridge",
+            "hybrid"
+          ]
+        },
+        "captureMode": {
+          "type": "string",
+          "enum": [
+            "ambient",
+            "manual_capture",
+            "selection_refresh",
+            "route_refresh",
+            "dev_verify"
+          ]
+        },
+        "extractor": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 64
+        },
+        "observerVersion": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 64
+        }
+      }
+    },
+    "pageIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "title",
+        "url",
+        "origin"
+      ],
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 160
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 256
+        },
+        "routeHint": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 80
+        },
+        "tabId": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "extractor": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 64
+        }
+      }
+    },
+    "semanticSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "sections",
+        "wordCount",
+        "charCount"
+      ],
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 80
+        },
+        "summary": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 1200
+        },
+        "sections": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "wordCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "charCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "selectedRegion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "selection",
+            "focused_input",
+            "code_block",
+            "diff_hunk",
+            "table_region"
+          ]
+        },
+        "label": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 120
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "selectorHint": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 256
+        }
+      }
+    },
+    "notableBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "label"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "code",
+            "table",
+            "list",
+            "form",
+            "diff_hunk",
+            "ui_fragment"
+          ]
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "language": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 32
+        },
+        "preview": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 500
+        },
+        "selectorHint": {
+          "$ref": "#/$defs/nullableTrimmedString",
+          "maxLength": 256
+        }
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capturedAt",
+        "stale",
+        "reason",
+        "ttlMs"
+      ],
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "lastValidatedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "initial_capture",
+            "same_route_same_selection",
+            "route_changed",
+            "selection_changed",
+            "visible_ui_changed",
+            "manual_refresh",
+            "live_observation_disabled"
+          ]
+        },
+        "ttlMs": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 300000
+        }
+      }
+    },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "reviewRequired",
+        "redactionLevel",
+        "gatedFields"
+      ],
+      "properties": {
+        "reviewRequired": {
+          "type": "boolean"
+        },
+        "redactionLevel": {
+          "type": "string",
+          "enum": [
+            "none",
+            "standard",
+            "strict"
+          ]
+        },
+        "gatedFields": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        }
+      }
+    }
+  }
+}

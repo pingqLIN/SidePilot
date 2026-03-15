@@ -6,7 +6,7 @@
 // ============================================
 
 import express from 'express';
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import cors from 'cors';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
@@ -167,6 +167,97 @@ function ensureBridgeAuth(req: Request, res: Response): boolean {
   }
   return true;
 }
+
+interface RateLimitBucket {
+  count: number;
+  resetAt: number;
+}
+
+interface RateLimitOptions {
+  name: string;
+  windowMs: number;
+  maxRequests: number;
+  keyGenerator?: (req: Request) => string;
+}
+
+function createRateLimiter(options: RateLimitOptions) {
+  const buckets = new Map<string, RateLimitBucket>();
+
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const now = Date.now();
+    const keyBase = options.keyGenerator?.(req) || getRequestedExtensionId(req) || req.ip || 'local';
+    const key = `${options.name}:${keyBase}`;
+
+    if (buckets.size > 1024) {
+      for (const [bucketKey, bucket] of buckets.entries()) {
+        if (bucket.resetAt <= now) {
+          buckets.delete(bucketKey);
+        }
+      }
+    }
+
+    const existing = buckets.get(key);
+    if (!existing || existing.resetAt <= now) {
+      buckets.set(key, {
+        count: 1,
+        resetAt: now + options.windowMs,
+      });
+      next();
+      return;
+    }
+
+    if (existing.count >= options.maxRequests) {
+      const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+      res.setHeader('Retry-After', String(retryAfterSeconds));
+      res.status(429).json({
+        success: false,
+        error: `rate limit exceeded for ${options.name}`,
+        retryAfterSeconds,
+      });
+      return;
+    }
+
+    existing.count += 1;
+    next();
+  };
+}
+
+const bootstrapRateLimiter = createRateLimiter({
+  name: 'auth-bootstrap',
+  windowMs: 60_000,
+  maxRequests: 10,
+  keyGenerator: (req) => String(req.headers.origin || req.ip || 'local'),
+});
+
+const maintenanceRateLimiter = createRateLimiter({
+  name: 'bridge-maintenance',
+  windowMs: 60_000,
+  maxRequests: 6,
+});
+
+const chatRateLimiter = createRateLimiter({
+  name: 'chat',
+  windowMs: 60_000,
+  maxRequests: 30,
+});
+
+const historyReadRateLimiter = createRateLimiter({
+  name: 'history-read',
+  windowMs: 60_000,
+  maxRequests: 120,
+});
+
+const historyWriteRateLimiter = createRateLimiter({
+  name: 'history-write',
+  windowMs: 60_000,
+  maxRequests: 60,
+});
+
+const backupMutationRateLimiter = createRateLimiter({
+  name: 'backup-mutation',
+  windowMs: 60_000,
+  maxRequests: 12,
+});
 
 function runNodeScript(
   scriptPath: string,
@@ -329,7 +420,7 @@ app.get('/api/status', (_req, res) => {
   });
 });
 
-app.post('/api/auth/bootstrap', (req, res) => {
+app.post('/api/auth/bootstrap', bootstrapRateLimiter, (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
   res.json({
     success: true,
@@ -560,7 +651,7 @@ app.post('/api/prompt/strategy', (req, res) => {
  * 受限用途：自我疊代模式首次啟用時，由本機 Bridge 代執行 seal 腳本
  * Body: { dryRun?: boolean, timeoutMs?: number }
  */
-app.post('/api/integrity/auto-seal', async (req, res) => {
+app.post('/api/integrity/auto-seal', maintenanceRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
   const dryRun = !!req.body?.dryRun;
   const timeoutMs = parseBoundedTimeout(req.body?.timeoutMs);
@@ -594,7 +685,7 @@ app.post('/api/integrity/auto-seal', async (req, res) => {
  * 受限用途：提供 background/sidepanel 外部完整性驗證（不暴露演算法到 extension）
  * Body: { timeoutMs?: number }
  */
-app.post('/api/integrity/verify', async (req, res) => {
+app.post('/api/integrity/verify', maintenanceRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
   const timeoutMs = parseBoundedTimeout(req.body?.timeoutMs);
 
@@ -627,7 +718,7 @@ app.post('/api/integrity/verify', async (req, res) => {
  *   event: error     → { message: string }
  *   event: done      → {}
  */
-app.post('/api/chat', async (req, res) => {
+app.post('/api/chat', chatRateLimiter, async (req, res) => {
   const { sessionId, prompt, model, images } = req.body;
 
   if (!prompt) {
@@ -699,7 +790,7 @@ app.post('/api/chat', async (req, res) => {
  * 同步傳送訊息（等待完成後回傳）
  * Body: { sessionId?: string, prompt: string, model?: string, images?: Array<{mimeType, data}> }
  */
-app.post('/api/chat/sync', async (req, res) => {
+app.post('/api/chat/sync', chatRateLimiter, async (req, res) => {
   const { sessionId, prompt, model, images } = req.body;
 
   if (!prompt) {
@@ -824,7 +915,7 @@ app.post('/api/backup/config', async (req, res) => {
  * POST /api/backup/full
  * 執行完整備份
  */
-app.post('/api/backup/full', async (req, res) => {
+app.post('/api/backup/full', backupMutationRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
 
   try {
@@ -839,7 +930,7 @@ app.post('/api/backup/full', async (req, res) => {
  * POST /api/backup/settings
  * 執行設定備份
  */
-app.post('/api/backup/settings', async (req, res) => {
+app.post('/api/backup/settings', backupMutationRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
 
   try {
@@ -863,11 +954,11 @@ app.get('/api/backup/list', (_req, res) => {
  * POST /api/backup/restore/:id
  * 還原備份
  */
-app.post('/api/backup/restore/:id', async (req, res) => {
+app.post('/api/backup/restore/:id', backupMutationRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
 
   try {
-    const backupId = req.params.id;
+    const backupId = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id || '');
     const result = await backupManager.restoreBackup(backupId);
     res.json({ success: result.success, message: result.message });
   } catch (err: any) {
@@ -879,11 +970,11 @@ app.post('/api/backup/restore/:id', async (req, res) => {
  * DELETE /api/backup/:id
  * 刪除備份
  */
-app.delete('/api/backup/:id', async (req, res) => {
+app.delete('/api/backup/:id', backupMutationRateLimiter, async (req, res) => {
   if (!ensureExtensionOrigin(req, res)) return;
 
   try {
-    const backupId = req.params.id;
+    const backupId = Array.isArray(req.params.id) ? req.params.id[0] : String(req.params.id || '');
     const result = await backupManager.deleteBackup(backupId);
     res.json({ success: result.success, message: result.message });
   } catch (err: any) {
@@ -960,9 +1051,11 @@ app.get('/api/history/stream', (req, res) => {
   });
 });
 
-app.get('/api/history/:filename', async (req, res) => {
+app.get('/api/history/:filename', historyReadRateLimiter, async (req, res) => {
   try {
-    const filename = req.params.filename;
+    const filename = Array.isArray(req.params.filename)
+      ? req.params.filename[0]
+      : String(req.params.filename || '');
     if (!/^history_\d{4}-\d{2}-\d{2}\.jsonl$/.test(filename)) {
       res.status(400).json({ success: false, error: 'Invalid filename' });
       return;
@@ -986,7 +1079,7 @@ app.get('/api/history/:filename', async (req, res) => {
   }
 });
 
-app.post('/api/history', async (req, res) => {
+app.post('/api/history', historyWriteRateLimiter, async (req, res) => {
   try {
     const entry = req.body;
     if (!entry || typeof entry !== 'object') {

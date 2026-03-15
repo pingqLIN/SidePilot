@@ -20,10 +20,6 @@ const MEMORY_PROMPT_MAX_TOTAL_LENGTH = 3600;
 const MEMORY_PROMPT_MAX_ENTRY_CONTENT = 700;
 const RULES_PROMPT_MAX_LENGTH = 2200;
 const LIVE_PAGE_CONTEXT_MAX_AGE_MS = 15000;
-const LIVE_PAGE_CONTEXT_SUMMARY_MAX_LENGTH = 280;
-const LIVE_PAGE_CONTEXT_SELECTED_TEXT_MAX_LENGTH = 800;
-const LIVE_PAGE_CONTEXT_HEADING_LIMIT = 6;
-const LIVE_PAGE_CONTEXT_CODE_BLOCK_LIMIT = 3;
 const SETTINGS_STORAGE_KEY = "sidepilot.settings.v1";
 const SDK_LOGIN_URL =
   "https://github.com/login?return_to=https%3A%2F%2Fgithub.com%2Fcopilot";
@@ -6081,6 +6077,10 @@ function requestPageContent() {
   });
 }
 
+function getLivePageContextApi() {
+  return globalThis.SidePilotLivePageContext || null;
+}
+
 function truncateInlineText(text, maxLength) {
   if (typeof text !== "string") return "";
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -6088,126 +6088,23 @@ function truncateInlineText(text, maxLength) {
   return `${normalized.slice(0, Math.max(0, maxLength - 3))}...`;
 }
 
-function derivePageIntentGuess(content = {}) {
-  const url = String(content.url || "");
-  const title = String(content.title || "").toLowerCase();
-  if (/github\.com\/.+\/pull\//i.test(url)) return "review_code_changes";
-  if (/github\.com\/.+\/issues\//i.test(url)) return "triage_issue";
-  if (/github\.com\/.+\/blob\//i.test(url)) return "read_source_file";
-  if (/docs|guide|readme|documentation/i.test(`${url} ${title}`)) {
-    return "read_documentation";
+function buildLivePageContextPacket(content = {}, options = {}) {
+  const api = getLivePageContextApi();
+  if (!api?.buildPacket) {
+    console.warn("[SidePilot] Live page context API unavailable");
+    return null;
   }
-  if (/settings|preferences|configuration/i.test(`${url} ${title}`)) {
-    return "change_settings";
-  }
-  return "general_page_review";
-}
-
-function buildLivePageContextPacket(content = {}) {
-  if (!content || typeof content !== "object") return null;
-
-  const title = truncateInlineText(content.title || "", 160);
-  const url = String(content.url || "").trim();
-  if (!title && !url) return null;
-
-  let origin = "";
-  try {
-    origin = url ? new URL(url).origin : "";
-  } catch {
-    origin = "";
-  }
-
-  const description =
-    content.meta?.description || content.meta?.["og:description"] || "";
-  const firstParagraph = Array.isArray(content.paragraphs)
-    ? content.paragraphs.find((item) => typeof item === "string" && item.trim())
-    : "";
-  const semanticSummary = truncateInlineText(
-    description || firstParagraph || content.text || "",
-    LIVE_PAGE_CONTEXT_SUMMARY_MAX_LENGTH,
-  );
-  const sectionLabels = Array.isArray(content.headings)
-    ? content.headings
-        .map((heading) => truncateInlineText(heading?.text || "", 80))
-        .filter(Boolean)
-        .slice(0, LIVE_PAGE_CONTEXT_HEADING_LIMIT)
-    : [];
-  const notableBlocks = Array.isArray(content.codeBlocks)
-    ? content.codeBlocks
-        .slice(0, LIVE_PAGE_CONTEXT_CODE_BLOCK_LIMIT)
-        .map((block, index) => ({
-          kind: "code",
-          label: truncateInlineText(
-            `Code ${index + 1}: ${block?.language || "plaintext"}`,
-            80,
-          ),
-          language: truncateInlineText(block?.language || "plaintext", 32),
-          preview: truncateInlineText(block?.code || "", 180),
-        }))
-    : [];
-  const selectedText = truncateInlineText(
-    content.selectedText || "",
-    LIVE_PAGE_CONTEXT_SELECTED_TEXT_MAX_LENGTH,
-  );
-
-  return {
-    pageIdentity: {
-      title: title || "(untitled)",
-      url,
-      origin,
-      extractor: content.extractor || "basic",
-    },
-    semanticSummary: {
-      summary: semanticSummary || null,
-      sections: sectionLabels,
-      wordCount: Number(content.wordCount) || 0,
-      charCount: Number(content.charCount) || 0,
-    },
-    selectedRegion: selectedText
-      ? {
-          kind: "selection",
-          text: selectedText,
-        }
-      : null,
-    notableBlocks,
-    pageIntentGuess: derivePageIntentGuess(content),
-    freshness: {
-      capturedAt: new Date().toISOString(),
-      stale: false,
-    },
-  };
+  return api.buildPacket(content, {
+    ttlMs: LIVE_PAGE_CONTEXT_MAX_AGE_MS,
+    observerVersion: "v3-mvp",
+    ...options,
+  });
 }
 
 function formatLivePageContextForPrompt(packet) {
-  if (!packet || typeof packet !== "object") return "";
-
-  const lines = [];
-  const title = packet.pageIdentity?.title || "(untitled)";
-  const url = packet.pageIdentity?.url || "";
-  const summary = packet.semanticSummary?.summary || "";
-  const sections = Array.isArray(packet.semanticSummary?.sections)
-    ? packet.semanticSummary.sections
-    : [];
-  const selected = packet.selectedRegion?.text || "";
-  const blocks = Array.isArray(packet.notableBlocks)
-    ? packet.notableBlocks
-    : [];
-
-  lines.push(`Title: ${title}`);
-  if (url) lines.push(`URL: ${url}`);
-  if (packet.pageIntentGuess) lines.push(`Intent Guess: ${packet.pageIntentGuess}`);
-  if (summary) lines.push(`Summary: ${summary}`);
-  if (sections.length > 0) lines.push(`Sections: ${sections.join(" | ")}`);
-  if (selected) lines.push(`Selected Text: ${selected}`);
-  if (blocks.length > 0) {
-    lines.push(
-      `Notable Blocks: ${blocks
-        .map((block) => `${block.label}${block.preview ? ` -> ${block.preview}` : ""}`)
-        .join(" | ")}`,
-    );
-  }
-
-  return lines.join("\n");
+  const api = getLivePageContextApi();
+  if (!api?.formatForPrompt) return "";
+  return api.formatForPrompt(packet);
 }
 
 function formatLivePageContextPreview(packet) {
@@ -6282,7 +6179,9 @@ async function refreshLivePageContextPreview(options = {}) {
     const result = await requestPageContent();
     if (result?.success && result.content) {
       state.currentPageContent = result.content;
-      state.livePageContextPacket = buildLivePageContextPacket(result.content);
+      state.livePageContextPacket = buildLivePageContextPacket(result.content, {
+        tabId: result.tabId,
+      });
       state.livePageContextError = state.livePageContextPacket
         ? ""
         : "page context unavailable";

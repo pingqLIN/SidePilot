@@ -458,6 +458,15 @@ export class SessionManager {
     this.pushLog('warn', `[Permission] Pending approval: ${id} (scope: ${scope})`);
 
     return new Promise<any>((resolve) => {
+      let permissionTimeout: NodeJS.Timeout | null = null;
+      const settlePermission = (result: any) => {
+        if (permissionTimeout) {
+          clearTimeout(permissionTimeout);
+          permissionTimeout = null;
+        }
+        resolve(result);
+      };
+
       const pending: PendingPermission = {
         id,
         sessionId,
@@ -465,7 +474,7 @@ export class SessionManager {
         reason,
         options,
         timestamp: Date.now(),
-        resolve,
+        resolve: settlePermission,
       };
 
       this.pendingPermissions.set(id, pending);
@@ -482,13 +491,14 @@ export class SessionManager {
       }
 
       // 60s 超時自動 deny
-      setTimeout(() => {
+      permissionTimeout = setTimeout(() => {
         if (this.pendingPermissions.has(id)) {
           this.pendingPermissions.delete(id);
-          resolve({ outcome: { outcome: 'cancelled' } });
+          settlePermission({ outcome: { outcome: 'cancelled' } });
           this.pushLog('warn', `[Permission] Timed out (auto-deny): ${id}`);
         }
       }, PERMISSION_TIMEOUT_MS);
+      permissionTimeout.unref?.();
     });
   }
 
@@ -714,10 +724,12 @@ export class SessionManager {
     );
 
     // WP-02: Timeout race — AbortController + Promise.race
+    let timeoutHandle: NodeJS.Timeout | null = null;
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
+      timeoutHandle = setTimeout(() => {
         reject(new Error(`Request timeout after ${effectiveTimeout}ms (id: ${requestId})`));
       }, effectiveTimeout);
+      timeoutHandle.unref?.();
     });
 
     try {
@@ -773,6 +785,9 @@ export class SessionManager {
       }
       throw err;
     } finally {
+      if (timeoutHandle) {
+        clearTimeout(timeoutHandle);
+      }
       session.listeners.delete(listener);
     }
 

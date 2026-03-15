@@ -1757,6 +1757,7 @@ async function handleGetPageContent(message, sendResponse) {
     sendResponse({
       success: true,
       content: results[0]?.result || null,
+      tabId: tab.id,
       url: tab.url,
       title: tab.title
     });

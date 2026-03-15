@@ -5,7 +5,7 @@
 // ============================================
 
 import { promises as fs } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import archiver from 'archiver';
 import { createWriteStream, createReadStream } from 'node:fs';
 import schedule, { type Job } from 'node-schedule';
@@ -43,6 +43,13 @@ export interface SchedulerState {
 
 const EXTENSION_DIR = resolve(process.cwd(), '..', '..', 'extension');
 const DEFAULT_BACKUP_DIR = resolve(process.cwd(), '..', '..', '..', 'SidePilot-Backups');
+const BACKUP_METADATA_FILENAME = '.backups.json';
+const BACKUP_FILENAME_PATTERN = /^SidePilot-(full|settings)-\d{4}-\d{2}-\d{2}-[a-f0-9]{8}\.zip$/i;
+
+function isPathInsideDirectory(parentDir: string, candidatePath: string): boolean {
+  const relativePath = relative(parentDir, candidatePath);
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath));
+}
 
 export class BackupManager {
   private backups: Map<string, BackupMetadata> = new Map();
@@ -58,9 +65,9 @@ export class BackupManager {
    */
   private async loadBackupMetadata(): Promise<void> {
     try {
-      const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
+      const backupDir = this.getBackupDirectory();
       await fs.mkdir(backupDir, { recursive: true });
-      const metadataPath = join(backupDir, '.backups.json');
+      const metadataPath = this.getBackupMetadataPath();
 
       try {
         const data = await fs.readFile(metadataPath, 'utf-8');
@@ -79,9 +86,9 @@ export class BackupManager {
    */
   private async saveBackupMetadata(): Promise<void> {
     try {
-      const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
+      const backupDir = this.getBackupDirectory();
       await fs.mkdir(backupDir, { recursive: true });
-      const metadataPath = join(backupDir, '.backups.json');
+      const metadataPath = this.getBackupMetadataPath();
       const metadata = Array.from(this.backups.values());
       await fs.writeFile(metadataPath, JSON.stringify(metadata, null, 2), 'utf-8');
     } catch (err) {
@@ -100,7 +107,38 @@ export class BackupManager {
    * 設定備份配置
    */
   setConfig(config: BackupConfig): void {
-    this.currentConfig = config;
+    this.currentConfig = {
+      ...config,
+      savePath: this.normalizeBackupDirectory(config.savePath),
+    };
+  }
+
+  private normalizeBackupDirectory(savePath?: string): string {
+    const configuredPath = typeof savePath === 'string' ? savePath.trim() : '';
+    return resolve(configuredPath || DEFAULT_BACKUP_DIR);
+  }
+
+  private getBackupDirectory(): string {
+    return this.normalizeBackupDirectory(this.currentConfig?.savePath);
+  }
+
+  private getBackupMetadataPath(): string {
+    return resolve(this.getBackupDirectory(), BACKUP_METADATA_FILENAME);
+  }
+
+  private resolveBackupFilePath(filename: string): string {
+    const normalizedFilename = basename(String(filename || '').trim());
+    if (!normalizedFilename || normalizedFilename !== filename || !BACKUP_FILENAME_PATTERN.test(normalizedFilename)) {
+      throw new Error('Invalid backup filename');
+    }
+
+    const backupDir = this.getBackupDirectory();
+    const backupPath = resolve(backupDir, normalizedFilename);
+    if (!isPathInsideDirectory(backupDir, backupPath)) {
+      throw new Error('Invalid backup path');
+    }
+
+    return backupPath;
   }
 
   /**
@@ -110,8 +148,8 @@ export class BackupManager {
     const backupId = randomUUID();
     const timestamp = Date.now();
     const filename = `SidePilot-full-${new Date(timestamp).toISOString().split('T')[0]}-${backupId.substring(0, 8)}.zip`;
-    const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
-    const backupPath = join(backupDir, filename);
+    const backupDir = this.getBackupDirectory();
+    const backupPath = this.resolveBackupFilePath(filename);
 
     try {
       await fs.mkdir(backupDir, { recursive: true });
@@ -187,8 +225,8 @@ export class BackupManager {
     const backupId = randomUUID();
     const timestamp = Date.now();
     const filename = `SidePilot-settings-${new Date(timestamp).toISOString().split('T')[0]}-${backupId.substring(0, 8)}.zip`;
-    const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
-    const backupPath = join(backupDir, filename);
+    const backupDir = this.getBackupDirectory();
+    const backupPath = this.resolveBackupFilePath(filename);
 
     try {
       await fs.mkdir(backupDir, { recursive: true });
@@ -293,8 +331,7 @@ export class BackupManager {
     }
 
     try {
-      const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
-      const backupPath = join(backupDir, metadata.filename);
+      const backupPath = this.resolveBackupFilePath(metadata.filename);
 
       // 驗證備份檔案存在
       await fs.stat(backupPath);
@@ -319,8 +356,7 @@ export class BackupManager {
     }
 
     try {
-      const backupDir = this.currentConfig?.savePath || DEFAULT_BACKUP_DIR;
-      const backupPath = join(backupDir, metadata.filename);
+      const backupPath = this.resolveBackupFilePath(metadata.filename);
       await fs.unlink(backupPath);
       this.backups.delete(backupId);
       await this.saveBackupMetadata();
